@@ -8,8 +8,7 @@ namespace CameraInspector.App.ViewModels;
 
 /// <summary>
 /// ViewModel de la pantalla "Escanear".
-/// Coordina el descubrimiento de red y la actualización progresiva de la información técnica
-/// de cada dispositivo sin bloquear la interfaz WPF.
+/// Coordina descubrimiento, identificación y enriquecimiento técnico progresivo de cada dispositivo.
 /// </summary>
 public sealed partial class MainViewModel : ObservableObject
 {
@@ -43,19 +42,19 @@ public sealed partial class MainViewModel : ObservableObject
         IOnvifDeviceService onvifDeviceService,
         IStreamUriResolver streamUriResolver)
     {
-        // _interfaceService permite enumerar las interfaces de red locales que pueden utilizarse para escanear.
+        // _interfaceService permite enumerar las interfaces de red activas que pueden escanearse.
         _interfaceService = interfaceService;
 
-        // _scanner contiene el pipeline de Ping, ARP y WS-Discovery.
+        // _scanner ejecuta el descubrimiento físico/lógico: Ping, ARP y WS-Discovery.
         _scanner = scanner;
 
-        // _manufacturerResolver ejecuta los detectores de fabricante y protocolos registrados.
+        // _manufacturerResolver combina evidencias de OUI, HTTP y ONVIF.
         _manufacturerResolver = manufacturerResolver;
 
-        // _onvifDeviceService consulta identidad y capacidades directamente mediante Device Service.
+        // _onvifDeviceService consulta identidad y capacidades oficiales del Device Service.
         _onvifDeviceService = onvifDeviceService;
 
-        // _streamUriResolver obtiene posteriormente las URLs RTSP desde Media Service.
+        // _streamUriResolver obtiene las URLs RTSP cuando el técnico pida visualizar un stream.
         _streamUriResolver = streamUriResolver;
 
         foreach (var nic in _interfaceService.GetActiveInterfaces())
@@ -83,19 +82,18 @@ public sealed partial class MainViewModel : ObservableObject
             {
                 if (progress.NewlyFound is not null)
                 {
-                    // device representa el estado técnico mutable del dispositivo que acaba de aparecer.
+                    // device contiene el modelo técnico que será enriquecido progresivamente por los servicios.
                     var device = progress.NewlyFound;
 
-                    // vm es la representación de presentación enlazada al DataGrid de WPF.
+                    // vm representa el mismo dispositivo dentro de la interfaz WPF.
                     var vm = new DeviceViewModel(device);
                     Devices.Add(vm);
 
-                    // Cada dispositivo se resuelve de manera independiente para que una cámara lenta
-                    // no bloquee la aparición de las demás cámaras en la tabla.
+                    // La resolución se ejecuta de forma independiente para que un dispositivo lento
+                    // no bloquee la aparición inmediata de los siguientes resultados.
                     _ = ResolveDeviceAsync(device, vm, cancellationToken);
                 }
 
-                // progress mantiene al técnico informado del avance del barrido de red.
                 StatusText = $"Escaneando... {progress.Scanned} respondieron de {progress.Total} IPs candidatas";
             }
 
@@ -114,9 +112,7 @@ public sealed partial class MainViewModel : ObservableObject
     private bool CanScan() => !IsScanning;
 
     /// <summary>
-    /// Completa la información de un dispositivo después del descubrimiento inicial.
-    /// Primero ejecuta los detectores generales y, cuando existe ONVIF, consulta identidad
-    /// directamente al Device Service para obtener la información declarada por el dispositivo.
+    /// Enriquece progresivamente un dispositivo con evidencias generales y ONVIF.
     /// </summary>
     private async Task ResolveDeviceAsync(
         DiscoveredDevice device,
@@ -125,48 +121,72 @@ public sealed partial class MainViewModel : ObservableObject
     {
         try
         {
-            // La resolución de fabricante combina OUI, HTTP y ONVIF y asigna los datos con mayor confianza.
+            // Primero ejecutamos todos los detectores generales porque pueden descubrir ONVIF,
+            // HTTP, RTSP y datos básicos de fabricante sin credenciales.
             await _manufacturerResolver.ResolveAsync(device, cancellationToken);
             viewModel.Refresh();
 
-            // Solo consultamos GetDeviceInformation cuando tenemos evidencia de que el dispositivo expone ONVIF.
+            // Si no existe evidencia ONVIF, no tiene sentido consultar Device Service.
             if (!device.OnvifSupported)
                 return;
 
-            // info contiene los datos de identidad enviados directamente por el Device Service ONVIF.
+            // info representa la identidad declarada directamente por el dispositivo ONVIF.
             var info = await _onvifDeviceService.GetDeviceInformationAsync(
                 device,
                 username: null,
                 password: null,
                 cancellationToken);
 
-            if (info is null)
+            if (info is not null)
+            {
+                // ONVIF tiene prioridad porque es información declarada por el propio dispositivo.
+                device.Manufacturer = info.Manufacturer ?? device.Manufacturer;
+                device.Model = info.Model ?? device.Model;
+                device.FirmwareVersion = info.FirmwareVersion ?? device.FirmwareVersion;
+                device.SerialNumber = info.SerialNumber ?? device.SerialNumber;
+
+                // Refrescamos inmediatamente la UI para que el técnico vea la identidad resuelta.
+                viewModel.Refresh();
+            }
+
+            // capabilities contiene los endpoints reales que el firmware publica para sus servicios.
+            var capabilities = await _onvifDeviceService.GetCapabilitiesAsync(
+                device,
+                username: null,
+                password: null,
+                cancellationToken);
+
+            if (capabilities is null)
                 return;
 
-            // Solo reemplazamos un dato existente cuando ONVIF realmente proporciona un valor.
-            // Esto evita perder información obtenida por otro detector si algún firmware omite un campo.
-            device.Manufacturer = info.Manufacturer ?? device.Manufacturer;
-            device.Model = info.Model ?? device.Model;
-            device.FirmwareVersion = info.FirmwareVersion ?? device.FirmwareVersion;
-            device.SerialNumber = info.SerialNumber ?? device.SerialNumber;
+            // Guardamos cada XAddr para que las siguientes capas no tengan que adivinar rutas ONVIF.
+            device.OnvifDeviceServiceXAddr = capabilities.DeviceServiceXAddr ?? device.OnvifDeviceServiceXAddr;
+            device.OnvifMediaServiceXAddr = capabilities.MediaServiceXAddr;
+            device.OnvifImagingServiceXAddr = capabilities.ImagingServiceXAddr;
+            device.OnvifPtzServiceXAddr = capabilities.PtzServiceXAddr;
+            device.OnvifEventsServiceXAddr = capabilities.EventsServiceXAddr;
 
-            // Refresh notifica a WPF para que el DataGrid y el panel de detalle vuelvan a leer los valores.
+            // Si Media existe, sabemos que el dispositivo ofrece el servicio que necesitamos
+            // para descubrir sus perfiles y streams de vídeo ONVIF.
+            if (capabilities.HasMediaService)
+                device.OnvifSupported = true;
+
             viewModel.Refresh();
         }
         catch (OperationCanceledException)
         {
-            // La cancelación forma parte del flujo normal cuando el técnico detiene el escaneo.
+            // La cancelación ocurre normalmente cuando el técnico detiene el escaneo.
         }
         catch
         {
-            // Un fallo de identificación no invalida el dispositivo ya descubierto.
-            // El equipo permanece visible con la información que sí pudimos obtener.
+            // Un fallo de enriquecimiento no elimina el dispositivo de la tabla.
+            // Conservamos toda la información que haya podido obtenerse antes del error.
         }
     }
 
     /// <summary>
-    /// Validación manual de la Capa 5: pide credenciales por diálogo y muestra la URL RTSP real
-    /// obtenida mediante ONVIF Media Service. La reproducción pertenece a la futura Capa 7.
+    /// Resolución manual del stream principal. Aquí todavía utilizamos credenciales temporales;
+    /// posteriormente serán reemplazadas por el Credential Manager de Windows.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanResolveStream))]
     private async Task GetStreamUriAsync()
