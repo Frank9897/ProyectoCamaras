@@ -85,7 +85,9 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
             // reply contiene el resultado ICMP devuelto por Windows.
             var reply = await ping.SendPingAsync(
                 parsedAddress,
-                timeout: 1200,
+                1200,
+                new byte[32],
+                new PingOptions { DontFragment = false },
                 cancellationToken);
 
             stopwatch.Stop();
