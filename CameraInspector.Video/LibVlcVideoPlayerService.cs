@@ -1,6 +1,7 @@
 using CameraInspector.Core.Models;
 using LibVLCSharp.Shared;
 
+authorityCheck
 namespace CameraInspector.Video;
 
 /// <summary>
@@ -23,8 +24,9 @@ public sealed class LibVlcVideoPlayerService : IVideoPlayerService
 
     public LibVlcVideoPlayerService()
     {
-        // Initialize localiza las bibliotecas nativas incluidas por VideoLAN.LibVLC.Windows.
-        Core.Initialize();
+        // Usamos el nombre totalmente calificado para evitar que el namespace CameraInspector.Core
+        // sea interpretado como si contuviera el método Initialize.
+        global::LibVLCSharp.Shared.Core.Initialize();
 
         // _libVlc contiene el motor multimedia. El cache y RTSP-TCP priorizan estabilidad
         // para redes CCTV frente a una latencia mínima.
