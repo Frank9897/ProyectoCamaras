@@ -5,6 +5,7 @@ using CameraInspector.Core.Interfaces;
 using CameraInspector.Network;
 using CameraInspector.Network.OnvifDiscovery;
 using CameraInspector.Persistence;
+using CameraInspector.Video;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -86,6 +87,11 @@ public partial class App : Application
 
                     // ---- Capa 6: Diagnóstico ----
                     services.AddSingleton<ICameraDiagnosticService, Network.Diagnostics.CameraDiagnosticService>();
+
+                    // ---- Capa 7: Video ----
+                    // El servicio mantiene LibVLC/MediaPlayer durante toda la aplicación para que el VideoView
+                    // pueda reutilizar la misma instancia sin reconstruir el motor multimedia por cada stream.
+                    services.AddSingleton<IVideoPlayerService, LibVlcVideoPlayerService>();
 
                     // ---- ViewModels / Ventanas ----
                     services.AddSingleton<MainViewModel>();
