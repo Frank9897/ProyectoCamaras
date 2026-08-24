@@ -87,6 +87,7 @@ public partial class App : Application
 
                     // ---- Capa 6: Diagnóstico ----
                     services.AddSingleton<ICameraDiagnosticService, Network.Diagnostics.CameraDiagnosticService>();
+                    services.AddScoped<IDiagnosticHistoryStore, DiagnosticHistoryStore>();
 
                     // ---- Capa 7: Video ----
                     // El servicio mantiene LibVLC/MediaPlayer durante toda la aplicación para que el VideoView
