@@ -21,6 +21,13 @@ public partial class App : Application
 {
     private IHost? _host;
 
+    /// <summary>
+    /// Proveedor de servicios activo. Se expone para pequeñas ventanas auxiliares de UI
+    /// que no forman parte del flujo principal y necesitan resolver un servicio del host.
+    /// La lógica de negocio sigue viviendo en servicios e interfaces de Core/Network.
+    /// </summary>
+    public static IServiceProvider? Services { get; private set; }
+
     public App()
     {
         DispatcherUnhandledException += (_, args) =>
@@ -106,6 +113,9 @@ public partial class App : Application
 
             await _host.StartAsync();
 
+            // Services conserva el ServiceProvider activo para ventanas auxiliares creadas desde la UI.
+            Services = _host.Services;
+
             // La factory se utiliza para crear un contexto temporal exclusivamente para migraciones.
             await using (var scope = _host.Services.CreateAsyncScope())
             {
@@ -135,6 +145,7 @@ public partial class App : Application
             _host.Dispose();
         }
 
+        Services = null;
         base.OnExit(e);
     }
 }
