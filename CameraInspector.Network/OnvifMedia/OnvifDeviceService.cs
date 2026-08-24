@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Xml.Linq;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
@@ -5,123 +7,79 @@ using CameraInspector.Core.Models;
 namespace CameraInspector.Network.OnvifMedia;
 
 /// <summary>
-/// Consulta el Device Service ONVIF.
-/// Permite obtener identidad del dispositivo y descubrir las URLs reales de sus servicios.
+/// Servicio ONVIF del dispositivo. Resuelve primero el XAddr real de Device Service
+/// y utiliza una ruta convencional únicamente como fallback.
 /// </summary>
-public sealed class OnvifDeviceService : IOnvifDeviceService
+public sealed class OnvifDeviceService : IOnvifDeviceService, IOnvifDeviceCapabilities
 {
-    /// <summary>Cuerpo SOAP utilizado para obtener información básica del dispositivo.</summary>
-    private const string GetDeviceInformationBody = """
-        <tds:GetDeviceInformation xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>
-        """;
+    private readonly HttpClient _httpClient;
 
-    /// <summary>
-    /// Cuerpo SOAP utilizado para pedir al dispositivo las capacidades de todos sus servicios ONVIF.
-    /// </summary>
-    private const string GetCapabilitiesBody = """
-        <tds:GetCapabilities xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
-          <tds:Category>All</tds:Category>
-        </tds:GetCapabilities>
-        """;
+    public OnvifDeviceService(HttpClient httpClient)
+    {
+        // _httpClient reutiliza conexiones para las operaciones SOAP ONVIF.
+        _httpClient = httpClient;
+    }
 
-    /// <summary>
-    /// Ejecuta GetDeviceInformation y devuelve los datos de identidad publicados por ONVIF.
-    /// </summary>
     public async Task<OnvifDeviceInformation?> GetDeviceInformationAsync(
         DiscoveredDevice device,
         string? username,
         string? password,
         CancellationToken cancellationToken = default)
     {
-        // endpoint contiene la dirección real del Device Service cuando ya fue descubierta por WS-Discovery.
         var endpoint = ResolveDeviceServiceEndpoint(device);
         if (endpoint is null)
             return null;
 
-        // securityHeader contiene WS-Security únicamente cuando el usuario proporcionó credenciales.
-        // Si no existen credenciales, permanece en null y OnvifSoapClient enviará el SOAP sin autenticación.
-        var securityHeader = BuildSecurity(username, password);
+        var security = BuildSecurity(username, password);
+        var body = """
+                   <tds:GetDeviceInformation/>
+                   """;
 
-        // document contiene la respuesta XML de GetDeviceInformation.
-        var document = await OnvifSoapClient.PostAsync(
-            endpoint,
-            GetDeviceInformationBody,
-            securityHeader,
-            cancellationToken);
-
-        if (document is null)
+        var xml = await SendSoapAsync(endpoint, "http://www.onvif.org/ver10/device/wsdl/GetDeviceInformation", body, security, cancellationToken);
+        if (xml is null)
             return null;
 
-        // Cada variable siguiente representa un dato de identidad que el firmware puede proporcionar.
-        // GetByLocalName evita depender de los prefijos XML concretos utilizados por la cámara.
-        var manufacturer = GetByLocalName(document, "Manufacturer");
-        var model = GetByLocalName(document, "Model");
-        var firmwareVersion = GetByLocalName(document, "FirmwareVersion");
-        var serialNumber = GetByLocalName(document, "SerialNumber");
-        var hardwareId = GetByLocalName(document, "HardwareId");
-
-        // Si no obtenemos ningún dato útil, tratamos la respuesta como no válida para esta operación.
-        if (string.IsNullOrWhiteSpace(manufacturer)
-            && string.IsNullOrWhiteSpace(model)
-            && string.IsNullOrWhiteSpace(firmwareVersion)
-            && string.IsNullOrWhiteSpace(serialNumber)
-            && string.IsNullOrWhiteSpace(hardwareId))
-        {
+        var document = XDocument.Parse(xml);
+        var element = document.Descendants().FirstOrDefault(item => item.Name.LocalName == "GetDeviceInformationResponse");
+        if (element is null)
             return null;
-        }
 
         return new OnvifDeviceInformation
         {
-            Manufacturer = Normalize(manufacturer),
-            Model = Normalize(model),
-            FirmwareVersion = Normalize(firmwareVersion),
-            SerialNumber = Normalize(serialNumber),
-            HardwareId = Normalize(hardwareId)
+            Manufacturer = element.Elements().FirstOrDefault(item => item.Name.LocalName == "Manufacturer")?.Value,
+            Model = element.Elements().FirstOrDefault(item => item.Name.LocalName == "Model")?.Value,
+            FirmwareVersion = element.Elements().FirstOrDefault(item => item.Name.LocalName == "FirmwareVersion")?.Value,
+            SerialNumber = element.Elements().FirstOrDefault(item => item.Name.LocalName == "SerialNumber")?.Value,
+            HardwareId = element.Elements().FirstOrDefault(item => item.Name.LocalName == "HardwareId")?.Value
         };
     }
 
-    /// <summary>
-    /// Consulta GetCapabilities y descubre los XAddr reales de los servicios ONVIF.
-    /// </summary>
     public async Task<OnvifServiceCapabilities?> GetCapabilitiesAsync(
         DiscoveredDevice device,
         string? username,
         string? password,
         CancellationToken cancellationToken = default)
     {
-        // endpoint contiene el Device Service que debe procesar GetCapabilities.
         var endpoint = ResolveDeviceServiceEndpoint(device);
         if (endpoint is null)
             return null;
 
-        // securityHeader se calcula por cada operación para utilizar un nonce/timestamp actualizado.
-        var securityHeader = BuildSecurity(username, password);
+        var security = BuildSecurity(username, password);
+        var body = """
+                   <tds:GetCapabilities/>
+                   """;
 
-        // document contiene la respuesta XML de GetCapabilities.
-        var document = await OnvifSoapClient.PostAsync(
-            endpoint,
-            GetCapabilitiesBody,
-            securityHeader,
-            cancellationToken);
-
-        if (document is null)
+        var xml = await SendSoapAsync(endpoint, "http://www.onvif.org/ver10/device/wsdl/GetCapabilities", body, security, cancellationToken);
+        if (xml is null)
             return null;
 
+        var document = XDocument.Parse(xml);
         return new OnvifServiceCapabilities
         {
-            // Conservamos exactamente el Device Service utilizado por esta operación.
             DeviceServiceXAddr = endpoint,
-
-            // MediaServiceXAddr será utilizado por la capa Media para descubrir perfiles y streams.
             MediaServiceXAddr = FindServiceXAddr(document, "Media"),
-
-            // ImagingServiceXAddr queda preparado para configuración de imagen.
             ImagingServiceXAddr = FindServiceXAddr(document, "Imaging"),
-
-            // PtzServiceXAddr queda preparado para cámaras PTZ.
             PtzServiceXAddr = FindServiceXAddr(document, "PTZ"),
-
-            // EventsServiceXAddr queda preparado para eventos y alarmas.
             EventsServiceXAddr = FindServiceXAddr(document, "Events")
         };
     }
@@ -137,8 +95,11 @@ public sealed class OnvifDeviceService : IOnvifDeviceService
             && Uri.TryCreate(device.OnvifDeviceServiceXAddr, UriKind.Absolute, out var discoveredUri))
         {
             // Solo aceptamos HTTP/HTTPS porque las operaciones SOAP posteriores dependen de transporte web.
-            if (discoveredUri.Scheme is Uri.UriSchemeHttp or Uri.UriSchemeHttps)
+            if (string.Equals(discoveredUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(discoveredUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            {
                 return discoveredUri.ToString();
+            }
         }
 
         // Fallback: algunas cámaras pueden funcionar con el endpoint convencional aunque todavía
@@ -151,41 +112,43 @@ public sealed class OnvifDeviceService : IOnvifDeviceService
 
     /// <summary>Construye el encabezado WS-Security cuando existen credenciales.</summary>
     private static string? BuildSecurity(string? username, string? password) =>
-        (username, password) is (not null, not null)
-            ? WsSecurityHeaderBuilder.Build(username!, password!)
+        username is not null && password is not null
+            ? WsSecurityHeaderBuilder.Build(username, password)
             : null;
 
-    /// <summary>
-    /// Busca el primer elemento que coincida con un nombre local XML.
-    /// </summary>
-    private static string? GetByLocalName(XDocument document, string localName) =>
-        document.Descendants()
-            .FirstOrDefault(element => element.Name.LocalName == localName)
-            ?.Value;
-
-    /// <summary>Convierte una cadena vacía o compuesta solo por espacios en null.</summary>
-    private static string? Normalize(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-
-    /// <summary>
-    /// Busca un bloque de servicio por nombre local y devuelve su XAddr.
-    /// </summary>
-    private static string? FindServiceXAddr(XDocument document, string serviceElementName)
+    private async Task<string?> SendSoapAsync(
+        string endpoint,
+        string action,
+        string body,
+        string? security,
+        CancellationToken cancellationToken)
     {
-        // service representa el nodo que contiene el nombre del servicio y un hijo XAddr.
-        var service = document
-            .Descendants()
-            .FirstOrDefault(element =>
-                string.Equals(element.Name.LocalName, serviceElementName, StringComparison.OrdinalIgnoreCase)
-                && element.Elements().Any(child =>
-                    string.Equals(child.Name.LocalName, "XAddr", StringComparison.OrdinalIgnoreCase)));
+        var envelope = $"""
+                      <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+                                  xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
+                        <s:Header>{security ?? string.Empty}</s:Header>
+                        <s:Body>{body}</s:Body>
+                      </s:Envelope>
+                      """;
 
-        // El resultado es exactamente la URL que el firmware publica para el servicio solicitado.
-        return service?
-            .Elements()
-            .FirstOrDefault(child =>
-                string.Equals(child.Name.LocalName, "XAddr", StringComparison.OrdinalIgnoreCase))?
-            .Value
-            .Trim();
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        request.Headers.TryAddWithoutValidation("SOAPAction", action);
+        request.Content = new StringContent(envelope, Encoding.UTF8, "application/soap+xml");
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            return null;
+
+        return await response.Content.ReadAsStringAsync(cancellationToken);
+    }
+
+    private static string? FindServiceXAddr(XDocument document, string serviceName)
+    {
+        // El parser busca el primer elemento cuyo nombre local coincida con el servicio ONVIF solicitado.
+        return document.Descendants()
+            .FirstOrDefault(item => item.Name.LocalName.Equals(serviceName, StringComparison.OrdinalIgnoreCase))?
+            .Descendants()
+            .FirstOrDefault(item => item.Name.LocalName.Equals("XAddr", StringComparison.OrdinalIgnoreCase))?
+            .Value;
     }
 }
