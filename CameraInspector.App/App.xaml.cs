@@ -91,7 +91,7 @@ public partial class App : Application
                     services.AddSingleton<IManufacturerDetector, Network.Detection.OnvifProbeDetector>();
                     services.AddSingleton<IManufacturerResolver, Network.Detection.ManufacturerResolver>();
 
-                    // ---- Capa 5: ONVIF Device + Media + PTZ ----
+                    // ---- Capa 5: ONVIF Device + Media + PTZ + Imaging + Events ----
                     services.AddSingleton<IOnvifDeviceService, Network.OnvifMedia.OnvifDeviceService>();
                     services.AddSingleton<Network.OnvifMedia.OnvifMediaService>();
                     services.AddSingleton<IOnvifMediaService>(sp =>
@@ -99,6 +99,8 @@ public partial class App : Application
                     services.AddSingleton<IStreamUriResolver>(sp =>
                         sp.GetRequiredService<Network.OnvifMedia.OnvifMediaService>());
                     services.AddSingleton<IOnvifPtzService, Network.OnvifMedia.OnvifPtzService>();
+                    services.AddSingleton<IOnvifImagingService, Network.OnvifMedia.OnvifImagingService>();
+                    services.AddSingleton<IOnvifEventService, Network.OnvifMedia.OnvifEventService>();
 
                     // ---- Capa 6: Diagnóstico ----
                     services.AddSingleton<ICameraDiagnosticService, Network.Diagnostics.CameraDiagnosticService>();
