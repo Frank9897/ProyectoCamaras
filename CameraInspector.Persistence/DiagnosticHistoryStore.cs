@@ -7,16 +7,16 @@ namespace CameraInspector.Persistence;
 
 /// <summary>
 /// Implementación de IDiagnosticHistoryStore sobre SQLite/EF Core.
-/// Cada resultado se transforma en una fila de CameraTestEntity para conservar el historial.
+/// Cada método crea su propio DbContext para evitar compartir estado entre operaciones concurrentes.
 /// </summary>
 public sealed class DiagnosticHistoryStore : IDiagnosticHistoryStore
 {
-    private readonly CameraInspectorDbContext _db;
+    private readonly IDbContextFactory<CameraInspectorDbContext> _dbFactory;
 
-    public DiagnosticHistoryStore(CameraInspectorDbContext db)
+    public DiagnosticHistoryStore(IDbContextFactory<CameraInspectorDbContext> dbFactory)
     {
-        // _db representa la unidad de trabajo de EF Core utilizada para guardar y consultar el historial.
-        _db = db;
+        // _dbFactory crea una unidad de trabajo independiente por cada operación.
+        _dbFactory = dbFactory;
     }
 
     public async Task SaveAsync(
@@ -29,6 +29,9 @@ public sealed class DiagnosticHistoryStore : IDiagnosticHistoryStore
 
         if (results.Count == 0)
             return;
+
+        // db representa el contexto SQLite exclusivo de esta ejecución.
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
 
         // testDate representa un instante común para toda la ejecución del diagnóstico.
         var testDate = DateTimeOffset.UtcNow;
@@ -51,11 +54,11 @@ public sealed class DiagnosticHistoryStore : IDiagnosticHistoryStore
             TestDate = testDate
         }).ToList();
 
-        await _db.CameraTests.AddRangeAsync(entities, cancellationToken);
-        await _db.SaveChangesAsync(cancellationToken);
+        await db.CameraTests.AddRangeAsync(entities, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
 
         // camera representa el inventario persistente al que pertenece esta ejecución.
-        var camera = await _db.Cameras
+        var camera = await db.Cameras
             .FirstOrDefaultAsync(c => c.Id == cameraId, cancellationToken);
 
         if (camera is null)
@@ -63,7 +66,7 @@ public sealed class DiagnosticHistoryStore : IDiagnosticHistoryStore
 
         // LastTest permite mostrar rápidamente cuándo fue la última batería ejecutada.
         camera.LastTest = testDate;
-        await _db.SaveChangesAsync(cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<DiagnosticHistoryItem>> GetRecentAsync(
@@ -77,8 +80,11 @@ public sealed class DiagnosticHistoryStore : IDiagnosticHistoryStore
         // safeLimit evita solicitar una cantidad descontrolada de registros desde la UI.
         var safeLimit = Math.Clamp(limit, 1, 500);
 
+        // db representa el contexto exclusivo para esta consulta de solo lectura.
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+
         // rows contiene solo las columnas necesarias para presentar el historial.
-        var rows = await _db.CameraTests
+        var rows = await db.CameraTests
             .AsNoTracking()
             .Where(test => test.CameraId == cameraId)
             .OrderByDescending(test => test.TestDate)
