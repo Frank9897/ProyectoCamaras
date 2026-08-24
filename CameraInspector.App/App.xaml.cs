@@ -1,5 +1,6 @@
 using System.Net.Http;
 using System.Windows;
+using CameraInspector.App.Security;
 using CameraInspector.App.ViewModels;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.Network;
@@ -27,8 +28,7 @@ public partial class App : Application
         {
             MessageBox.Show(
                 $"Error no controlado:\n\n{args.Exception}",
-                "Camera Inspector — Error de arranque",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+                "Camera Inspector — Error de arranque", MessageBoxButton.OK, MessageBoxImage.Error);
             args.Handled = true;
         };
 
@@ -37,8 +37,7 @@ public partial class App : Application
         {
             MessageBox.Show(
                 $"Error fatal:\n\n{args.ExceptionObject}",
-                "Camera Inspector — Error fatal",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+                "Camera Inspector — Error fatal", MessageBoxButton.OK, MessageBoxImage.Error);
         };
     }
 
@@ -58,10 +57,11 @@ public partial class App : Application
 
                     // ---- HTTP compartido ----
                     // HttpClient se reutiliza entre diagnósticos para evitar crear un socket nuevo por cada prueba.
-                    services.AddSingleton(new HttpClient
-                    {
-                        Timeout = TimeSpan.FromSeconds(3)
-                    });
+                    services.AddSingleton(new HttpClient { Timeout = TimeSpan.FromSeconds(3) });
+
+                    // ---- Seguridad ----
+                    // Guarda contraseñas en Windows Credential Manager; SQLite solo conserva CredentialRef.
+                    services.AddSingleton<ICredentialStore, WindowsCredentialStore>();
 
                     // ---- Capa 3: Descubrimiento ----
                     services.AddSingleton<INetworkInterfaceService, NetworkInterfaceService>();
@@ -116,8 +116,7 @@ public partial class App : Application
         {
             MessageBox.Show(
                 $"No se pudo iniciar la aplicación:\n\n{ex}",
-                "Camera Inspector — Error de arranque",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+                "Camera Inspector — Error de arranque", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(-1);
         }
     }
