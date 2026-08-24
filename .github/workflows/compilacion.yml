@@ -31,3 +31,7 @@ jobs:
       # Compila en Release sobre Windows, necesario porque WPF y parte de la capa de red son específicas de Windows.
       - name: Compilar solución
         run: dotnet build CameraInspector.sln --configuration Release --no-restore
+
+      # Ejecuta los tests automatizados para impedir que un cambio regresivo llegue a main aunque compile correctamente.
+      - name: Ejecutar pruebas
+        run: dotnet test CameraInspector.Tests\CameraInspector.Tests.csproj --configuration Release --no-build --no-restore
