@@ -27,7 +27,8 @@ public partial class App : Application
         {
             MessageBox.Show($"Error no controlado:\n\n{args.Exception}",
                 "Camera Inspector — Error de arranque",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
             args.Handled = true;
         };
 
@@ -35,7 +36,8 @@ public partial class App : Application
         {
             MessageBox.Show($"Error fatal:\n\n{args.ExceptionObject}",
                 "Camera Inspector — Error fatal",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
         };
     }
 
@@ -45,21 +47,27 @@ public partial class App : Application
 
         try
         {
-            // _host contiene el contenedor de DI y gestiona el ciclo de vida de los servicios.
+            // _host contiene el contenedor DI y gestiona el ciclo de vida de los servicios.
             _host = Host.CreateDefaultBuilder()
                 .ConfigureServices((_, services) =>
                 {
                     // ---- Persistencia (SQLite) ----
-                    services.AddDbContext<CameraInspectorDbContext>(options =>
+                    // La factory crea un DbContext nuevo por operación y evita compartir una instancia
+                    // no thread-safe entre el ViewModel y tareas asíncronas de la aplicación.
+                    services.AddDbContextFactory<CameraInspectorDbContext>(options =>
                         options.UseSqlite($"Data Source={CameraInspectorDbContext.GetDefaultDbPath()}"));
-                    services.AddScoped<ICameraInventoryStore, CameraInventoryStore>();
-                    services.AddScoped<IDiagnosticHistoryStore, DiagnosticHistoryStore>();
+
+                    // Los stores son seguros como singleton porque cada operación obtiene su propio DbContext.
+                    services.AddSingleton<ICameraInventoryStore, CameraInventoryStore>();
+                    services.AddSingleton<IDiagnosticHistoryStore, DiagnosticHistoryStore>();
+                    services.AddSingleton<ICameraCredentialStore, CameraCredentialStore>();
 
                     // ---- HTTP compartido ----
                     // _httpClient es una sola instancia reutilizable para reducir sockets innecesarios.
                     services.AddSingleton(new HttpClient { Timeout = TimeSpan.FromSeconds(3) });
 
                     // ---- Seguridad ----
+                    // Guarda contraseñas en Windows Credential Manager; SQLite solo conserva CredentialRef.
                     services.AddSingleton<ICredentialStore, WindowsCredentialStore>();
 
                     // ---- Capa 3: Descubrimiento ----
@@ -97,10 +105,11 @@ public partial class App : Application
 
             await _host.StartAsync();
 
-            // scope contiene servicios de corta duración como DbContext y los repositorios SQLite.
-            using (var scope = _host.Services.CreateScope())
+            // La factory se utiliza para crear un contexto temporal exclusivamente para migraciones.
+            await using (var scope = _host.Services.CreateAsyncScope())
             {
-                var db = scope.ServiceProvider.GetRequiredService<CameraInspectorDbContext>();
+                var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<CameraInspectorDbContext>>();
+                await using var db = await factory.CreateDbContextAsync();
                 await db.Database.MigrateAsync();
             }
 
@@ -111,7 +120,8 @@ public partial class App : Application
         {
             MessageBox.Show($"No se pudo iniciar la aplicación:\n\n{ex}",
                 "Camera Inspector — Error de arranque",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
             Shutdown(-1);
         }
     }
