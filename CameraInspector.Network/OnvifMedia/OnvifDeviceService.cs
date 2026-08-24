@@ -10,7 +10,7 @@ namespace CameraInspector.Network.OnvifMedia;
 /// Servicio ONVIF del dispositivo. Resuelve primero el XAddr real de Device Service
 /// y utiliza una ruta convencional únicamente como fallback.
 /// </summary>
-public sealed class OnvifDeviceService : IOnvifDeviceService, IOnvifDeviceCapabilities
+public sealed class OnvifDeviceService : IOnvifDeviceService
 {
     private readonly HttpClient _httpClient;
 
@@ -46,6 +46,7 @@ public sealed class OnvifDeviceService : IOnvifDeviceService, IOnvifDeviceCapabi
 
         return new OnvifDeviceInformation
         {
+            // Cada propiedad conserva el dato reportado por la cámara mediante GetDeviceInformation.
             Manufacturer = element.Elements().FirstOrDefault(item => item.Name.LocalName == "Manufacturer")?.Value,
             Model = element.Elements().FirstOrDefault(item => item.Name.LocalName == "Model")?.Value,
             FirmwareVersion = element.Elements().FirstOrDefault(item => item.Name.LocalName == "FirmwareVersion")?.Value,
@@ -74,6 +75,8 @@ public sealed class OnvifDeviceService : IOnvifDeviceService, IOnvifDeviceCapabi
             return null;
 
         var document = XDocument.Parse(xml);
+
+        // Cada propiedad representa el XAddr real publicado por el dispositivo para ese servicio.
         return new OnvifServiceCapabilities
         {
             DeviceServiceXAddr = endpoint,
@@ -123,6 +126,7 @@ public sealed class OnvifDeviceService : IOnvifDeviceService, IOnvifDeviceCapabi
         string? security,
         CancellationToken cancellationToken)
     {
+        // envelope contiene la solicitud SOAP completa que se enviará al Device Service.
         var envelope = $"""
                       <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
                                   xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
@@ -135,6 +139,7 @@ public sealed class OnvifDeviceService : IOnvifDeviceService, IOnvifDeviceCapabi
         request.Headers.TryAddWithoutValidation("SOAPAction", action);
         request.Content = new StringContent(envelope, Encoding.UTF8, "application/soap+xml");
 
+        // response conserva la respuesta HTTP hasta que terminemos de leer su contenido.
         using var response = await _httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
             return null;
