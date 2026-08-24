@@ -75,6 +75,23 @@ public sealed class CameraCredentialStore : ICameraCredentialStore
         await _db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task MarkVerifiedAsync(
+        int cameraId,
+        DateTimeOffset verifiedAt,
+        CancellationToken cancellationToken = default)
+    {
+        // entity representa la relación de credencial cuya última verificación vamos a actualizar.
+        var entity = await _db.CameraCredentials
+            .FirstOrDefaultAsync(item => item.CameraId == cameraId, cancellationToken);
+
+        if (entity is null)
+            return;
+
+        // LastVerifiedAt cambia solamente después de una operación que confirmó que la credencial funciona.
+        entity.LastVerifiedAt = verifiedAt;
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task DeleteAsync(
         int cameraId,
         CancellationToken cancellationToken = default)
