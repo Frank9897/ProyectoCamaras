@@ -76,7 +76,7 @@ public sealed class OnvifMediaService : IStreamUriResolver, IOnvifMediaService
         var body = $"""
             <trt:GetStreamUri xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
               <trt:StreamSetup>
-                <tt:Stream xmlns:tt="http://www.onvif.org/ver10/schema">RTP-Unicast</tt:Stream>
+                <tt:Stream xmlns:tt="http://www.onvif.org/ver10/schema">RTP-Unicast</tt>
                 <tt:Transport xmlns:tt="http://www.onvif.org/ver10/schema">
                   <tt:Protocol>RTSP</tt:Protocol>
                 </tt:Transport>
@@ -210,6 +210,17 @@ public sealed class OnvifMediaService : IStreamUriResolver, IOnvifMediaService
         if (string.IsNullOrWhiteSpace(token))
             return null;
 
+        // videoSourceConfiguration identifica la fuente de imagen asociada al perfil.
+        var videoSourceConfiguration = profile
+            .Descendants()
+            .FirstOrDefault(element => element.Name.LocalName == "VideoSourceConfiguration");
+
+        // videoSourceToken es el identificador requerido posteriormente por Imaging Service.
+        var videoSourceToken = videoSourceConfiguration?
+            .Elements()
+            .FirstOrDefault(element => element.Name.LocalName == "SourceToken")?
+            .Value;
+
         // videoEncoder contiene la configuración de codificación de video asociada al perfil.
         var videoEncoder = profile
             .Descendants()
@@ -240,6 +251,7 @@ public sealed class OnvifMediaService : IStreamUriResolver, IOnvifMediaService
                 .FirstOrDefault(element => element.Name.LocalName == "Name")?
                 .Value
                 .Trim(),
+            VideoSourceToken = string.IsNullOrWhiteSpace(videoSourceToken) ? null : videoSourceToken.Trim(),
             Width = width,
             Height = height,
             Encoding = string.IsNullOrWhiteSpace(encoding) ? null : encoding.Trim(),
