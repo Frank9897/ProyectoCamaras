@@ -1,7 +1,6 @@
 using CameraInspector.Core.Models;
 using LibVLCSharp.Shared;
 
-authorityCheck
 namespace CameraInspector.Video;
 
 /// <summary>
