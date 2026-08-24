@@ -66,6 +66,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <DockPanel Grid.Row="0" Margin="0,0,0,10">
@@ -110,7 +111,7 @@
                     <TextBlock Grid.Row="1" Grid.Column="5" Text="{Binding SerialNumber}" FontFamily="Consolas" Margin="0,8,0,0"/>
                 </Grid>
 
-                <!-- Capacidades ONVIF. Separamos etiqueta y valor porque WPF no admite Binding embebido dentro de texto literal. -->
+                <!-- Capacidades ONVIF. -->
                 <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,12,0,0">
                     <StackPanel Orientation="Horizontal" Margin="0,0,22,0">
                         <TextBlock Text="ONVIF: " FontWeight="Bold" Foreground="{StaticResource TextDimBrush}"/>
@@ -153,16 +154,37 @@
                     <TextBlock Grid.Row="2" Grid.Column="0" Text="PTZ / EVENTS" FontWeight="Bold" Foreground="{StaticResource TextDimBrush}" Margin="0,6,0,0"/>
                     <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding OnvifPtzServiceXAddr}" FontFamily="Consolas" TextWrapping="Wrap" Margin="0,6,0,0"/>
                 </Grid>
+
+                <!-- Pruebas de streams resueltas por ONVIF. -->
+                <Grid Grid.Row="4" Margin="0,14,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="170"/>
+                        <ColumnDefinition Width="170"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Orientation="Horizontal">
+                        <Button Content="▶ Main Stream"
+                                Command="{Binding DataContext.GetMainStreamUriCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                Margin="0,0,8,0"/>
+                        <Button Content="▶ Sub Stream"
+                                Command="{Binding DataContext.GetSubStreamUriCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                        <TextBlock Text="MAIN" FontWeight="Bold" Foreground="{StaticResource TextDimBrush}"/>
+                        <TextBlock Text="{Binding DataContext.ResolvedMainStream.Resolution, RelativeSource={RelativeSource AncestorType=Window}}" FontFamily="Consolas"/>
+                        <TextBlock Text="{Binding DataContext.ResolvedMainStream.Encoding, RelativeSource={RelativeSource AncestorType=Window}}" FontFamily="Consolas"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Margin="8,0,0,0">
+                        <TextBlock Text="SUB" FontWeight="Bold" Foreground="{StaticResource TextDimBrush}"/>
+                        <TextBlock Text="{Binding DataContext.ResolvedSubStream.Resolution, RelativeSource={RelativeSource AncestorType=Window}}" FontFamily="Consolas"/>
+                        <TextBlock Text="{Binding DataContext.ResolvedSubStream.Encoding, RelativeSource={RelativeSource AncestorType=Window}}" FontFamily="Consolas"/>
+                    </StackPanel>
+                </Grid>
             </Grid>
         </Border>
 
-        <!-- Barra inferior con acciones sobre la cámara seleccionada y estadísticas del escaneo. -->
+        <!-- Barra inferior con estadísticas del escaneo. -->
         <DockPanel Grid.Row="4" Margin="0,10,0,0">
-            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                <Button Content="▶ Obtener URL de stream (Capa 5)"
-                        Command="{Binding GetStreamUriCommand}" Margin="10,0,0,0"/>
-            </StackPanel>
-
             <TextBlock FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}">
                 <Run Text="Total: "/><Run Text="{Binding Devices.Count, Mode=OneWay}"/>
                 <Run Text=" dispositivos · Ping/ARP + WS-Discovery + ONVIF Device/Media"/>
