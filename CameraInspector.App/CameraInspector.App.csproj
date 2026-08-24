@@ -17,12 +17,14 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="LibVLCSharp.WPF" Version="3.10.1" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\CameraInspector.Core\CameraInspector.Core.csproj" />
     <ProjectReference Include="..\CameraInspector.Network\CameraInspector.Network.csproj" />
     <ProjectReference Include="..\CameraInspector.Persistence\CameraInspector.Persistence.csproj" />
+    <ProjectReference Include="..\CameraInspector.Video\CameraInspector.Video.csproj" />
   </ItemGroup>
 
 </Project>
