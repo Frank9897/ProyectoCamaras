@@ -9,8 +9,14 @@ namespace CameraInspector.Video;
 /// </summary>
 public sealed class LibVlcVideoPlayerService : IVideoPlayerService
 {
-    /// <summary>Instancia global de LibVLC utilizada para crear medios y reproductores.</summary>
+    /// <summary>Instancia de LibVLC utilizada para crear medios y reproductores.</summary>
     private readonly LibVLC _libVlc;
+
+    /// <summary>
+    /// Medio RTSP actualmente asociado al reproductor.
+    /// Se conserva mientras está activo para mantener correctamente su ciclo de vida nativo.
+    /// </summary>
+    private Media? _currentMedia;
 
     /// <summary>Instancia que controla la reproducción y entrega los frames al VideoView de WPF.</summary>
     public MediaPlayer Player { get; }
@@ -20,8 +26,8 @@ public sealed class LibVlcVideoPlayerService : IVideoPlayerService
         // Initialize localiza las bibliotecas nativas incluidas por VideoLAN.LibVLC.Windows.
         Core.Initialize();
 
-        // _libVlc contiene el motor multimedia. Los argumentos reducen buffering excesivo
-        // y obligan a RTSP sobre TCP, que suele ser más estable para una herramienta de diagnóstico.
+        // _libVlc contiene el motor multimedia. El cache y RTSP-TCP priorizan estabilidad
+        // para redes CCTV frente a una latencia mínima.
         _libVlc = new LibVLC(
             "--quiet",
             "--network-caching=500",
@@ -38,33 +44,40 @@ public sealed class LibVlcVideoPlayerService : IVideoPlayerService
     {
         ArgumentNullException.ThrowIfNull(stream);
 
-        // Stop libera la reproducción anterior antes de abrir otro stream.
+        // Stop detiene la reproducción anterior y libera el Media nativo anterior.
         Stop();
 
-        // media representa la fuente RTSP concreta que LibVLC va a abrir.
-        using var media = new Media(_libVlc, stream.RtspUri, FromType.FromLocation);
+        // _currentMedia representa la nueva fuente RTSP y se mantiene viva mientras se reproduce.
+        _currentMedia = new Media(_libVlc, stream.RtspUri, FromType.FromLocation);
 
-        // La autenticación se pasa como opciones de LibVLC y no se persiste en el modelo.
+        // La autenticación se pasa como opciones de LibVLC y no se persiste en CameraStreamInfo.
         if (!string.IsNullOrWhiteSpace(username))
-            media.AddOption($":rtsp-user={EscapeOption(username)}");
+            _currentMedia.AddOption($":rtsp-user={EscapeOption(username)}");
 
         if (!string.IsNullOrWhiteSpace(password))
-            media.AddOption($":rtsp-pwd={EscapeOption(password)}");
+            _currentMedia.AddOption($":rtsp-pwd={EscapeOption(password)}");
 
         // MediaPlayer.Play inicia la conexión RTSP y entrega el video al VideoView asociado.
-        Player.Play(media);
+        Player.Play(_currentMedia);
     }
 
     public void Stop()
     {
-        // IsPlaying evita ejecutar Stop innecesariamente cuando no existe una reproducción activa.
+        // IsPlaying indica si existe una reproducción activa que deba detenerse.
         if (Player.IsPlaying)
             Player.Stop();
+
+        // Liberamos el Media anterior después de detener el reproductor.
+        _currentMedia?.Dispose();
+        _currentMedia = null;
     }
 
     public void Dispose()
     {
-        // Player debe liberarse antes del motor LibVLC para evitar recursos nativos pendientes.
+        // Stop libera el medio actualmente abierto antes de destruir Player y LibVLC.
+        Stop();
+
+        // Player debe liberarse antes del motor LibVLC para cerrar correctamente recursos nativos.
         Player.Dispose();
         _libVlc.Dispose();
     }
