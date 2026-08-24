@@ -82,9 +82,8 @@ public sealed class LibVlcVideoPlayerService : IVideoPlayerService
         if (!Player.IsPlaying)
             return false;
 
-        // LibVLC devuelve 0 cuando la solicitud de snapshot pudo iniciarse correctamente.
-        var result = Player.TakeSnapshot(0, filePath, width, height);
-        return result == 0;
+        // LibVLCSharp devuelve true cuando la solicitud de captura fue aceptada por el reproductor.
+        return Player.TakeSnapshot(0, filePath, width, height);
     }
 
     public void Dispose()
