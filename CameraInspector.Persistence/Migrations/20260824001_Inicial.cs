@@ -9,6 +9,7 @@ namespace CameraInspector.Persistence.Migrations;
 /// Migración inicial de SQLite.
 /// Crea inventario, interfaces, historial de pruebas, eventos y referencias de credenciales.
 /// </summary>
+[Migration("20260824001_Inicial")]
 public partial class Inicial : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
