@@ -53,26 +53,22 @@ public sealed class OnvifMediaService : IStreamUriResolver
             .Select(profile =>
             {
                 var token = profile.Attribute("token")?.Value;
-                var width = profile
+                var resolution = profile
                     .Descendants()
-                    .FirstOrDefault(element => element.Name.LocalName == "Resolution")?
-                    .Elements()
-                    .FirstOrDefault(element => element.Name.LocalName == "Width")?.Value;
-                var height = profile
-                    .Descendants()
-                    .FirstOrDefault(element => element.Name.LocalName == "Resolution")?
-                    .Elements()
-                    .FirstOrDefault(element => element.Name.LocalName == "Height")?.Value;
+                    .FirstOrDefault(element => element.Name.LocalName == "Resolution");
 
-                _ = int.TryParse(width, out var parsedWidth);
-                _ = int.TryParse(height, out var parsedHeight);
+                _ = int.TryParse(
+                    resolution?.Elements().FirstOrDefault(element => element.Name.LocalName == "Width")?.Value,
+                    out var width);
+                _ = int.TryParse(
+                    resolution?.Elements().FirstOrDefault(element => element.Name.LocalName == "Height")?.Value,
+                    out var height);
 
                 return new
                 {
-                    Element = profile,
                     Token = token,
-                    Width = parsedWidth,
-                    Height = parsedHeight
+                    Width = width,
+                    Height = height
                 };
             })
             .Where(profile => !string.IsNullOrWhiteSpace(profile.Token))
@@ -82,11 +78,14 @@ public sealed class OnvifMediaService : IStreamUriResolver
             return null;
 
         // Preferimos el perfil con mayor resolución. Si el firmware no informa resolución,
-        // todos tendrán 0x0 y se conserva el orden anunciado por la cámara.
+        // se conserva el primer perfil anunciado.
         var mainProfile = profiles
-            .OrderByDescending(profile => (long)profile.Width * profile.Height)
-            .First();
+            .Select((profile, index) => new { profile, index })
+            .OrderByDescending(item => (long)item.profile.Width * item.profile.Height)
+            .ThenBy(item => item.index)
+            .First().profile;
 
+        var escapedToken = System.Security.SecurityElement.Escape(mainProfile.Token)!;
         var getStreamUriBody = $"""
             <trt:GetStreamUri xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
               <trt:StreamSetup>
@@ -95,9 +94,9 @@ public sealed class OnvifMediaService : IStreamUriResolver
                   <tt:Protocol>RTSP</tt:Protocol>
                 </tt:Transport>
               </trt:StreamSetup>
-              <trt:ProfileToken>{System.Security.SecurityElement.Escape(mainProfile.Token)} </trt:ProfileToken>
+              <trt:ProfileToken>{escapedToken}</trt:ProfileToken>
             </trt:GetStreamUri>
-            """.Replace($"{System.Environment.NewLine}              <trt:ProfileToken>{System.Security.SecurityElement.Escape(mainProfile.Token)} </trt:ProfileToken>", $"{System.Environment.NewLine}              <trt:ProfileToken>{System.Security.SecurityElement.Escape(mainProfile.Token)}</trt:ProfileToken>");
+            """;
 
         var streamDoc = await OnvifSoapClient.PostAsync(
             endpoint,
