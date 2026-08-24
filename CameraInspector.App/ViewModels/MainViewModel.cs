@@ -26,8 +26,17 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly ICameraCredentialStore _cameraCredentialStore;
     private readonly IVideoPlayerService _videoPlayerService;
 
-    /// <summary>Dispositivos descubiertos durante el escaneo actual.</summary>
+    /// <summary>
+    /// Lista visible para el técnico. Solo contiene dispositivos con evidencia de cámara.
+    /// Los hosts de infraestructura permanecen fuera de esta colección para no ensuciar la UI.
+    /// </summary>
     public ObservableCollection<DeviceViewModel> Devices { get; } = new();
+
+    /// <summary>
+    /// Dispositivos descubiertos internamente durante el escaneo.
+    /// Esta colección permite conservar evidencia aunque el equipo no sea una cámara.
+    /// </summary>
+    private readonly List<DeviceViewModel> _allDiscoveredDevices = new();
 
     /// <summary>Resultados de la última batería de diagnóstico ejecutada.</summary>
     public ObservableCollection<DiagnosticResult> DiagnosticResults { get; } = new();
@@ -177,6 +186,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         IsScanning = true;
         Devices.Clear();
+        _allDiscoveredDevices.Clear();
         DiagnosticResults.Clear();
         DiagnosticHistory.Clear();
         ResolvedMainStream = null;
@@ -190,18 +200,21 @@ public sealed partial class MainViewModel : ObservableObject
             {
                 if (progress.NewlyFound is not null)
                 {
-                    // device es el objeto técnico que se irá completando progresivamente.
+                    // device representa cualquier host descubierto. Primero se conserva internamente.
                     var device = progress.NewlyFound;
-                    // vm representa el dispositivo en la interfaz WPF.
+
+                    // vm mantiene el binding WPF aunque el dispositivo termine siendo ocultado por no ser cámara.
                     var vm = new DeviceViewModel(device);
-                    Devices.Add(vm);
-                    _ = ResolveDeviceAsync(device, vm, cancellationToken);
+                    _allDiscoveredDevices.Add(vm);
+
+                    // La resolución determina si el host tiene evidencia suficiente para entrar en la lista visible.
+                    await ResolveDeviceAsync(device, vm, cancellationToken);
                 }
 
-                StatusText = $"Escaneando... {progress.Scanned} dispositivos de {progress.Total} IPs candidatas";
+                StatusText = $"Escaneando... {progress.Scanned} dispositivos de {progress.Total} IPs candidatas · Cámaras visibles: {Devices.Count}";
             }
 
-            StatusText = $"Escaneo completo: {Devices.Count} dispositivos encontrados.";
+            StatusText = $"Escaneo completo: {Devices.Count} cámaras/dispositivos de imagen encontrados.";
         }
         catch (OperationCanceledException)
         {
@@ -215,6 +228,11 @@ public sealed partial class MainViewModel : ObservableObject
 
     private bool CanScan() => !IsScanning && !IsDiagnosing;
 
+    /// <summary>
+    /// Resuelve la identidad del host y decide si debe mostrarse en la lista principal.
+    /// La UI solo expone cámaras ONVIF o candidatos RTSP; routers, módems, switches y hosts
+    /// que solo respondan a Ping/ARP/HTTP permanecen ocultos.
+    /// </summary>
     private async Task ResolveDeviceAsync(
         DiscoveredDevice device,
         DeviceViewModel viewModel,
@@ -222,40 +240,62 @@ public sealed partial class MainViewModel : ObservableObject
     {
         try
         {
+            // Ejecutamos todos los detectores para obtener la mayor cantidad de evidencia posible.
             await _manufacturerResolver.ResolveAsync(device, cancellationToken);
             viewModel.Refresh();
 
-            if (!device.OnvifSupported)
+            // isCameraCandidate será verdadero para una cámara ONVIF confirmada o para un dispositivo que
+            // exponga RTSP, que es la señal genérica que utilizaremos para cubrir cámaras no-ONVIF.
+            var isCameraCandidate = device.OnvifSupported || device.RtspSupported;
+
+            if (!isCameraCandidate)
                 return;
 
-            var info = await _onvifDeviceService.GetDeviceInformationAsync(
-                device, null, null, cancellationToken);
+            // Una vez obtenida evidencia de cámara, agregamos el dispositivo a la colección visible.
+            // Dispatcher no es necesario porque el método se ejecuta desde la cadena async de WPF.
+            if (!Devices.Contains(viewModel))
+                Devices.Add(viewModel);
 
-            if (info is not null)
+            // ONVIF aporta información mucho más fiable que banners genéricos de HTTP.
+            if (device.OnvifSupported)
             {
-                // Los datos ONVIF tienen prioridad porque provienen directamente del dispositivo.
-                device.Manufacturer = info.Manufacturer ?? device.Manufacturer;
-                device.Model = info.Model ?? device.Model;
-                device.FirmwareVersion = info.FirmwareVersion ?? device.FirmwareVersion;
-                device.SerialNumber = info.SerialNumber ?? device.SerialNumber;
-                viewModel.Refresh();
+                var info = await _onvifDeviceService.GetDeviceInformationAsync(
+                    device,
+                    null,
+                    null,
+                    cancellationToken);
+
+                if (info is not null)
+                {
+                    // Los datos ONVIF tienen prioridad porque provienen directamente del dispositivo.
+                    device.Manufacturer = info.Manufacturer ?? device.Manufacturer;
+                    device.Model = info.Model ?? device.Model;
+                    device.FirmwareVersion = info.FirmwareVersion ?? device.FirmwareVersion;
+                    device.SerialNumber = info.SerialNumber ?? device.SerialNumber;
+                    viewModel.Refresh();
+                }
+
+                // capabilities contiene los endpoints publicados realmente por la cámara.
+                var capabilities = await _onvifDeviceService.GetCapabilitiesAsync(
+                    device,
+                    null,
+                    null,
+                    cancellationToken);
+
+                if (capabilities is not null)
+                {
+                    device.OnvifDeviceServiceXAddr = capabilities.DeviceServiceXAddr ?? device.OnvifDeviceServiceXAddr;
+                    device.OnvifMediaServiceXAddr = capabilities.MediaServiceXAddr;
+                    device.OnvifImagingServiceXAddr = capabilities.ImagingServiceXAddr;
+                    device.OnvifPtzServiceXAddr = capabilities.PtzServiceXAddr;
+                    device.OnvifEventsServiceXAddr = capabilities.EventsServiceXAddr;
+                    device.OnvifSupported = capabilities.HasMediaService || device.OnvifSupported;
+                    viewModel.Refresh();
+                }
             }
 
-            var capabilities = await _onvifDeviceService.GetCapabilitiesAsync(
-                device, null, null, cancellationToken);
-
-            if (capabilities is null)
-                return;
-
-            device.OnvifDeviceServiceXAddr = capabilities.DeviceServiceXAddr ?? device.OnvifDeviceServiceXAddr;
-            device.OnvifMediaServiceXAddr = capabilities.MediaServiceXAddr;
-            device.OnvifImagingServiceXAddr = capabilities.ImagingServiceXAddr;
-            device.OnvifPtzServiceXAddr = capabilities.PtzServiceXAddr;
-            device.OnvifEventsServiceXAddr = capabilities.EventsServiceXAddr;
-            device.OnvifSupported = capabilities.HasMediaService || device.OnvifSupported;
-            viewModel.Refresh();
-
-            if (device.OnvifSupported)
+            // Solo persistimos cuando existe evidencia de dispositivo de imagen.
+            if (device.OnvifSupported || device.RtspSupported)
             {
                 // cameraId es la identidad persistente usada por credenciales e historial.
                 var cameraId = await _inventoryStore.UpsertAsync(device, cancellationToken);
@@ -268,7 +308,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch
         {
-            // El enriquecimiento es complementario: una excepción no elimina el dispositivo ya descubierto.
+            // Un error de enriquecimiento no elimina el dispositivo de la lista si ya fue clasificado como cámara.
         }
     }
 
@@ -561,13 +601,7 @@ public sealed partial class MainViewModel : ObservableObject
         if (SelectedDevice?.CameraId is not int cameraId)
             return;
 
-        DiagnosticHistory.Clear();
-
-        // history contiene como máximo 100 registros para mantener la UI ligera.
-        var history = await _diagnosticHistoryStore.GetRecentAsync(cameraId, 100);
-        foreach (var item in history)
-            DiagnosticHistory.Add(item);
-
+        await RefreshHistoryAsync(cameraId);
         StatusText = $"Historial actualizado: {DiagnosticHistory.Count} registros.";
     }
 
