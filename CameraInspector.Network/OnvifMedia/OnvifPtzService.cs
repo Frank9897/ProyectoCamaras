@@ -1,6 +1,6 @@
 using System.Globalization;
+using System.Security;
 using System.Text;
-using System.Xml.Linq;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
 
@@ -182,6 +182,5 @@ public sealed class OnvifPtzService : IOnvifPtzService
         return response.IsSuccessStatusCode;
     }
 
-    private static string EscapeXml(string value) =>
-        new XElement("Value", value).Value;
+    private static string EscapeXml(string value) => SecurityElement.Escape(value) ?? string.Empty;
 }
