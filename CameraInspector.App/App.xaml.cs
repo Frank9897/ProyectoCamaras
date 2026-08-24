@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Windows;
 using CameraInspector.App.ViewModels;
 using CameraInspector.Core.Interfaces;
@@ -11,8 +12,8 @@ using Microsoft.Extensions.Hosting;
 namespace CameraInspector.App;
 
 /// <summary>
-/// Punto de arranque de la aplicación. En vez de instanciar servicios "a mano",
-/// usamos un Generic Host para mantener las capas desacopladas y facilitar futuros providers.
+/// Punto de arranque de la aplicación.
+/// El Generic Host centraliza DI, persistencia y ciclo de vida de los servicios.
 /// </summary>
 public partial class App : Application
 {
@@ -20,8 +21,7 @@ public partial class App : Application
 
     public App()
     {
-        // Capturamos excepciones no controladas del hilo de UI para mostrar un mensaje visible
-        // al técnico en lugar de cerrar silenciosamente la aplicación.
+        // Capturamos excepciones no controladas del hilo de UI para mostrar un mensaje visible al técnico.
         DispatcherUnhandledException += (_, args) =>
         {
             MessageBox.Show(
@@ -47,14 +47,20 @@ public partial class App : Application
 
         try
         {
-            // _host contiene el contenedor de inyección de dependencias y el ciclo de vida
-            // de los servicios de la aplicación.
+            // _host contiene el contenedor de inyección de dependencias y el ciclo de vida de la aplicación.
             _host = Host.CreateDefaultBuilder()
                 .ConfigureServices((_, services) =>
                 {
                     // ---- Persistencia (SQLite) ----
                     services.AddDbContext<CameraInspectorDbContext>(options =>
                         options.UseSqlite($"Data Source={CameraInspectorDbContext.GetDefaultDbPath()}"));
+
+                    // ---- HTTP compartido ----
+                    // HttpClient se reutiliza entre diagnósticos para evitar crear un socket nuevo por cada prueba.
+                    services.AddSingleton(new HttpClient
+                    {
+                        Timeout = TimeSpan.FromSeconds(3)
+                    });
 
                     // ---- Capa 3: Descubrimiento ----
                     services.AddSingleton<INetworkInterfaceService, NetworkInterfaceService>();
@@ -78,8 +84,8 @@ public partial class App : Application
                     services.AddSingleton<IStreamUriResolver>(sp =>
                         sp.GetRequiredService<Network.OnvifMedia.OnvifMediaService>());
 
-                    // ---- Capa 5 (Providers propietarios): se agregan en Fase 4 del plan ----
-                    // services.AddScoped<ICameraProvider, HikvisionProvider>();
+                    // ---- Capa 6: Diagnóstico ----
+                    services.AddSingleton<ICameraDiagnosticService, Network.Diagnostics.CameraDiagnosticService>();
 
                     // ---- ViewModels / Ventanas ----
                     services.AddSingleton<MainViewModel>();
@@ -89,15 +95,14 @@ public partial class App : Application
 
             await _host.StartAsync();
 
-            // Aplica migraciones automáticamente: el técnico nunca configura la base a mano.
+            // db representa el contexto SQLite utilizado para crear/actualizar la base local.
             using (var scope = _host.Services.CreateScope())
             {
-                // db representa el contexto de SQLite utilizado para crear/actualizar la base local.
                 var db = scope.ServiceProvider.GetRequiredService<CameraInspectorDbContext>();
                 await db.Database.MigrateAsync();
             }
 
-            // mainWindow contiene la ventana principal y recibe automáticamente MainViewModel mediante DI.
+            // mainWindow contiene la ventana principal y recibe MainViewModel mediante DI.
             var mainWindow = _host.Services.GetRequiredService<MainWindow>();
             mainWindow.Show();
         }
@@ -119,6 +124,7 @@ public partial class App : Application
             await _host.StopAsync();
             _host.Dispose();
         }
+
         base.OnExit(e);
     }
 }
