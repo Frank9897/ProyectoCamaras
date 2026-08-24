@@ -1,0 +1,54 @@
+<Window x:Class="CameraInspector.App.EventsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Camera Inspector — Events"
+        Width="760"
+        Height="500"
+        MinWidth="640"
+        MinHeight="420"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BgBrush}"
+        Foreground="{StaticResource TextBrush}">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="EVENTOS // ONVIF PULLPOINT"
+                   FontFamily="Consolas"
+                   FontSize="16"
+                   FontWeight="Bold"
+                   Foreground="{StaticResource AccentBrush}"/>
+
+        <TextBlock Grid.Row="1"
+                   Margin="0,8,0,10"
+                   Text="La consulta utiliza PullMessages: la aplicación solicita eventos a la cámara y no abre puertos entrantes en el equipo técnico."
+                   Foreground="{StaticResource TextDimBrush}"
+                   TextWrapping="Wrap"/>
+
+        <DataGrid Grid.Row="2"
+                  ItemsSource="{Binding Events}"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  CanUserAddRows="False"
+                  HeadersVisibility="Column"
+                  HorizontalScrollBarVisibility="Auto"
+                  VerticalScrollBarVisibility="Auto">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="HORA" Binding="{Binding Time}" Width="165"/>
+                <DataGridTextColumn Header="TOPIC" Binding="{Binding Topic}" Width="240"/>
+                <DataGridTextColumn Header="SOURCE" Binding="{Binding Source}" Width="170"/>
+                <DataGridTextColumn Header="DATA" Binding="{Binding Data}" Width="*"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Margin="0,0,12,0" Foreground="{StaticResource TextDimBrush}"/>
+            <Button Content="ACTUALIZAR" Command="{Binding RefreshCommand}" Width="105" Margin="0,0,8,0" Style="{StaticResource PrimaryButton}"/>
+            <Button Content="CERRAR" Command="{Binding CloseCommand}" Width="90"/>
+        </StackPanel>
+    </Grid>
+</Window>
