@@ -12,6 +12,9 @@ public sealed partial class DeviceViewModel : ObservableObject
     // _device mantiene la referencia al modelo técnico real compartido por las capas.
     private readonly DiscoveredDevice _device;
 
+    // _cameraId conserva el identificador asignado por SQLite cuando el dispositivo ya forma parte del inventario.
+    private int? _cameraId;
+
     /// <summary>Acceso al modelo real para que servicios externos puedan operar sobre él.</summary>
     public DiscoveredDevice Device => _device;
 
@@ -23,6 +26,9 @@ public sealed partial class DeviceViewModel : ObservableObject
     public string Model => _device.Model ?? "—";
     public string Firmware => _device.FirmwareVersion ?? "—";
     public string SerialNumber => _device.SerialNumber ?? "—";
+
+    /// <summary>Identificador de la cámara dentro de SQLite; null significa que aún no está inventariada.</summary>
+    public int? CameraId => _cameraId;
 
     /// <summary>Indica que un detector o servicio ONVIF confirmó compatibilidad.</summary>
     public bool OnvifSupported => _device.OnvifSupported;
@@ -45,34 +51,38 @@ public sealed partial class DeviceViewModel : ObservableObject
     /// <summary>Indica la existencia del Events Service ONVIF.</summary>
     public bool HasEventsService => _device.HasOnvifEventsService;
 
-    /// <summary>URL exacta del Device Service ONVIF.</summary>
     public string OnvifDeviceServiceXAddr => _device.OnvifDeviceServiceXAddr ?? "—";
-
-    /// <summary>URL exacta del Media Service ONVIF.</summary>
     public string OnvifMediaServiceXAddr => _device.OnvifMediaServiceXAddr ?? "—";
-
-    /// <summary>URL exacta del Imaging Service ONVIF.</summary>
     public string OnvifImagingServiceXAddr => _device.OnvifImagingServiceXAddr ?? "—";
-
-    /// <summary>URL exacta del PTZ Service ONVIF.</summary>
     public string OnvifPtzServiceXAddr => _device.OnvifPtzServiceXAddr ?? "—";
-
-    /// <summary>URL exacta del Events Service ONVIF.</summary>
     public string OnvifEventsServiceXAddr => _device.OnvifEventsServiceXAddr ?? "—";
 
     public DeviceStatus Status => _device.Status;
     public DateTimeOffset LastSeenAt => _device.LastSeenAt;
 
     /// <summary>
-    /// Notifica a WPF que el modelo técnico cambió después de una operación asíncrona.
+    /// Asigna el identificador SQLite y notifica a la UI que el dispositivo ya forma parte del inventario.
     /// </summary>
+    public void SetCameraId(int cameraId)
+    {
+        // cameraId debe ser positivo porque SQLite comienza sus claves de identidad en valores válidos mayores que cero.
+        if (cameraId <= 0)
+            throw new ArgumentOutOfRangeException(nameof(cameraId));
+
+        // _cameraId cambia de null a la identidad persistente de esta cámara.
+        _cameraId = cameraId;
+        OnPropertyChanged(nameof(CameraId));
+    }
+
     public void Refresh()
     {
-        // Cada notificación obliga al binding correspondiente a releer el valor actualizado.
+        OnPropertyChanged(nameof(IpAddress));
+        OnPropertyChanged(nameof(MacAddress));
         OnPropertyChanged(nameof(Manufacturer));
         OnPropertyChanged(nameof(Model));
         OnPropertyChanged(nameof(Firmware));
         OnPropertyChanged(nameof(SerialNumber));
+        OnPropertyChanged(nameof(CameraId));
         OnPropertyChanged(nameof(OnvifSupported));
         OnPropertyChanged(nameof(RtspSupported));
         OnPropertyChanged(nameof(DiscoveredByOnvif));
