@@ -7,8 +7,8 @@ using CommunityToolkit.Mvvm.Input;
 namespace CameraInspector.App.ViewModels;
 
 /// <summary>
-/// ViewModel de la pantalla "Escanear".
-/// Coordina descubrimiento, identificación y enriquecimiento técnico progresivo de cada dispositivo.
+/// ViewModel de la pantalla principal.
+/// Coordina descubrimiento, identificación ONVIF y las primeras pruebas de stream.
 /// </summary>
 public sealed partial class MainViewModel : ObservableObject
 {
@@ -30,8 +30,21 @@ public sealed partial class MainViewModel : ObservableObject
     private NetworkInterfaceInfo? _selectedInterface;
 
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(GetStreamUriCommand))]
+    [NotifyCanExecuteChangedFor(nameof(GetMainStreamUriCommand))]
+    [NotifyCanExecuteChangedFor(nameof(GetSubStreamUriCommand))]
     private DeviceViewModel? _selectedDevice;
+
+    /// <summary>
+    /// Último stream principal resuelto manualmente para la cámara seleccionada.
+    /// </summary>
+    [ObservableProperty]
+    private CameraStreamInfo? _resolvedMainStream;
+
+    /// <summary>
+    /// Último stream secundario resuelto manualmente para la cámara seleccionada.
+    /// </summary>
+    [ObservableProperty]
+    private CameraStreamInfo? _resolvedSubStream;
 
     public ObservableCollection<NetworkInterfaceInfo> AvailableInterfaces { get; } = new();
 
@@ -42,25 +55,32 @@ public sealed partial class MainViewModel : ObservableObject
         IOnvifDeviceService onvifDeviceService,
         IStreamUriResolver streamUriResolver)
     {
-        // _interfaceService permite enumerar las interfaces de red activas que pueden escanearse.
+        // _interfaceService permite enumerar las interfaces de red activas.
         _interfaceService = interfaceService;
 
-        // _scanner ejecuta el descubrimiento físico/lógico: Ping, ARP y WS-Discovery.
+        // _scanner ejecuta Ping, ARP y WS-Discovery sin acoplar la UI a la infraestructura de red.
         _scanner = scanner;
 
-        // _manufacturerResolver combina evidencias de OUI, HTTP y ONVIF.
+        // _manufacturerResolver combina OUI, HTTP y ONVIF para aumentar la confianza de identificación.
         _manufacturerResolver = manufacturerResolver;
 
-        // _onvifDeviceService consulta identidad y capacidades oficiales del Device Service.
+        // _onvifDeviceService consulta identidad y capacidades publicadas por el Device Service.
         _onvifDeviceService = onvifDeviceService;
 
-        // _streamUriResolver obtiene las URLs RTSP cuando el técnico pida visualizar un stream.
+        // _streamUriResolver resuelve las URI RTSP de Main/Sub mediante Media Service ONVIF.
         _streamUriResolver = streamUriResolver;
 
         foreach (var nic in _interfaceService.GetActiveInterfaces())
             AvailableInterfaces.Add(nic);
 
         SelectedInterface = AvailableInterfaces.FirstOrDefault();
+    }
+
+    partial void OnSelectedDeviceChanged(DeviceViewModel? value)
+    {
+        // Al seleccionar otra cámara, limpiamos los resultados de streams de la selección anterior.
+        ResolvedMainStream = null;
+        ResolvedSubStream = null;
     }
 
     [RelayCommand(CanExecute = nameof(CanScan))]
@@ -74,6 +94,8 @@ public sealed partial class MainViewModel : ObservableObject
 
         IsScanning = true;
         Devices.Clear();
+        ResolvedMainStream = null;
+        ResolvedSubStream = null;
         StatusText = $"Escaneando {SelectedInterface}...";
 
         try
@@ -82,19 +104,18 @@ public sealed partial class MainViewModel : ObservableObject
             {
                 if (progress.NewlyFound is not null)
                 {
-                    // device contiene el modelo técnico que será enriquecido progresivamente por los servicios.
+                    // device contiene el modelo técnico mutable compartido entre las capas.
                     var device = progress.NewlyFound;
 
-                    // vm representa el mismo dispositivo dentro de la interfaz WPF.
+                    // vm representa el mismo dispositivo para los bindings de WPF.
                     var vm = new DeviceViewModel(device);
                     Devices.Add(vm);
 
-                    // La resolución se ejecuta de forma independiente para que un dispositivo lento
-                    // no bloquee la aparición inmediata de los siguientes resultados.
+                    // La identificación ocurre en segundo plano para que las nuevas IP sigan apareciendo inmediatamente.
                     _ = ResolveDeviceAsync(device, vm, cancellationToken);
                 }
 
-                StatusText = $"Escaneando... {progress.Scanned} respondieron de {progress.Total} IPs candidatas";
+                StatusText = $"Escaneando... {progress.Scanned} dispositivos de {progress.Total} IPs candidatas";
             }
 
             StatusText = $"Escaneo completo: {Devices.Count} dispositivos encontrados.";
@@ -112,7 +133,7 @@ public sealed partial class MainViewModel : ObservableObject
     private bool CanScan() => !IsScanning;
 
     /// <summary>
-    /// Enriquece progresivamente un dispositivo con evidencias generales y ONVIF.
+    /// Completa los datos técnicos del dispositivo después de su descubrimiento inicial.
     /// </summary>
     private async Task ResolveDeviceAsync(
         DiscoveredDevice device,
@@ -121,16 +142,15 @@ public sealed partial class MainViewModel : ObservableObject
     {
         try
         {
-            // Primero ejecutamos todos los detectores generales porque pueden descubrir ONVIF,
-            // HTTP, RTSP y datos básicos de fabricante sin credenciales.
+            // Ejecutamos primero los detectores generales porque pueden encontrar ONVIF, HTTP, RTSP y fabricante.
             await _manufacturerResolver.ResolveAsync(device, cancellationToken);
             viewModel.Refresh();
 
-            // Si no existe evidencia ONVIF, no tiene sentido consultar Device Service.
+            // Sin ONVIF confirmado no podemos obtener sus servicios mediante SOAP/Device Service.
             if (!device.OnvifSupported)
                 return;
 
-            // info representa la identidad declarada directamente por el dispositivo ONVIF.
+            // info contiene la identidad reportada directamente por la cámara mediante GetDeviceInformation.
             var info = await _onvifDeviceService.GetDeviceInformationAsync(
                 device,
                 username: null,
@@ -139,17 +159,15 @@ public sealed partial class MainViewModel : ObservableObject
 
             if (info is not null)
             {
-                // ONVIF tiene prioridad porque es información declarada por el propio dispositivo.
+                // ONVIF tiene prioridad cuando devuelve un valor, pero no destruye datos obtenidos por otros detectores.
                 device.Manufacturer = info.Manufacturer ?? device.Manufacturer;
                 device.Model = info.Model ?? device.Model;
                 device.FirmwareVersion = info.FirmwareVersion ?? device.FirmwareVersion;
                 device.SerialNumber = info.SerialNumber ?? device.SerialNumber;
-
-                // Refrescamos inmediatamente la UI para que el técnico vea la identidad resuelta.
                 viewModel.Refresh();
             }
 
-            // capabilities contiene los endpoints reales que el firmware publica para sus servicios.
+            // capabilities contiene los XAddr reales que el dispositivo publica para sus distintos servicios.
             var capabilities = await _onvifDeviceService.GetCapabilitiesAsync(
                 device,
                 username: null,
@@ -159,15 +177,13 @@ public sealed partial class MainViewModel : ObservableObject
             if (capabilities is null)
                 return;
 
-            // Guardamos cada XAddr para que las siguientes capas no tengan que adivinar rutas ONVIF.
+            // Conservamos los XAddr para que Media/PTZ/Events nunca tengan que adivinar rutas.
             device.OnvifDeviceServiceXAddr = capabilities.DeviceServiceXAddr ?? device.OnvifDeviceServiceXAddr;
             device.OnvifMediaServiceXAddr = capabilities.MediaServiceXAddr;
             device.OnvifImagingServiceXAddr = capabilities.ImagingServiceXAddr;
             device.OnvifPtzServiceXAddr = capabilities.PtzServiceXAddr;
             device.OnvifEventsServiceXAddr = capabilities.EventsServiceXAddr;
 
-            // Si Media existe, sabemos que el dispositivo ofrece el servicio que necesitamos
-            // para descubrir sus perfiles y streams de vídeo ONVIF.
             if (capabilities.HasMediaService)
                 device.OnvifSupported = true;
 
@@ -175,21 +191,19 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (OperationCanceledException)
         {
-            // La cancelación ocurre normalmente cuando el técnico detiene el escaneo.
+            // La cancelación forma parte del flujo normal cuando el usuario detiene un escaneo.
         }
         catch
         {
-            // Un fallo de enriquecimiento no elimina el dispositivo de la tabla.
-            // Conservamos toda la información que haya podido obtenerse antes del error.
+            // Un fallo de enriquecimiento no elimina el dispositivo: conservamos los datos que sí pudieron obtenerse.
         }
     }
 
     /// <summary>
-    /// Resolución manual del stream principal. Aquí todavía utilizamos credenciales temporales;
-    /// posteriormente serán reemplazadas por el Credential Manager de Windows.
+    /// Pide credenciales y resuelve el stream principal de mayor resolución.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanResolveStream))]
-    private async Task GetStreamUriAsync()
+    private async Task GetMainStreamUriAsync()
     {
         if (SelectedDevice is null)
             return;
@@ -198,34 +212,84 @@ public sealed partial class MainViewModel : ObservableObject
         if (dialog.ShowDialog() != true)
             return;
 
-        StatusText = $"Consultando Media Service de {SelectedDevice.IpAddress}...";
-
-        var result = await _streamUriResolver.GetMainStreamUriAsync(
-            SelectedDevice.Device,
-            dialog.Username,
-            dialog.Password);
-
-        if (result is null)
+        try
         {
-            System.Windows.MessageBox.Show(
-                $"No se pudo obtener la URL de stream para {SelectedDevice.IpAddress}.\n\n" +
-                "Puede ser que el dispositivo no soporte Media Service ONVIF, que el Media XAddr no esté disponible o que las credenciales sean incorrectas.",
-                "Camera Inspector — Capa 5",
-                System.Windows.MessageBoxButton.OK,
-                System.Windows.MessageBoxImage.Warning);
+            StatusText = $"Resolviendo stream principal de {SelectedDevice.IpAddress}...";
 
-            StatusText = "No se pudo resolver la URL de stream.";
-            return;
+            // result contiene la URI RTSP y los parámetros técnicos del perfil principal.
+            var result = await _streamUriResolver.GetMainStreamUriAsync(
+                SelectedDevice.Device,
+                dialog.Username,
+                dialog.Password);
+
+            if (result is null)
+            {
+                StatusText = "No se pudo resolver el stream principal.";
+                ShowStreamError(SelectedDevice.IpAddress, "principal");
+                return;
+            }
+
+            ResolvedMainStream = result;
+            StatusText = $"Stream principal resuelto: {result.Resolution} · {result.Encoding ?? "Codec desconocido"} · {result.FrameRate?.ToString() ?? "?"} FPS";
         }
-
-        System.Windows.MessageBox.Show(
-            $"URL de stream resuelta:\n\n{result.RtspUri}\n\nPerfil: {result.ProfileToken}",
-            "Camera Inspector — Capa 5",
-            System.Windows.MessageBoxButton.OK,
-            System.Windows.MessageBoxImage.Information);
-
-        StatusText = "URL de stream resuelta correctamente.";
+        catch (OperationCanceledException)
+        {
+            StatusText = "Resolución del stream principal cancelada.";
+        }
     }
 
+    /// <summary>
+    /// Pide credenciales y resuelve el stream secundario de menor resolución.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanResolveStream))]
+    private async Task GetSubStreamUriAsync()
+    {
+        if (SelectedDevice is null)
+            return;
+
+        var dialog = new CredentialsDialog();
+        if (dialog.ShowDialog() != true)
+            return;
+
+        try
+        {
+            StatusText = $"Resolviendo substream de {SelectedDevice.IpAddress}...";
+
+            // result contiene la URI RTSP y los parámetros técnicos del perfil secundario.
+            var result = await _streamUriResolver.GetSubStreamUriAsync(
+                SelectedDevice.Device,
+                dialog.Username,
+                dialog.Password);
+
+            if (result is null)
+            {
+                StatusText = "No se pudo resolver el substream.";
+                ShowStreamError(SelectedDevice.IpAddress, "secundario");
+                return;
+            }
+
+            ResolvedSubStream = result;
+            StatusText = $"Substream resuelto: {result.Resolution} · {result.Encoding ?? "Codec desconocido"} · {result.FrameRate?.ToString() ?? "?"} FPS";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText = "Resolución del substream cancelada.";
+        }
+    }
+
+    /// <summary>CanExecute común para los comandos Main/Sub.</summary>
     private bool CanResolveStream() => SelectedDevice is not null;
+
+    /// <summary>
+    /// Muestra un mensaje consistente cuando una consulta Media Service no devuelve stream.
+    /// </summary>
+    private static void ShowStreamError(string ipAddress, string streamType)
+    {
+        System.Windows.MessageBox.Show(
+            $"No se pudo obtener el stream {streamType} de {ipAddress}.\n\n" +
+            "Verifique las credenciales, que el dispositivo exponga Media Service ONVIF y que exista al menos un perfil de video.",
+            "Camera Inspector — Stream ONVIF",
+            System.Windows.MessageBoxButton.OK,
+            System.Windows.MessageBoxImage.Warning);
+    }
 }
