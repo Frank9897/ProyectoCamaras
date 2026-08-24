@@ -20,4 +20,10 @@ public interface IVideoPlayerService : IDisposable
 
     /// <summary>Detiene la reproducción actual.</summary>
     void Stop();
+
+    /// <summary>
+    /// Captura el frame actual a PNG.
+    /// Devuelve false cuando LibVLC todavía no dispone de una salida de video activa.
+    /// </summary>
+    bool TakeSnapshot(string filePath, uint width = 0, uint height = 0);
 }
