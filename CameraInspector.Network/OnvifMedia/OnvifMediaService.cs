@@ -1,13 +1,16 @@
+using System.Security;
+using System.Xml.Linq;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
 
 namespace CameraInspector.Network.OnvifMedia;
 
 /// <summary>
-/// Obtiene la URL RTSP real desde ONVIF. Primero consulta GetCapabilities para obtener
-/// la URL anunciada por el firmware y luego usa Media Service (GetProfiles + GetStreamUri).
+/// Implementación del Media Service ONVIF.
+/// Separa la obtención de perfiles de la resolución de su URI RTSP para que las capas
+/// superiores puedan inspeccionar capacidades sin abrir todavía el stream.
 /// </summary>
-public sealed class OnvifMediaService : IStreamUriResolver
+public sealed class OnvifMediaService : IStreamUriResolver, IOnvifMediaService
 {
     private const string GetProfilesBody = """
         <trt:GetProfiles xmlns:trt="http://www.onvif.org/ver10/media/wsdl"/>
@@ -18,6 +21,67 @@ public sealed class OnvifMediaService : IStreamUriResolver
     public OnvifMediaService(IOnvifDeviceService deviceService)
     {
         _deviceService = deviceService;
+    }
+
+    public async Task<IReadOnlyList<OnvifMediaProfile>> GetProfilesAsync(
+        DiscoveredDevice device,
+        string mediaServiceXAddr,
+        string? username,
+        string? password,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(mediaServiceXAddr))
+            return [];
+
+        var security = BuildSecurity(username, password);
+        var document = await OnvifSoapClient.PostAsync(
+            mediaServiceXAddr,
+            GetProfilesBody,
+            security,
+            cancellationToken);
+
+        if (document is null)
+            return [];
+
+        return OnvifSoapClient.AllElements(document, "Profiles")
+            .Select(ParseProfile)
+            .Where(profile => profile is not null)
+            .Select(profile => profile!)
+            .ToList();
+    }
+
+    public async Task<string?> GetStreamUriAsync(
+        string mediaServiceXAddr,
+        string profileToken,
+        string? username,
+        string? password,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(mediaServiceXAddr) || string.IsNullOrWhiteSpace(profileToken))
+            return null;
+
+        var escapedToken = SecurityElement.Escape(profileToken);
+        var body = $"""
+            <trt:GetStreamUri xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
+              <trt:StreamSetup>
+                <tt:Stream xmlns:tt="http://www.onvif.org/ver10/schema">RTP-Unicast</tt:Stream>
+                <tt:Transport xmlns:tt="http://www.onvif.org/ver10/schema">
+                  <tt:Protocol>RTSP</tt:Protocol>
+                </tt:Transport>
+              </trt:StreamSetup>
+              <trt:ProfileToken>{escapedToken}</trt:ProfileToken>
+            </trt:GetStreamUri>
+            """;
+
+        var document = await OnvifSoapClient.PostAsync(
+            mediaServiceXAddr,
+            body,
+            BuildSecurity(username, password),
+            cancellationToken);
+
+        return document is null
+            ? null
+            : OnvifSoapClient.FirstValue(document, "Uri")?.Trim();
     }
 
     public async Task<CameraStreamInfo?> GetMainStreamUriAsync(
@@ -32,90 +96,90 @@ public sealed class OnvifMediaService : IStreamUriResolver
             password,
             cancellationToken);
 
-        var endpoint = capabilities?.MediaServiceXAddr;
-        if (string.IsNullOrWhiteSpace(endpoint))
+        var mediaXAddr = capabilities?.MediaServiceXAddr;
+        if (string.IsNullOrWhiteSpace(mediaXAddr))
             return null;
 
-        var security = (username, password) is (not null, not null)
-            ? WsSecurityHeaderBuilder.Build(username!, password!)
-            : null;
-
-        var profilesDoc = await OnvifSoapClient.PostAsync(
-            endpoint,
-            GetProfilesBody,
-            security,
+        var profiles = await GetProfilesAsync(
+            device,
+            mediaXAddr,
+            username,
+            password,
             cancellationToken);
 
-        if (profilesDoc is null)
-            return null;
-
-        var profiles = OnvifSoapClient.AllElements(profilesDoc, "Profiles")
-            .Select(profile =>
-            {
-                var token = profile.Attribute("token")?.Value;
-                var resolution = profile
-                    .Descendants()
-                    .FirstOrDefault(element => element.Name.LocalName == "Resolution");
-
-                _ = int.TryParse(
-                    resolution?.Elements().FirstOrDefault(element => element.Name.LocalName == "Width")?.Value,
-                    out var width);
-                _ = int.TryParse(
-                    resolution?.Elements().FirstOrDefault(element => element.Name.LocalName == "Height")?.Value,
-                    out var height);
-
-                return new
-                {
-                    Token = token,
-                    Width = width,
-                    Height = height
-                };
-            })
-            .Where(profile => !string.IsNullOrWhiteSpace(profile.Token))
-            .ToList();
-
-        if (profiles.Count == 0)
-            return null;
-
-        // Preferimos el perfil con mayor resolución. Si el firmware no informa resolución,
-        // se conserva el primer perfil anunciado.
         var mainProfile = profiles
             .Select((profile, index) => new { profile, index })
-            .OrderByDescending(item => (long)item.profile.Width * item.profile.Height)
+            .OrderByDescending(item => item.profile.ResolutionPixels)
             .ThenBy(item => item.index)
-            .First().profile;
+            .FirstOrDefault()?.profile;
 
-        var escapedToken = System.Security.SecurityElement.Escape(mainProfile.Token)!;
-        var getStreamUriBody = $"""
-            <trt:GetStreamUri xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
-              <trt:StreamSetup>
-                <tt:Stream xmlns:tt="http://www.onvif.org/ver10/schema">RTP-Unicast</tt:Stream>
-                <tt:Transport xmlns:tt="http://www.onvif.org/ver10/schema">
-                  <tt:Protocol>RTSP</tt:Protocol>
-                </tt:Transport>
-              </trt:StreamSetup>
-              <trt:ProfileToken>{escapedToken}</trt:ProfileToken>
-            </trt:GetStreamUri>
-            """;
-
-        var streamDoc = await OnvifSoapClient.PostAsync(
-            endpoint,
-            getStreamUriBody,
-            security,
-            cancellationToken);
-
-        if (streamDoc is null)
+        if (mainProfile is null)
             return null;
 
-        var uri = OnvifSoapClient.FirstValue(streamDoc, "Uri");
+        var uri = await GetStreamUriAsync(
+            mediaXAddr,
+            mainProfile.Token,
+            username,
+            password,
+            cancellationToken);
+
         if (string.IsNullOrWhiteSpace(uri))
             return null;
 
         return new CameraStreamInfo
         {
-            RtspUri = uri.Trim(),
-            ProfileToken = mainProfile.Token!,
+            RtspUri = uri,
+            ProfileToken = mainProfile.Token,
+            ProfileName = mainProfile.Name,
             IsMainStream = true
         };
     }
+
+    private static OnvifMediaProfile? ParseProfile(XElement profile)
+    {
+        var token = profile.Attribute("token")?.Value;
+        if (string.IsNullOrWhiteSpace(token))
+            return null;
+
+        var videoEncoder = profile
+            .Descendants()
+            .FirstOrDefault(element => element.Name.LocalName == "VideoEncoderConfiguration");
+
+        var resolution = videoEncoder?
+            .Descendants()
+            .FirstOrDefault(element => element.Name.LocalName == "Resolution");
+
+        var width = ParseInt(resolution, "Width");
+        var height = ParseInt(resolution, "Height");
+        var frameRate = ParseInt(videoEncoder, "FrameRateLimit");
+        var encoding = videoEncoder?
+            .Elements()
+            .FirstOrDefault(element => element.Name.LocalName == "Encoding")?
+            .Value;
+
+        return new OnvifMediaProfile
+        {
+            Token = token.Trim(),
+            Name = profile.Elements().FirstOrDefault(element => element.Name.LocalName == "Name")?.Value.Trim(),
+            Width = width,
+            Height = height,
+            Encoding = string.IsNullOrWhiteSpace(encoding) ? null : encoding.Trim(),
+            FrameRate = frameRate
+        };
+    }
+
+    private static int? ParseInt(XElement? parent, string elementName)
+    {
+        var value = parent?
+            .Descendants()
+            .FirstOrDefault(element => element.Name.LocalName == elementName)?
+            .Value;
+
+        return int.TryParse(value, out var result) ? result : null;
+    }
+
+    private static string? BuildSecurity(string? username, string? password) =>
+        (username, password) is (not null, not null)
+            ? WsSecurityHeaderBuilder.Build(username!, password!)
+            : null;
 }
