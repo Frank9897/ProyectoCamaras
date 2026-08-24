@@ -110,21 +110,29 @@
                     <TextBlock Grid.Row="1" Grid.Column="5" Text="{Binding SerialNumber}" FontFamily="Consolas" Margin="0,8,0,0"/>
                 </Grid>
 
-                <!-- Capacidades. Cada campo es un resumen booleano de un servicio ONVIF real. -->
-                <Grid Grid.Row="2" Margin="0,12,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="ONVIF  ✓" Foreground="{StaticResource TextBrush}"/>
-                    <TextBlock Grid.Column="1" Text="MEDIA  {Binding HasMediaService}" FontFamily="Consolas"/>
-                    <TextBlock Grid.Column="2" Text="IMAGING  {Binding HasImagingService}" FontFamily="Consolas"/>
-                    <TextBlock Grid.Column="3" Text="PTZ  {Binding HasPtzService}" FontFamily="Consolas"/>
-                    <TextBlock Grid.Column="4" Text="EVENTS  {Binding HasEventsService}" FontFamily="Consolas"/>
-                </Grid>
+                <!-- Capacidades ONVIF. Separamos etiqueta y valor porque WPF no admite Binding embebido dentro de texto literal. -->
+                <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,12,0,0">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,22,0">
+                        <TextBlock Text="ONVIF: " FontWeight="Bold" Foreground="{StaticResource TextDimBrush}"/>
+                        <TextBlock Text="{Binding OnvifSupported}" FontFamily="Consolas"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,22,0">
+                        <TextBlock Text="MEDIA: " FontWeight="Bold" Foreground="{StaticResource TextDimBrush}"/>
+                        <TextBlock Text="{Binding HasMediaService}" FontFamily="Consolas"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,22,0">
+                        <TextBlock Text="IMAGING: " FontWeight="Bold" Foreground="{StaticResource TextDimBrush}"/>
+                        <TextBlock Text="{Binding HasImagingService}" FontFamily="Consolas"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,22,0">
+                        <TextBlock Text="PTZ: " FontWeight="Bold" Foreground="{StaticResource TextDimBrush}"/>
+                        <TextBlock Text="{Binding HasPtzService}" FontFamily="Consolas"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="EVENTS: " FontWeight="Bold" Foreground="{StaticResource TextDimBrush}"/>
+                        <TextBlock Text="{Binding HasEventsService}" FontFamily="Consolas"/>
+                    </StackPanel>
+                </StackPanel>
 
                 <!-- XAddrs reales publicados por la cámara. -->
                 <Grid Grid.Row="3" Margin="0,12,0,0">
@@ -143,7 +151,7 @@
                     <TextBlock Grid.Row="1" Grid.Column="0" Text="MEDIA SERVICE" FontWeight="Bold" Foreground="{StaticResource TextDimBrush}" Margin="0,6,0,0"/>
                     <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding OnvifMediaServiceXAddr}" FontFamily="Consolas" TextWrapping="Wrap" Margin="0,6,0,0"/>
                     <TextBlock Grid.Row="2" Grid.Column="0" Text="PTZ / EVENTS" FontWeight="Bold" Foreground="{StaticResource TextDimBrush}" Margin="0,6,0,0"/>
-                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding OnvifPtzServiceXAddr} | {Binding OnvifEventsServiceXAddr}" FontFamily="Consolas" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding OnvifPtzServiceXAddr}" FontFamily="Consolas" TextWrapping="Wrap" Margin="0,6,0,0"/>
                 </Grid>
             </Grid>
         </Border>
