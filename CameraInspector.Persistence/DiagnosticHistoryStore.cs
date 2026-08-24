@@ -15,7 +15,7 @@ public sealed class DiagnosticHistoryStore : IDiagnosticHistoryStore
 
     public DiagnosticHistoryStore(CameraInspectorDbContext db)
     {
-        // _db representa la unidad de trabajo de EF Core utilizada para guardar el historial.
+        // _db representa la unidad de trabajo de EF Core utilizada para guardar y consultar el historial.
         _db = db;
     }
 
@@ -30,8 +30,7 @@ public sealed class DiagnosticHistoryStore : IDiagnosticHistoryStore
         if (results.Count == 0)
             return;
 
-        // testDate representa un instante común para la ejecución completa del diagnóstico.
-        // Se usa UTC para evitar inconsistencias entre equipos y reportes posteriores.
+        // testDate representa un instante común para toda la ejecución del diagnóstico.
         var testDate = DateTimeOffset.UtcNow;
 
         // entities transforma los resultados de dominio en entidades persistentes.
@@ -52,21 +51,49 @@ public sealed class DiagnosticHistoryStore : IDiagnosticHistoryStore
             TestDate = testDate
         }).ToList();
 
-        // AddRange agrega todas las pruebas a la unidad de trabajo sin ejecutar un INSERT por cada elemento.
         await _db.CameraTests.AddRangeAsync(entities, cancellationToken);
-
-        // Guardamos una sola transacción lógica para que el historial de la ejecución quede completo.
         await _db.SaveChangesAsync(cancellationToken);
 
-        // Actualizamos LastTest para que el inventario sepa cuándo se ejecutó por última vez un diagnóstico.
+        // camera representa el inventario persistente al que pertenece esta ejecución.
         var camera = await _db.Cameras
             .FirstOrDefaultAsync(c => c.Id == cameraId, cancellationToken);
 
         if (camera is null)
             return;
 
-        // LastTest cambia únicamente cuando la cámara existe realmente en el inventario persistido.
+        // LastTest permite mostrar rápidamente cuándo fue la última batería ejecutada.
         camera.LastTest = testDate;
         await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<DiagnosticHistoryItem>> GetRecentAsync(
+        int cameraId,
+        int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        if (cameraId <= 0)
+            return [];
+
+        // safeLimit evita solicitar una cantidad descontrolada de registros desde la UI.
+        var safeLimit = Math.Clamp(limit, 1, 500);
+
+        // rows contiene solo las columnas necesarias para presentar el historial.
+        var rows = await _db.CameraTests
+            .AsNoTracking()
+            .Where(test => test.CameraId == cameraId)
+            .OrderByDescending(test => test.TestDate)
+            .ThenByDescending(test => test.Id)
+            .Take(safeLimit)
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(row => new DiagnosticHistoryItem
+        {
+            Id = row.Id,
+            TestName = row.TestName,
+            Result = row.Result,
+            ResponseTimeMs = row.ResponseTimeMs,
+            Message = row.ErrorMessage,
+            TestDate = row.TestDate
+        }).ToList();
     }
 }
