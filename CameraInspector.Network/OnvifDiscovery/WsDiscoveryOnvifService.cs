@@ -102,12 +102,18 @@ public sealed class WsDiscoveryOnvifService : IOnvifDiscoveryService
                 .FirstOrDefault(element => element.Name.LocalName == "EndpointReference")?
                 .Value;
 
-            // xAddr es el endpoint real del Device Service publicado por WS-Discovery.
-            var xAddr = document.Descendants()
+            // xAddrsText contiene las direcciones anunciadas por el dispositivo en el XML de WS-Discovery.
+            var xAddrsText = document.Descendants()
                 .FirstOrDefault(element => element.Name.LocalName == "XAddrs")?
-                .Value?
+                .Value;
+
+            // xAddrs elimina espacios y valores vacíos para trabajar únicamente con URLs candidatas.
+            var xAddrs = xAddrsText?
                 .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
-                .FirstOrDefault(IsAbsoluteHttpUri);
+                ?? Array.Empty<string>();
+
+            // xAddr es el primer endpoint HTTP/HTTPS absoluto que podremos consumir posteriormente.
+            var xAddr = xAddrs.FirstOrDefault(IsAbsoluteHttpUri);
 
             if (string.IsNullOrWhiteSpace(xAddr))
                 return null;
