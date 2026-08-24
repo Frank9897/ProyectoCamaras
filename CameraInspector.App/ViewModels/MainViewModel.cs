@@ -8,7 +8,7 @@ namespace CameraInspector.App.ViewModels;
 
 /// <summary>
 /// ViewModel de la pantalla principal.
-/// Coordina descubrimiento, identificación ONVIF y las primeras pruebas de stream.
+/// Coordina descubrimiento, identificación ONVIF, streams y diagnóstico rápido.
 /// </summary>
 public sealed partial class MainViewModel : ObservableObject
 {
@@ -17,8 +17,12 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly IManufacturerResolver _manufacturerResolver;
     private readonly IOnvifDeviceService _onvifDeviceService;
     private readonly IStreamUriResolver _streamUriResolver;
+    private readonly ICameraDiagnosticService _diagnosticService;
 
     public ObservableCollection<DeviceViewModel> Devices { get; } = new();
+
+    /// <summary>Resultados de la última batería de diagnóstico ejecutada.</summary>
+    public ObservableCollection<DiagnosticResult> DiagnosticResults { get; } = new();
 
     [ObservableProperty]
     private string _statusText = "Listo para escanear.";
@@ -27,22 +31,20 @@ public sealed partial class MainViewModel : ObservableObject
     private bool _isScanning;
 
     [ObservableProperty]
+    private bool _isDiagnosing;
+
+    [ObservableProperty]
     private NetworkInterfaceInfo? _selectedInterface;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(GetMainStreamUriCommand))]
     [NotifyCanExecuteChangedFor(nameof(GetSubStreamUriCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RunDiagnosticsCommand))]
     private DeviceViewModel? _selectedDevice;
 
-    /// <summary>
-    /// Último stream principal resuelto manualmente para la cámara seleccionada.
-    /// </summary>
     [ObservableProperty]
     private CameraStreamInfo? _resolvedMainStream;
 
-    /// <summary>
-    /// Último stream secundario resuelto manualmente para la cámara seleccionada.
-    /// </summary>
     [ObservableProperty]
     private CameraStreamInfo? _resolvedSubStream;
 
@@ -53,22 +55,26 @@ public sealed partial class MainViewModel : ObservableObject
         INetworkScanner scanner,
         IManufacturerResolver manufacturerResolver,
         IOnvifDeviceService onvifDeviceService,
-        IStreamUriResolver streamUriResolver)
+        IStreamUriResolver streamUriResolver,
+        ICameraDiagnosticService diagnosticService)
     {
-        // _interfaceService permite enumerar las interfaces de red activas.
+        // _interfaceService enumera las interfaces de red que pueden utilizarse para el escaneo.
         _interfaceService = interfaceService;
 
-        // _scanner ejecuta Ping, ARP y WS-Discovery sin acoplar la UI a la infraestructura de red.
+        // _scanner ejecuta el pipeline de Ping, ARP y WS-Discovery.
         _scanner = scanner;
 
-        // _manufacturerResolver combina OUI, HTTP y ONVIF para aumentar la confianza de identificación.
+        // _manufacturerResolver combina las evidencias de identificación disponibles.
         _manufacturerResolver = manufacturerResolver;
 
-        // _onvifDeviceService consulta identidad y capacidades publicadas por el Device Service.
+        // _onvifDeviceService consulta identidad y capacidades oficiales del dispositivo.
         _onvifDeviceService = onvifDeviceService;
 
-        // _streamUriResolver resuelve las URI RTSP de Main/Sub mediante Media Service ONVIF.
+        // _streamUriResolver resuelve Main/Sub Stream mediante Media Service ONVIF.
         _streamUriResolver = streamUriResolver;
+
+        // _diagnosticService ejecuta las pruebas técnicas de conectividad y protocolos.
+        _diagnosticService = diagnosticService;
 
         foreach (var nic in _interfaceService.GetActiveInterfaces())
             AvailableInterfaces.Add(nic);
@@ -78,9 +84,10 @@ public sealed partial class MainViewModel : ObservableObject
 
     partial void OnSelectedDeviceChanged(DeviceViewModel? value)
     {
-        // Al seleccionar otra cámara, limpiamos los resultados de streams de la selección anterior.
+        // Al cambiar de cámara, eliminamos resultados de streams y diagnóstico de la selección anterior.
         ResolvedMainStream = null;
         ResolvedSubStream = null;
+        DiagnosticResults.Clear();
     }
 
     [RelayCommand(CanExecute = nameof(CanScan))]
@@ -94,6 +101,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         IsScanning = true;
         Devices.Clear();
+        DiagnosticResults.Clear();
         ResolvedMainStream = null;
         ResolvedSubStream = null;
         StatusText = $"Escaneando {SelectedInterface}...";
@@ -104,14 +112,14 @@ public sealed partial class MainViewModel : ObservableObject
             {
                 if (progress.NewlyFound is not null)
                 {
-                    // device contiene el modelo técnico mutable compartido entre las capas.
+                    // device contiene el estado técnico mutable que compartirán los servicios.
                     var device = progress.NewlyFound;
 
-                    // vm representa el mismo dispositivo para los bindings de WPF.
+                    // vm adapta el modelo técnico al binding de WPF.
                     var vm = new DeviceViewModel(device);
                     Devices.Add(vm);
 
-                    // La identificación ocurre en segundo plano para que las nuevas IP sigan apareciendo inmediatamente.
+                    // La identificación se ejecuta en segundo plano para mantener fluida la tabla.
                     _ = ResolveDeviceAsync(device, vm, cancellationToken);
                 }
 
@@ -130,11 +138,8 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    private bool CanScan() => !IsScanning;
+    private bool CanScan() => !IsScanning && !IsDiagnosing;
 
-    /// <summary>
-    /// Completa los datos técnicos del dispositivo después de su descubrimiento inicial.
-    /// </summary>
     private async Task ResolveDeviceAsync(
         DiscoveredDevice device,
         DeviceViewModel viewModel,
@@ -142,15 +147,14 @@ public sealed partial class MainViewModel : ObservableObject
     {
         try
         {
-            // Ejecutamos primero los detectores generales porque pueden encontrar ONVIF, HTTP, RTSP y fabricante.
+            // La primera fase usa detectores generales para identificar fabricante y protocolos.
             await _manufacturerResolver.ResolveAsync(device, cancellationToken);
             viewModel.Refresh();
 
-            // Sin ONVIF confirmado no podemos obtener sus servicios mediante SOAP/Device Service.
             if (!device.OnvifSupported)
                 return;
 
-            // info contiene la identidad reportada directamente por la cámara mediante GetDeviceInformation.
+            // info representa la identidad entregada directamente por ONVIF.
             var info = await _onvifDeviceService.GetDeviceInformationAsync(
                 device,
                 username: null,
@@ -159,7 +163,6 @@ public sealed partial class MainViewModel : ObservableObject
 
             if (info is not null)
             {
-                // ONVIF tiene prioridad cuando devuelve un valor, pero no destruye datos obtenidos por otros detectores.
                 device.Manufacturer = info.Manufacturer ?? device.Manufacturer;
                 device.Model = info.Model ?? device.Model;
                 device.FirmwareVersion = info.FirmwareVersion ?? device.FirmwareVersion;
@@ -167,7 +170,7 @@ public sealed partial class MainViewModel : ObservableObject
                 viewModel.Refresh();
             }
 
-            // capabilities contiene los XAddr reales que el dispositivo publica para sus distintos servicios.
+            // capabilities contiene los XAddr reales publicados por el firmware.
             var capabilities = await _onvifDeviceService.GetCapabilitiesAsync(
                 device,
                 username: null,
@@ -177,7 +180,6 @@ public sealed partial class MainViewModel : ObservableObject
             if (capabilities is null)
                 return;
 
-            // Conservamos los XAddr para que Media/PTZ/Events nunca tengan que adivinar rutas.
             device.OnvifDeviceServiceXAddr = capabilities.DeviceServiceXAddr ?? device.OnvifDeviceServiceXAddr;
             device.OnvifMediaServiceXAddr = capabilities.MediaServiceXAddr;
             device.OnvifImagingServiceXAddr = capabilities.ImagingServiceXAddr;
@@ -191,17 +193,14 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (OperationCanceledException)
         {
-            // La cancelación forma parte del flujo normal cuando el usuario detiene un escaneo.
+            // Cancelación normal al detener el escaneo.
         }
         catch
         {
-            // Un fallo de enriquecimiento no elimina el dispositivo: conservamos los datos que sí pudieron obtenerse.
+            // La identificación fallida no elimina la cámara de los resultados.
         }
     }
 
-    /// <summary>
-    /// Pide credenciales y resuelve el stream principal de mayor resolución.
-    /// </summary>
     [RelayCommand(CanExecute = nameof(CanResolveStream))]
     private async Task GetMainStreamUriAsync()
     {
@@ -216,7 +215,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             StatusText = $"Resolviendo stream principal de {SelectedDevice.IpAddress}...";
 
-            // result contiene la URI RTSP y los parámetros técnicos del perfil principal.
+            // result contiene la URI RTSP y todos los parámetros del perfil seleccionado.
             var result = await _streamUriResolver.GetMainStreamUriAsync(
                 SelectedDevice.Device,
                 dialog.Username,
@@ -230,7 +229,7 @@ public sealed partial class MainViewModel : ObservableObject
             }
 
             ResolvedMainStream = result;
-            StatusText = $"Stream principal resuelto: {result.Resolution} · {result.Encoding ?? "Codec desconocido"} · {result.FrameRate?.ToString() ?? "?"} FPS";
+            StatusText = $"Main Stream: {result.Resolution} · {result.Encoding ?? "Codec desconocido"} · {result.FrameRate?.ToString() ?? "?"} FPS";
         }
         catch (OperationCanceledException)
         {
@@ -238,9 +237,6 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    /// <summary>
-    /// Pide credenciales y resuelve el stream secundario de menor resolución.
-    /// </summary>
     [RelayCommand(CanExecute = nameof(CanResolveStream))]
     private async Task GetSubStreamUriAsync()
     {
@@ -255,7 +251,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             StatusText = $"Resolviendo substream de {SelectedDevice.IpAddress}...";
 
-            // result contiene la URI RTSP y los parámetros técnicos del perfil secundario.
+            // result contiene la URI RTSP y parámetros del perfil secundario.
             var result = await _streamUriResolver.GetSubStreamUriAsync(
                 SelectedDevice.Device,
                 dialog.Username,
@@ -269,7 +265,7 @@ public sealed partial class MainViewModel : ObservableObject
             }
 
             ResolvedSubStream = result;
-            StatusText = $"Substream resuelto: {result.Resolution} · {result.Encoding ?? "Codec desconocido"} · {result.FrameRate?.ToString() ?? "?"} FPS";
+            StatusText = $"Substream: {result.Resolution} · {result.Encoding ?? "Codec desconocido"} · {result.FrameRate?.ToString() ?? "?"} FPS";
         }
         catch (OperationCanceledException)
         {
@@ -277,12 +273,60 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    /// <summary>CanExecute común para los comandos Main/Sub.</summary>
-    private bool CanResolveStream() => SelectedDevice is not null;
-
     /// <summary>
-    /// Muestra un mensaje consistente cuando una consulta Media Service no devuelve stream.
+    /// Ejecuta la batería de diagnóstico de la cámara seleccionada.
     /// </summary>
+    [RelayCommand(CanExecute = nameof(CanRunDiagnostics))]
+    private async Task RunDiagnosticsAsync()
+    {
+        if (SelectedDevice is null)
+            return;
+
+        var dialog = new CredentialsDialog();
+        if (dialog.ShowDialog() != true)
+            return;
+
+        IsDiagnosing = true;
+        DiagnosticResults.Clear();
+        StatusText = $"Ejecutando diagnóstico sobre {SelectedDevice.IpAddress}...";
+
+        try
+        {
+            // results contiene una instantánea con todas las pruebas ejecutadas en paralelo.
+            var results = await _diagnosticService.RunAsync(
+                SelectedDevice.Device,
+                dialog.Username,
+                dialog.Password);
+
+            foreach (var result in results)
+                DiagnosticResults.Add(result);
+
+            // successCount representa cuántas pruebas finalizaron correctamente.
+            var successCount = results.Count(result => result.Success);
+
+            // supportedCount cuenta las pruebas cuyo resultado fue "no soportado" y no deben tratarse como fallos.
+            var supportedCount = results.Count(result => !result.NotSupported);
+
+            StatusText = $"Diagnóstico terminado: {successCount}/{supportedCount} pruebas correctas.";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText = "Diagnóstico cancelado.";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Error durante diagnóstico: {ex.Message}";
+        }
+        finally
+        {
+            IsDiagnosing = false;
+        }
+    }
+
+    private bool CanResolveStream() => SelectedDevice is not null && !IsScanning && !IsDiagnosing;
+
+    private bool CanRunDiagnostics() => SelectedDevice is not null && !IsScanning && !IsDiagnosing;
+
     private static void ShowStreamError(string ipAddress, string streamType)
     {
         System.Windows.MessageBox.Show(
