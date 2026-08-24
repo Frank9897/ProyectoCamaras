@@ -1,23 +1,32 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <!-- Paleta principal de Camera Inspector: fondo negro, paneles oscuros y verde técnico. -->
-    <SolidColorBrush x:Key="BgBrush" Color="#080C0A"/>
-    <SolidColorBrush x:Key="PanelBrush" Color="#0E1411"/>
-    <SolidColorBrush x:Key="Panel2Brush" Color="#131B16"/>
-    <SolidColorBrush x:Key="Panel3Brush" Color="#18221C"/>
-    <SolidColorBrush x:Key="BorderBrush2" Color="#26372C"/>
-    <SolidColorBrush x:Key="BorderAccentBrush" Color="#1D7A4A"/>
-    <SolidColorBrush x:Key="TextBrush" Color="#E2F1E7"/>
-    <SolidColorBrush x:Key="TextDimBrush" Color="#8EA596"/>
+    <!-- Paleta oficial: negro profundo, verde oscuro y verde de acción. -->
+    <SolidColorBrush x:Key="BgBrush" Color="#040705"/>
+    <SolidColorBrush x:Key="PanelBrush" Color="#08100B"/>
+    <SolidColorBrush x:Key="Panel2Brush" Color="#0C1710"/>
+    <SolidColorBrush x:Key="Panel3Brush" Color="#102219"/>
+    <SolidColorBrush x:Key="BorderBrush2" Color="#193B29"/>
+    <SolidColorBrush x:Key="BorderAccentBrush" Color="#00A95C"/>
+    <SolidColorBrush x:Key="TextBrush" Color="#A9DEB6"/>
+    <SolidColorBrush x:Key="TextDimBrush" Color="#638B6D"/>
     <SolidColorBrush x:Key="AccentBrush" Color="#00E676"/>
-    <SolidColorBrush x:Key="AccentSoftBrush" Color="#123D29"/>
-    <SolidColorBrush x:Key="WarnBrush" Color="#F4B740"/>
-    <SolidColorBrush x:Key="ErrBrush" Color="#FF5F6D"/>
-    <SolidColorBrush x:Key="OffBrush" Color="#516158"/>
-    <SolidColorBrush x:Key="SelectionBrush" Color="#164E31"/>
+    <SolidColorBrush x:Key="AccentSoftBrush" Color="#0B4A2B"/>
+    <SolidColorBrush x:Key="WarnBrush" Color="#B5A94F"/>
+    <SolidColorBrush x:Key="ErrBrush" Color="#C95461"/>
+    <SolidColorBrush x:Key="OffBrush" Color="#3F6249"/>
+    <SolidColorBrush x:Key="SelectionBrush" Color="#0E5B35"/>
 
-    <!-- Toda la ventana parte de un fondo oscuro para evitar superficies blancas heredadas de WPF. -->
+    <!-- Reemplazamos los colores de sistema para impedir que los templates nativos vuelvan al blanco. -->
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#0C1710"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#A9DEB6"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#040705"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#A9DEB6"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#0E5B35"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#C7F0D0"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#103C25"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#8FBE99"/>
+
     <Style TargetType="Window">
         <Setter Property="Background" Value="{StaticResource BgBrush}"/>
         <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
@@ -25,10 +34,19 @@
         <Setter Property="SnapsToDevicePixels" Value="True"/>
     </Style>
 
-    <!-- Las tarjetas de la interfaz utilizan este panel oscuro como fondo por defecto. -->
+    <Style TargetType="Control">
+        <Setter Property="Background" Value="{StaticResource Panel2Brush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush2}"/>
+    </Style>
+
     <Style TargetType="Border">
         <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource BorderBrush2}"/>
+    </Style>
+
+    <Style TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
     </Style>
 
     <Style TargetType="Button">
@@ -43,7 +61,7 @@
 
     <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
         <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
-        <Setter Property="Foreground" Value="#03150B"/>
+        <Setter Property="Foreground" Value="#021108"/>
         <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
@@ -63,7 +81,6 @@
         <Setter Property="Padding" Value="8,4"/>
     </Style>
 
-    <!-- Evita que los elementos del desplegable vuelvan al blanco predeterminado de WPF. -->
     <Style TargetType="ComboBoxItem">
         <Setter Property="Background" Value="{StaticResource Panel2Brush}"/>
         <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
@@ -71,8 +88,8 @@
     </Style>
 
     <Style TargetType="CheckBox">
-        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
         <Setter Property="Background" Value="{StaticResource Panel2Brush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
     </Style>
 
     <Style TargetType="TabControl">
@@ -83,7 +100,7 @@
 
     <Style TargetType="TabItem">
         <Setter Property="Background" Value="{StaticResource Panel2Brush}"/>
-        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextDimBrush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource BorderBrush2}"/>
         <Setter Property="Padding" Value="14,8"/>
     </Style>
@@ -101,32 +118,32 @@
         <Setter Property="AutoGenerateColumns" Value="False"/>
         <Setter Property="CanUserAddRows" Value="False"/>
         <Setter Property="FontFamily" Value="Consolas"/>
-        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="FontSize" Value="12"/>
         <Setter Property="SelectionMode" Value="Single"/>
         <Setter Property="SelectionUnit" Value="FullRow"/>
-    </Style>
-
-    <Style TargetType="DataGridColumnHeader">
-        <Setter Property="Background" Value="{StaticResource Panel2Brush}"/>
-        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush2}"/>
-        <Setter Property="Padding" Value="10,8"/>
-        <Setter Property="FontFamily" Value="Consolas"/>
-        <Setter Property="FontSize" Value="11"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
 
     <Style TargetType="DataGridRow">
         <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
         <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush2}"/>
     </Style>
 
     <Style TargetType="DataGridCell">
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush2}"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
         <Setter Property="Padding" Value="8,5"/>
+    </Style>
+
+    <Style TargetType="DataGridColumnHeader">
+        <Setter Property="Background" Value="{StaticResource Panel3Brush}"/>
+        <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush2}"/>
+        <Setter Property="BorderThickness" Value="0,0,0,1"/>
+        <Setter Property="Padding" Value="10,8"/>
+        <Setter Property="FontFamily" Value="Consolas"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontWeight" Value="Bold"/>
     </Style>
 
     <Style TargetType="ScrollViewer">
@@ -135,7 +152,11 @@
         <Setter Property="HorizontalScrollBarVisibility" Value="Disabled"/>
     </Style>
 
-    <!-- Lista que utilicemos en historial o futuras vistas también hereda el aspecto oscuro. -->
+    <Style TargetType="ScrollBar">
+        <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource AccentSoftBrush}"/>
+    </Style>
+
     <Style TargetType="ListBox">
         <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
         <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
