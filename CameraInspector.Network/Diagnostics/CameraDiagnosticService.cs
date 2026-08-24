@@ -23,10 +23,7 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
         IOnvifDeviceService onvifDeviceService,
         HttpClient httpClient)
     {
-        // _onvifDeviceService permite probar ONVIF sin conocer detalles SOAP desde esta clase.
         _onvifDeviceService = onvifDeviceService;
-
-        // _httpClient se entrega por DI y se reutiliza durante toda la vida del servicio.
         _httpClient = httpClient;
     }
 
@@ -46,10 +43,7 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
             TestMediaServiceAsync(device, username, password, cancellationToken)
         };
 
-        // WhenAll espera a que todas las pruebas terminen y conserva el resultado individual de cada una.
         var results = await Task.WhenAll(tests);
-
-        // ToList genera una colección independiente para que el consumidor pueda recorrerla sin afectar tareas internas.
         return results.ToList();
     }
 
@@ -65,8 +59,7 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
 
         try
         {
-            // parsedAddress convierte la IP textual al tipo esperado por el overload de Ping
-            // que admite CancellationToken en .NET 9.
+            // parsedAddress convierte la IP textual al tipo requerido por el overload de Ping que admite cancelación.
             if (!IPAddress.TryParse(ipAddress, out var parsedAddress))
             {
                 stopwatch.Stop();
@@ -79,15 +72,24 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                 };
             }
 
-            // ping es una instancia local porque Ping no se comparte entre operaciones concurrentes de este servicio.
+            // ping es una instancia local porque no se comparte entre diagnósticos concurrentes.
             using var ping = new Ping();
+
+            // El timeout se expresa como TimeSpan porque es la firma disponible en .NET 9 para este overload.
+            var timeout = TimeSpan.FromMilliseconds(1200);
+
+            // payload representa los datos ICMP enviados. Un bloque pequeño mantiene la prueba liviana.
+            var payload = new byte[32];
+
+            // options evita solicitar fragmentación del paquete ICMP.
+            var options = new PingOptions { DontFragment = false };
 
             // reply contiene el resultado ICMP devuelto por Windows.
             var reply = await ping.SendPingAsync(
                 parsedAddress,
-                1200,
-                new byte[32],
-                new PingOptions { DontFragment = false },
+                timeout,
+                payload,
+                options,
                 cancellationToken);
 
             stopwatch.Stop();
@@ -109,7 +111,6 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
         catch (Exception ex)
         {
             stopwatch.Stop();
-
             return new DiagnosticResult
             {
                 TestName = "Ping",
@@ -127,30 +128,20 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
         DiscoveredDevice device,
         CancellationToken cancellationToken)
     {
-        // port conserva el puerto HTTP descubierto; si aún no conocemos uno usamos el estándar 80.
         var port = device.HttpPort ?? 80;
-
-        // scheme representa el protocolo que utilizaremos para el intento inicial.
         var scheme = device.HttpsSupported && !device.HttpSupported ? "https" : "http";
-
-        // endpoint es la URL utilizada únicamente para comprobar conectividad HTTP.
         var endpoint = $"{scheme}://{device.IpAddress}:{port}/";
-
         var stopwatch = Stopwatch.StartNew();
 
         try
         {
-            // request se crea por operación para evitar compartir headers o estado entre cámaras.
             using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
-
-            // response contiene la respuesta HTTP/HTTPS recibida del dispositivo.
             using var response = await _httpClient.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken);
 
             stopwatch.Stop();
-
             return new DiagnosticResult
             {
                 TestName = "HTTP",
@@ -166,7 +157,6 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
         catch (Exception ex)
         {
             stopwatch.Stop();
-
             return new DiagnosticResult
             {
                 TestName = "HTTP",
@@ -185,13 +175,11 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
         DiscoveredDevice device,
         CancellationToken cancellationToken)
     {
-        // port conserva el puerto detectado; si no existe utilizamos 554, puerto RTSP convencional.
         var port = device.RtspPort ?? 554;
         var stopwatch = Stopwatch.StartNew();
 
         try
         {
-            // parsedAddress convierte la IP textual al tipo requerido por ConnectAsync con cancelación.
             if (!IPAddress.TryParse(device.IpAddress, out var parsedAddress))
             {
                 stopwatch.Stop();
@@ -204,16 +192,10 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                 };
             }
 
-            // client intenta establecer una conexión TCP simple con el endpoint RTSP.
             using var client = new TcpClient();
-
-            await client.ConnectAsync(
-                parsedAddress,
-                port,
-                cancellationToken);
+            await client.ConnectAsync(parsedAddress, port, cancellationToken);
 
             stopwatch.Stop();
-
             return new DiagnosticResult
             {
                 TestName = "RTSP",
@@ -231,7 +213,6 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
         catch (Exception ex)
         {
             stopwatch.Stop();
-
             return new DiagnosticResult
             {
                 TestName = "RTSP",
@@ -242,9 +223,6 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
         }
     }
 
-    /// <summary>
-    /// Ejecuta GetDeviceInformation y comprueba que exista un Device Service ONVIF funcional.
-    /// </summary>
     private async Task<DiagnosticResult> TestOnvifAsync(
         DiscoveredDevice device,
         string? username,
@@ -252,18 +230,10 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
         CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
-
         try
         {
-            // info contiene la identidad devuelta por el Device Service cuando la prueba es exitosa.
-            var info = await _onvifDeviceService.GetDeviceInformationAsync(
-                device,
-                username,
-                password,
-                cancellationToken);
-
+            var info = await _onvifDeviceService.GetDeviceInformationAsync(device, username, password, cancellationToken);
             stopwatch.Stop();
-
             if (info is null)
             {
                 return new DiagnosticResult
@@ -290,7 +260,6 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
         catch (Exception ex)
         {
             stopwatch.Stop();
-
             return new DiagnosticResult
             {
                 TestName = "ONVIF",
@@ -301,9 +270,6 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
         }
     }
 
-    /// <summary>
-    /// Comprueba que GetCapabilities anuncie un Media Service utilizable.
-    /// </summary>
     private async Task<DiagnosticResult> TestMediaServiceAsync(
         DiscoveredDevice device,
         string? username,
@@ -311,18 +277,10 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
         CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
-
         try
         {
-            // capabilities contiene los servicios reales anunciados por la cámara.
-            var capabilities = await _onvifDeviceService.GetCapabilitiesAsync(
-                device,
-                username,
-                password,
-                cancellationToken);
-
+            var capabilities = await _onvifDeviceService.GetCapabilitiesAsync(device, username, password, cancellationToken);
             stopwatch.Stop();
-
             if (capabilities is null)
             {
                 return new DiagnosticResult
@@ -361,7 +319,6 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
         catch (Exception ex)
         {
             stopwatch.Stop();
-
             return new DiagnosticResult
             {
                 TestName = "Media Service",
