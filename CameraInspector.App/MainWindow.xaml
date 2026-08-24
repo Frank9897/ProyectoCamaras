@@ -1,7 +1,7 @@
 <Window x:Class="CameraInspector.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Camera Inspector" Height="720" Width="1180"
+        Title="Camera Inspector" Height="760" Width="1380"
         WindowStartupLocation="CenterScreen">
 
     <Grid Margin="18">
@@ -12,50 +12,59 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
+        <!-- Encabezado principal de la aplicación. -->
         <DockPanel Grid.Row="0" Margin="0,0,0,14">
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
                 <TextBlock Text="CAMERA INSPECTOR" FontFamily="Consolas" FontSize="16" FontWeight="Bold"
                            Foreground="{StaticResource TextBrush}" VerticalAlignment="Center"/>
-                <TextBlock Text=" — Dispositivos en red" FontSize="13"
+                <TextBlock Text=" — Descubrimiento y diagnóstico de dispositivos" FontSize="13"
                            Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="8,0,0,0"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
                 <ComboBox ItemsSource="{Binding AvailableInterfaces}"
                           SelectedItem="{Binding SelectedInterface}"
-                          Width="260" Margin="0,0,10,0"/>
+                          Width="290" Margin="0,0,10,0"/>
                 <Button Content="▣ Escanear red" Style="{StaticResource PrimaryButton}"
                         Command="{Binding ScanCommand}"/>
             </StackPanel>
         </DockPanel>
 
+        <!-- Estado operativo visible para el técnico. -->
         <TextBlock Grid.Row="1" Text="{Binding StatusText}" Foreground="{StaticResource TextDimBrush}"
                    FontFamily="Consolas" FontSize="12" Margin="0,0,0,10"/>
 
-        <!-- Tabla de dispositivos -->
+        <!-- Tabla principal de dispositivos encontrados. -->
         <Border Grid.Row="2" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="6">
             <DataGrid ItemsSource="{Binding Devices}" BorderThickness="0" IsReadOnly="True"
-                      SelectedItem="{Binding SelectedDevice}">
+                      SelectedItem="{Binding SelectedDevice}"
+                      AutoGenerateColumns="False"
+                      CanUserResizeRows="False">
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="ESTADO" Binding="{Binding Status}" Width="90"/>
-                    <DataGridTextColumn Header="IP" Binding="{Binding IpAddress}" Width="130"/>
+                    <DataGridTextColumn Header="IP" Binding="{Binding IpAddress}" Width="125"/>
                     <DataGridTextColumn Header="MAC" Binding="{Binding MacAddress}" Width="160"/>
                     <DataGridTextColumn Header="FABRICANTE" Binding="{Binding Manufacturer}" Width="130"/>
-                    <DataGridTextColumn Header="MODELO" Binding="{Binding Model}" Width="160"/>
+                    <DataGridTextColumn Header="MODELO" Binding="{Binding Model}" Width="155"/>
                     <DataGridTextColumn Header="FIRMWARE" Binding="{Binding Firmware}" Width="110"/>
-                    <DataGridTextColumn Header="ONVIF" Binding="{Binding OnvifSupported}" Width="70"/>
+                    <DataGridTextColumn Header="ONVIF" Binding="{Binding OnvifSupported}" Width="75"/>
+                    <DataGridTextColumn Header="WS-DISCOVERY" Binding="{Binding DiscoveredByOnvif}" Width="105"/>
                     <DataGridTextColumn Header="RTSP" Binding="{Binding RtspSupported}" Width="70"/>
+                    <DataGridTextColumn Header="DEVICE SERVICE" Binding="{Binding OnvifDeviceServiceXAddr}" Width="280"/>
                     <DataGridTextColumn Header="ÚLT. VISTO" Binding="{Binding LastSeenAt}" Width="*"/>
                 </DataGrid.Columns>
             </DataGrid>
         </Border>
 
+        <!-- Barra inferior con acciones sobre la cámara seleccionada y estadísticas del escaneo. -->
         <DockPanel Grid.Row="3" Margin="0,10,0,0">
-            <Button DockPanel.Dock="Right" Content="▶ Obtener URL de stream (Capa 5)"
-                    Command="{Binding GetStreamUriCommand}" Margin="10,0,0,0"/>
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                <Button Content="▶ Obtener URL de stream (Capa 5)"
+                        Command="{Binding GetStreamUriCommand}" Margin="10,0,0,0"/>
+            </StackPanel>
+
             <TextBlock FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}">
                 <Run Text="Total: "/><Run Text="{Binding Devices.Count, Mode=OneWay}"/>
-                <Run Text=" dispositivos · Fase 1 MVP + Capa 4 (fabricante) + Capa 5 (stream URI)"/>
+                <Run Text=" dispositivos · Ping/ARP + WS-Discovery + resolución de fabricante"/>
             </TextBlock>
         </DockPanel>
     </Grid>
