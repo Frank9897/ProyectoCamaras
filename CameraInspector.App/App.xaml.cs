@@ -65,7 +65,11 @@ public partial class App : Application
 
                     // ---- Capa 5: ONVIF Device + Media ----
                     services.AddSingleton<IOnvifDeviceService, Network.OnvifMedia.OnvifDeviceService>();
-                    services.AddSingleton<IStreamUriResolver, Network.OnvifMedia.OnvifMediaService>();
+                    services.AddSingleton<Network.OnvifMedia.OnvifMediaService>();
+                    services.AddSingleton<IOnvifMediaService>(sp =>
+                        sp.GetRequiredService<Network.OnvifMedia.OnvifMediaService>());
+                    services.AddSingleton<IStreamUriResolver>(sp =>
+                        sp.GetRequiredService<Network.OnvifMedia.OnvifMediaService>());
 
                     // ---- Capa 5 (Providers propietarios): se agregan en Fase 4 del plan ----
                     // services.AddScoped<ICameraProvider, HikvisionProvider>();
