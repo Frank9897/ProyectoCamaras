@@ -1,61 +1,69 @@
-# Camera Inspector — Fase 1 MVP (esqueleto inicial)
+# Camera Inspector — MVP de descubrimiento y diagnóstico de cámaras IP
 
-Este es el primer corte de código, correspondiente al arranque de la **Fase 1 (MVP)**:
-detección de interfaz de red, cálculo de subred, ping sweep y resolución ARP,
-mostrados en vivo en la primera pantalla (Escanear) con la UI en WPF.
+Camera Inspector es una aplicación de escritorio para Windows orientada a técnicos de CCTV. Su objetivo es descubrir dispositivos en red, identificar cámaras/IP devices, consultar ONVIF, resolver streams RTSP y, progresivamente, incorporar diagnóstico y administración.
 
-## Requisitos para compilar
+## Estado actual
 
-- Windows 10/11
-- Visual Studio 2022 (17.9+) con carga de trabajo ".NET desktop development"
-- .NET 8 SDK
+La aplicación ya incorpora:
 
-> Nota: este código se escribió y organizó fuera de Windows, por lo que **no fue compilado
-> todavía**. Al abrir la solución en Visual Studio es esperable tener que resolver algún
-> detalle menor de referencias/paquetes NuGet la primera vez (`dotnet restore` debería
-> bastar en la mayoría de los casos).
+- Descubrimiento de interfaces de red.
+- Cálculo de subred y ping sweep paralelo.
+- Resolución ARP para obtener MAC cuando está disponible.
+- Resolución de fabricante mediante OUI, HTTP y ONVIF.
+- WS-Discovery para detectar dispositivos ONVIF y obtener su `Device Service XAddr`.
+- `GetDeviceInformation` para fabricante, modelo, firmware y número de serie.
+- `GetCapabilities` para descubrir Media, Imaging, PTZ y Events.
+- `GetProfiles` + `GetStreamUri` para resolver Main Stream y Sub Stream.
+- Identificación de resolución, codec y FPS del perfil de video.
+- Interfaz WPF con tabla de dispositivos y panel técnico.
 
-## Cómo compilar
+## Requisitos
 
-```
-cd CameraInspector
+- Windows 10/11.
+- .NET 9 SDK.
+- Para desarrollo: Visual Studio 2022 o VS Code con el SDK de .NET 9.
+
+La solución utiliza componentes específicos de Windows para ARP y WPF, por lo que la ejecución objetivo es Windows.
+
+## Compilar
+
+```bash
 dotnet restore
-dotnet build
+dotnet build CameraInspector.sln
 ```
 
-Para correr la app (requiere Windows, WPF no corre en Linux/Mac):
+## Ejecutar
 
-```
+```bash
 dotnet run --project CameraInspector.App
 ```
 
-## Qué hace este corte
+## Persistencia
 
-- `CameraInspector.Core`: modelos (`DiscoveredDevice`, `NetworkInterfaceInfo`) e interfaces
-  de la Capa 3 (`INetworkScanner`, `IPingScanner`, `IArpResolver`, `ISubnetCalculator`,
-  `INetworkInterfaceService`) — el contrato que todo lo demás implementa.
-- `CameraInspector.Network`: implementación real de descubrimiento — detecta interfaces
-  de red activas, calcula el rango de IPs de la subred, hace ping sweep paralelo acotado,
-  y resuelve MAC vía la tabla ARP del sistema (P/Invoke a `iphlpapi.dll`).
-- `CameraInspector.Persistence`: `DbContext` de EF Core sobre SQLite, con las tablas
-  `cameras`, `camera_interfaces`, `camera_tests`, `camera_events`, `camera_credentials`
-  (la base se crea y migra sola en `%AppData%\CameraInspector\camerainspector.db`).
-- `CameraInspector.App`: WPF + MVVM (`CommunityToolkit.Mvvm`) + Generic Host para DI.
-  La pantalla "Escanear" ya funciona de punta a punta: detecta tu interfaz de red,
-  escanea la subred, y llena la tabla en vivo a medida que aparecen dispositivos.
+La aplicación utiliza SQLite mediante Entity Framework Core. La base local se almacena en el perfil local del usuario para evitar requerir un servidor de base de datos.
 
-## Qué falta (próximos pasos, ya conversados)
+## Arquitectura
 
-1. **Capa 4 — Resolución de fabricante**: `IManufacturerDetector` (OUI, ONVIF DeviceInfo,
-   HTTP banner) con score de confianza.
-2. **Capa 5 — Providers**: `IOnvifCameraService` + `GenericOnvifProvider`,
-   `HikvisionProvider`, etc., inyectados por composición.
-3. **Capa 6 — Diagnóstico**: `IDiagnosticTest` + `DiagnosticsOrchestrator` corriendo
-   en paralelo.
-4. **Capa 7 — Video**: integración FFmpeg/FFmpeg.AutoGen para el visor RTSP.
-5. **Capa 9 — Seguridad**: wrapper de Windows Credential Manager para
-   `CameraCredentialEntity.CredentialRef`.
-6. Migraciones EF Core reales (`dotnet ef migrations add InitialCreate`) — todavía no
-   se generaron porque requieren el SDK de EF Core Tools corriendo contra el proyecto.
-7. Conectar las pantallas restantes del mockup (Detalle, Video, Diagnóstico, Red,
-   Historial) como `UserControl` + `ViewModel` adicionales, reutilizando el mismo patrón.
+```text
+CameraInspector.App
+        ↓
+CameraInspector.Core
+        ↓
+CameraInspector.Network
+        ↓
+ONVIF / WS-Discovery / RTSP
+        ↓
+CameraInspector.Persistence
+```
+
+El núcleo debe permanecer desacoplado de WPF, SQLite y protocolos concretos.
+
+## Próximos bloques
+
+1. Visor RTSP dentro de la aplicación.
+2. Diagnóstico automático de conectividad, autenticación y video.
+3. Credential Manager de Windows.
+4. Providers de fabricantes (Hikvision, Dahua, Axis, etc.).
+5. Configuración ONVIF: imagen, red, PTZ, eventos.
+6. Historial, auditoría y reportes.
+7. Soporte USB/UVC como funcionalidad secundaria.
