@@ -20,6 +20,14 @@ public sealed record ManufacturerDetectionResult
 
     public bool OnvifSupported { get; init; }
     public string? OnvifProfile { get; init; }
+
+    /// <summary>
+    /// URL exacta del Device Service ONVIF utilizada por el detector.
+    /// Se conserva para que las capas posteriores reutilicen el endpoint real detectado
+    /// en lugar de reconstruirlo a partir de la IP.
+    /// </summary>
+    public string? OnvifDeviceServiceXAddr { get; init; }
+
     public bool RtspSupported { get; init; }
     public bool HttpSupported { get; init; }
     public bool HttpsSupported { get; init; }
