@@ -7,24 +7,26 @@ namespace CameraInspector.Persistence;
 
 /// <summary>
 /// Persiste la relación entre una cámara y una referencia de credencial segura.
-/// Esta clase nunca recibe ni almacena la contraseña real.
+/// Utiliza IDbContextFactory para que cada operación tenga una unidad de trabajo independiente.
 /// </summary>
 public sealed class CameraCredentialStore : ICameraCredentialStore
 {
-    private readonly CameraInspectorDbContext _db;
+    private readonly IDbContextFactory<CameraInspectorDbContext> _dbFactory;
 
-    public CameraCredentialStore(CameraInspectorDbContext db)
+    public CameraCredentialStore(IDbContextFactory<CameraInspectorDbContext> dbFactory)
     {
-        // _db representa la unidad de trabajo SQLite utilizada para consultar y guardar la relación.
-        _db = db;
+        // _dbFactory crea un DbContext exclusivo para cada operación de credenciales.
+        _dbFactory = dbFactory;
     }
 
     public async Task<CameraCredentialInfo?> GetAsync(
         int cameraId,
         CancellationToken cancellationToken = default)
     {
-        // entity contiene exclusivamente los metadatos almacenados en SQLite.
-        var entity = await _db.CameraCredentials
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+
+        // entity contiene exclusivamente metadatos; el secreto real sigue en Credential Manager.
+        var entity = await db.CameraCredentials
             .AsNoTracking()
             .FirstOrDefaultAsync(item => item.CameraId == cameraId, cancellationToken);
 
@@ -48,13 +50,15 @@ public sealed class CameraCredentialStore : ICameraCredentialStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(username);
 
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+
         // entity representa la relación persistente que pertenece a la cámara indicada.
-        var entity = await _db.CameraCredentials
+        var entity = await db.CameraCredentials
             .FirstOrDefaultAsync(item => item.CameraId == cameraId, cancellationToken);
 
         if (entity is null)
         {
-            // La cámara todavía no tiene credenciales vinculadas, por lo que creamos el registro.
+            // La cámara todavía no tiene una credencial vinculada.
             entity = new CameraCredentialEntity
             {
                 CameraId = cameraId,
@@ -62,17 +66,17 @@ public sealed class CameraCredentialStore : ICameraCredentialStore
                 CredentialRef = credentialRef
             };
 
-            _db.CameraCredentials.Add(entity);
+            db.CameraCredentials.Add(entity);
         }
         else
         {
-            // Actualizamos solamente los metadatos de la credencial; el secreto sigue fuera de SQLite.
+            // Solo actualizamos la referencia segura y el usuario; nunca el secreto.
             entity.Username = username;
             entity.CredentialRef = credentialRef;
             entity.LastVerifiedAt = null;
         }
 
-        await _db.SaveChangesAsync(cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     public async Task MarkVerifiedAsync(
@@ -80,30 +84,34 @@ public sealed class CameraCredentialStore : ICameraCredentialStore
         DateTimeOffset verifiedAt,
         CancellationToken cancellationToken = default)
     {
-        // entity representa la relación de credencial cuya última verificación vamos a actualizar.
-        var entity = await _db.CameraCredentials
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+
+        // entity representa la relación cuya última verificación vamos a actualizar.
+        var entity = await db.CameraCredentials
             .FirstOrDefaultAsync(item => item.CameraId == cameraId, cancellationToken);
 
         if (entity is null)
             return;
 
-        // LastVerifiedAt cambia solamente después de una operación que confirmó que la credencial funciona.
+        // LastVerifiedAt cambia después de una operación que confirmó el uso de la credencial.
         entity.LastVerifiedAt = verifiedAt;
-        await _db.SaveChangesAsync(cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     public async Task DeleteAsync(
         int cameraId,
         CancellationToken cancellationToken = default)
     {
-        // entity representa la relación que debe eliminarse del inventario.
-        var entity = await _db.CameraCredentials
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+
+        // entity representa la relación que debe desaparecer del inventario.
+        var entity = await db.CameraCredentials
             .FirstOrDefaultAsync(item => item.CameraId == cameraId, cancellationToken);
 
         if (entity is null)
             return;
 
-        _db.CameraCredentials.Remove(entity);
-        await _db.SaveChangesAsync(cancellationToken);
+        db.CameraCredentials.Remove(entity);
+        await db.SaveChangesAsync(cancellationToken);
     }
 }
