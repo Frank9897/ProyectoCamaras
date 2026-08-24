@@ -1,0 +1,11 @@
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Core\bin\Debug\net9.0\CameraInspector.Core.deps.json
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Core\bin\Debug\net9.0\CameraInspector.Core.dll
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Core\bin\Debug\net9.0\CameraInspector.Core.pdb
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Core\obj\Debug\net9.0\CameraInspector.Core.GeneratedMSBuildEditorConfig.editorconfig
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Core\obj\Debug\net9.0\CameraInspector.Core.AssemblyInfoInputs.cache
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Core\obj\Debug\net9.0\CameraInspector.Core.AssemblyInfo.cs
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Core\obj\Debug\net9.0\CameraInspector.Core.csproj.CoreCompileInputs.cache
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Core\obj\Debug\net9.0\CameraInspector.Core.dll
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Core\obj\Debug\net9.0\refint\CameraInspector.Core.dll
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Core\obj\Debug\net9.0\CameraInspector.Core.pdb
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Core\obj\Debug\net9.0\ref\CameraInspector.Core.dll

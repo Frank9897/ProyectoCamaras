@@ -1,0 +1,15 @@
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Network\bin\Debug\net9.0-windows\CameraInspector.Network.deps.json
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Network\bin\Debug\net9.0-windows\CameraInspector.Network.dll
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Network\bin\Debug\net9.0-windows\CameraInspector.Network.pdb
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Network\bin\Debug\net9.0-windows\CameraInspector.Core.dll
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Network\bin\Debug\net9.0-windows\CameraInspector.Core.pdb
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Network\obj\Debug\net9.0-windows\CameraInspector.Network.csproj.AssemblyReference.cache
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Network\obj\Debug\net9.0-windows\CameraInspector.Network.GeneratedMSBuildEditorConfig.editorconfig
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Network\obj\Debug\net9.0-windows\CameraInspector.Network.AssemblyInfoInputs.cache
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Network\obj\Debug\net9.0-windows\CameraInspector.Network.AssemblyInfo.cs
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Network\obj\Debug\net9.0-windows\CameraInspector.Network.csproj.CoreCompileInputs.cache
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Network\obj\Debug\net9.0-windows\CameraIn.C620D271.Up2Date
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Network\obj\Debug\net9.0-windows\CameraInspector.Network.dll
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Network\obj\Debug\net9.0-windows\refint\CameraInspector.Network.dll
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Network\obj\Debug\net9.0-windows\CameraInspector.Network.pdb
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Network\obj\Debug\net9.0-windows\ref\CameraInspector.Network.dll

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>CameraInspector.Network</RootNamespace>
+    <!-- net9.0-windows porque IArpResolver usa iphlpapi (P/Invoke específico de Windows) -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CameraInspector.Core\CameraInspector.Core.csproj" />
+  </ItemGroup>
+
+</Project>

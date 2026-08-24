@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>CameraInspector.App</RootNamespace>
+    <!-- Agregar <ApplicationIcon>Assets\app.ico</ApplicationIcon> cuando exista el ícono -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CameraInspector.Core\CameraInspector.Core.csproj" />
+    <ProjectReference Include="..\CameraInspector.Network\CameraInspector.Network.csproj" />
+    <ProjectReference Include="..\CameraInspector.Persistence\CameraInspector.Persistence.csproj" />
+  </ItemGroup>
+
+</Project>

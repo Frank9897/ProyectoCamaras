@@ -1,0 +1,17 @@
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Persistence\bin\Debug\net9.0\CameraInspector.Persistence.deps.json
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Persistence\bin\Debug\net9.0\CameraInspector.Persistence.runtimeconfig.json
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Persistence\bin\Debug\net9.0\CameraInspector.Persistence.dll
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Persistence\bin\Debug\net9.0\CameraInspector.Persistence.pdb
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Persistence\bin\Debug\net9.0\CameraInspector.Core.dll
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Persistence\bin\Debug\net9.0\CameraInspector.Core.pdb
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Persistence\obj\Debug\net9.0\CameraInspector.Persistence.csproj.AssemblyReference.cache
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Persistence\obj\Debug\net9.0\CameraInspector.Persistence.GeneratedMSBuildEditorConfig.editorconfig
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Persistence\obj\Debug\net9.0\CameraInspector.Persistence.AssemblyInfoInputs.cache
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Persistence\obj\Debug\net9.0\CameraInspector.Persistence.AssemblyInfo.cs
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Persistence\obj\Debug\net9.0\CameraInspector.Persistence.csproj.CoreCompileInputs.cache
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Persistence\obj\Debug\net9.0\CameraIn.8B77E04A.Up2Date
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Persistence\obj\Debug\net9.0\CameraInspector.Persistence.dll
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Persistence\obj\Debug\net9.0\refint\CameraInspector.Persistence.dll
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Persistence\obj\Debug\net9.0\CameraInspector.Persistence.pdb
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Persistence\obj\Debug\net9.0\CameraInspector.Persistence.genruntimeconfig.cache
+D:\Estudio\CHAMBA\ProyectoCatastroCamaras\CameraInspector\CameraInspector.Persistence\obj\Debug\net9.0\ref\CameraInspector.Persistence.dll
