@@ -2,6 +2,7 @@ using System.Windows;
 using CameraInspector.App.ViewModels;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.Network;
+using CameraInspector.Network.OnvifDiscovery;
 using CameraInspector.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,6 +20,8 @@ public partial class App : Application
 
     public App()
     {
+        // Capturamos excepciones no controladas del hilo de UI para mostrar un mensaje visible
+        // al técnico en lugar de cerrar silenciosamente la aplicación.
         DispatcherUnhandledException += (_, args) =>
         {
             MessageBox.Show(
@@ -28,6 +31,7 @@ public partial class App : Application
             args.Handled = true;
         };
 
+        // Capturamos excepciones de dominio que no hayan pasado por el dispatcher de WPF.
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
         {
             MessageBox.Show(
@@ -43,6 +47,8 @@ public partial class App : Application
 
         try
         {
+            // _host contiene el contenedor de inyección de dependencias y el ciclo de vida
+            // de los servicios de la aplicación.
             _host = Host.CreateDefaultBuilder()
                 .ConfigureServices((_, services) =>
                 {
@@ -55,6 +61,7 @@ public partial class App : Application
                     services.AddSingleton<ISubnetCalculator, SubnetCalculator>();
                     services.AddSingleton<IPingScanner, PingScanner>();
                     services.AddSingleton<IArpResolver, ArpResolver>();
+                    services.AddSingleton<IOnvifDiscoveryService, WsDiscoveryOnvifService>();
                     services.AddSingleton<INetworkScanner, NetworkScanOrchestrator>();
 
                     // ---- Capa 4: Resolución de fabricante ----
@@ -85,10 +92,12 @@ public partial class App : Application
             // Aplica migraciones automáticamente: el técnico nunca configura la base a mano.
             using (var scope = _host.Services.CreateScope())
             {
+                // db representa el contexto de SQLite utilizado para crear/actualizar la base local.
                 var db = scope.ServiceProvider.GetRequiredService<CameraInspectorDbContext>();
                 await db.Database.MigrateAsync();
             }
 
+            // mainWindow contiene la ventana principal y recibe automáticamente MainViewModel mediante DI.
             var mainWindow = _host.Services.GetRequiredService<MainWindow>();
             mainWindow.Show();
         }
@@ -104,6 +113,7 @@ public partial class App : Application
 
     protected override async void OnExit(ExitEventArgs e)
     {
+        // _host puede ser null si el arranque falló antes de construir el contenedor.
         if (_host is not null)
         {
             await _host.StopAsync();
