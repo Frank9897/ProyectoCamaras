@@ -11,12 +11,12 @@ namespace CameraInspector.App.Security;
 /// </summary>
 public sealed class WindowsCredentialStore : ICredentialStore
 {
-    // CredentialTypeNetworkBasic representa credenciales genéricas de Windows apropiadas
+    // CredentialTypeGeneric representa credenciales genéricas de Windows apropiadas
     // para almacenar usuario y contraseña de un dispositivo de red.
     private const uint CredentialTypeGeneric = 1;
 
-    // PersistLocalMachine permite que la credencial quede disponible para el usuario actual
-    // de este equipo de forma persistente entre ejecuciones de la aplicación.
+    // CredentialPersistLocalMachine mantiene la credencial disponible de forma persistente
+    // para el usuario actual del equipo entre ejecuciones de la aplicación.
     private const uint CredentialPersistLocalMachine = 2;
 
     public Task<Guid> SaveAsync(
@@ -29,46 +29,50 @@ public sealed class WindowsCredentialStore : ICredentialStore
         // credentialRef es la referencia opaca que SQLite guardará en lugar del secreto.
         var credentialRef = Guid.NewGuid();
 
-        // targetName es el identificador único usado por Windows Credential Manager.
+        // targetName identifica de forma única la entrada dentro de Windows Credential Manager.
         var targetName = BuildTargetName(credentialRef);
 
         // credentialBlob contiene temporalmente la contraseña convertida a UTF-16 para la API nativa.
         var credentialBlob = Encoding.Unicode.GetBytes(password + "\0");
 
+        // targetNamePtr y userNamePtr son bloques de memoria nativa que Windows espera como nint.
+        var targetNamePtr = Marshal.StringToHGlobalUni(targetName);
+        var userNamePtr = Marshal.StringToHGlobalUni(username);
+
+        // credentialBlobPtr contiene temporalmente la contraseña en memoria nativa.
+        var credentialBlobPtr = Marshal.AllocHGlobal(credentialBlob.Length);
+
         try
         {
+            // Copiamos la contraseña desde memoria administrada al bloque nativo requerido por Windows.
+            Marshal.Copy(credentialBlob, 0, credentialBlobPtr, credentialBlob.Length);
+
             // nativeCredential describe completamente la entrada que vamos a registrar en Windows.
             var nativeCredential = new NativeCredential
             {
                 Type = CredentialTypeGeneric,
-                TargetName = targetName,
-                UserName = username,
+                TargetName = targetNamePtr,
+                UserName = userNamePtr,
                 CredentialBlobSize = (uint)credentialBlob.Length,
                 Persist = CredentialPersistLocalMachine,
-                CredentialBlob = Marshal.AllocHGlobal(credentialBlob.Length)
+                CredentialBlob = credentialBlobPtr
             };
 
-            // Copiamos la contraseña desde memoria administrada al bloque nativo requerido por Windows.
-            Marshal.Copy(credentialBlob, 0, nativeCredential.CredentialBlob, credentialBlob.Length);
-
-            try
+            // CredWrite almacena la credencial en el almacén seguro de Windows.
+            if (!CredWrite(ref nativeCredential, 0))
             {
-                // CredWrite almacena la credencial en el almacén seguro de Windows.
-                if (!CredWrite(ref nativeCredential, 0))
-                {
-                    var error = Marshal.GetLastWin32Error();
-                    throw new Win32Exception(error, "No se pudo guardar la credencial en Windows Credential Manager.");
-                }
-            }
-            finally
-            {
-                // El bloque nativo se libera aunque CredWrite falle.
-                Marshal.FreeHGlobal(nativeCredential.CredentialBlob);
+                var error = Marshal.GetLastWin32Error();
+                throw new Win32Exception(error, "No se pudo guardar la credencial en Windows Credential Manager.");
             }
         }
         finally
         {
-            // Limpiamos la referencia administrada inmediatamente después de copiarla al bloque nativo.
+            // Liberamos todos los bloques nativos creados para esta operación, incluso si CredWrite falla.
+            Marshal.FreeHGlobal(credentialBlobPtr);
+            Marshal.FreeHGlobal(targetNamePtr);
+            Marshal.FreeHGlobal(userNamePtr);
+
+            // Limpiamos la referencia administrada inmediatamente después de liberar el bloque nativo.
             Array.Clear(credentialBlob, 0, credentialBlob.Length);
         }
 
