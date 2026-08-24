@@ -73,6 +73,20 @@ public sealed class LibVlcVideoPlayerService : IVideoPlayerService
         _currentMedia = null;
     }
 
+    public bool TakeSnapshot(string filePath, uint width = 0, uint height = 0)
+    {
+        // ArgumentNullException evita pasar una ruta vacía al componente nativo de LibVLC.
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+
+        // Snapshot requiere una salida de video activa; sin reproducción no existe frame que capturar.
+        if (!Player.IsPlaying)
+            return false;
+
+        // LibVLC devuelve 0 cuando la solicitud de snapshot pudo iniciarse correctamente.
+        var result = Player.TakeSnapshot(0, filePath, width, height);
+        return result == 0;
+    }
+
     public void Dispose()
     {
         // Stop libera el medio actualmente abierto antes de destruir Player y LibVLC.
