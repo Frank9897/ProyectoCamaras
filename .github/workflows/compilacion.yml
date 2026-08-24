@@ -1,0 +1,33 @@
+name: Compilación
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  compilar:
+    name: Compilar Camera Inspector
+    runs-on: windows-latest
+
+    steps:
+      # Descarga el estado exacto del repositorio que disparó el workflow.
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      # Instala el SDK de .NET 9 para que el build use exactamente la plataforma objetivo del proyecto.
+      - name: Instalar .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      # Restaura paquetes NuGet antes de compilar todos los proyectos.
+      - name: Restaurar dependencias
+        run: dotnet restore CameraInspector.sln
+
+      # Compila en Release sobre Windows, necesario porque WPF y parte de la capa de red son específicas de Windows.
+      - name: Compilar solución
+        run: dotnet build CameraInspector.sln --configuration Release --no-restore
