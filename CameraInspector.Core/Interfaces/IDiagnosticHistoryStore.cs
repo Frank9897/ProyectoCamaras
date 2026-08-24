@@ -3,8 +3,8 @@ using CameraInspector.Core.Models;
 namespace CameraInspector.Core.Interfaces;
 
 /// <summary>
-/// Contrato de persistencia para guardar los resultados de una ejecución de diagnóstico.
-/// Core define la operación; SQLite implementa el almacenamiento en Persistence.
+/// Contrato de persistencia para guardar y consultar resultados de diagnóstico.
+/// Core define las operaciones; SQLite implementa el almacenamiento en Persistence.
 /// </summary>
 public interface IDiagnosticHistoryStore
 {
@@ -14,5 +14,13 @@ public interface IDiagnosticHistoryStore
     Task SaveAsync(
         int cameraId,
         IReadOnlyList<DiagnosticResult> results,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Devuelve los últimos resultados de una cámara, ordenados desde el más reciente.
+    /// </summary>
+    Task<IReadOnlyList<DiagnosticHistoryItem>> GetRecentAsync(
+        int cameraId,
+        int limit = 100,
         CancellationToken cancellationToken = default);
 }
