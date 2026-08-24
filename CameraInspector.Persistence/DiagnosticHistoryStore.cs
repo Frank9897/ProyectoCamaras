@@ -45,9 +45,11 @@ public sealed class DiagnosticHistoryStore : IDiagnosticHistoryStore
             Result = result.NotSupported
                 ? "SKIPPED"
                 : result.Success ? "OK" : "ERROR",
-            ResponseTimeMs = result.Duration.TotalMilliseconds > int.MaxValue
-                ? int.MaxValue
-                : Math.Max(0, (int)result.Duration.TotalMilliseconds),
+            // Duration es nullable porque algunas pruebas pueden terminar sin poder medir tiempo.
+            // Cuando no existe duración, guardamos null en SQLite en lugar de provocar una excepción.
+            ResponseTimeMs = result.Duration.HasValue
+                ? Math.Clamp((int)Math.Round(result.Duration.Value.TotalMilliseconds), 0, int.MaxValue)
+                : null,
             ErrorMessage = result.Success || result.NotSupported
                 ? null
                 : result.Message,
