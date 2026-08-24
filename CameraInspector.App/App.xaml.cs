@@ -11,9 +11,7 @@ namespace CameraInspector.App;
 
 /// <summary>
 /// Punto de arranque de la aplicación. En vez de instanciar servicios "a mano",
-/// usamos un Generic Host (igual que en un backend ASP.NET) para que registrar
-/// un fabricante nuevo en el futuro sea agregar UNA línea acá — nunca tocar
-/// Network, Core ni las pantallas existentes.
+/// usamos un Generic Host para mantener las capas desacopladas y facilitar futuros providers.
 /// </summary>
 public partial class App : Application
 {
@@ -21,8 +19,6 @@ public partial class App : Application
 
     public App()
     {
-        // Sin esto, cualquier excepción durante el arranque (host, DI, migración)
-        // mata el proceso en silencio porque es WinExe y no hay consola visible.
         DispatcherUnhandledException += (_, args) =>
         {
             MessageBox.Show(
@@ -67,7 +63,8 @@ public partial class App : Application
                     services.AddSingleton<IManufacturerDetector, Network.Detection.OnvifProbeDetector>();
                     services.AddSingleton<IManufacturerResolver, Network.Detection.ManufacturerResolver>();
 
-                    // ---- Capa 5: Media Service ONVIF (URL de stream real) ----
+                    // ---- Capa 5: ONVIF Device + Media ----
+                    services.AddSingleton<IOnvifDeviceService, Network.OnvifMedia.OnvifDeviceService>();
                     services.AddSingleton<IStreamUriResolver, Network.OnvifMedia.OnvifMediaService>();
 
                     // ---- Capa 5 (Providers propietarios): se agregan en Fase 4 del plan ----
