@@ -7,16 +7,17 @@ namespace CameraInspector.Persistence;
 
 /// <summary>
 /// Persiste dispositivos identificados como cámaras.
-/// La MAC es la clave de correlación preferida; la IP funciona como respaldo cuando no existe MAC.
+/// Utiliza IDbContextFactory para que el store pueda vivir durante toda la aplicación
+/// sin conservar un DbContext compartido entre operaciones concurrentes.
 /// </summary>
 public sealed class CameraInventoryStore : ICameraInventoryStore
 {
-    private readonly CameraInspectorDbContext _db;
+    private readonly IDbContextFactory<CameraInspectorDbContext> _dbFactory;
 
-    public CameraInventoryStore(CameraInspectorDbContext db)
+    public CameraInventoryStore(IDbContextFactory<CameraInspectorDbContext> dbFactory)
     {
-        // _db representa la unidad de trabajo SQLite utilizada por el inventario.
-        _db = db;
+        // _dbFactory crea un DbContext independiente para cada operación de inventario.
+        _dbFactory = dbFactory;
     }
 
     public async Task<int> UpsertAsync(
@@ -25,25 +26,25 @@ public sealed class CameraInventoryStore : ICameraInventoryStore
     {
         ArgumentNullException.ThrowIfNull(device);
 
+        // db representa una unidad de trabajo SQLite exclusiva para este Upsert.
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+
         // camera busca primero por MAC porque puede sobrevivir a cambios de IP.
         CameraEntity? camera = null;
 
         if (!string.IsNullOrWhiteSpace(device.MacAddress))
         {
-            camera = await _db.Cameras
+            camera = await db.Cameras
                 .FirstOrDefaultAsync(c => c.Mac == device.MacAddress, cancellationToken);
         }
 
         // Si no existe MAC, utilizamos la IP como mecanismo secundario de correlación.
-        camera ??= await _db.Cameras
+        camera ??= await db.Cameras
             .FirstOrDefaultAsync(c => c.Ip == device.IpAddress, cancellationToken);
-
-        // firstSeen representa el momento en que la cámara entró por primera vez al inventario.
-        var firstSeen = device.FirstSeenAt;
 
         if (camera is null)
         {
-            // Una cámara nueva obtiene un registro persistente con la identidad disponible en este momento.
+            // Una cámara nueva obtiene un registro persistente con la identidad disponible.
             camera = new CameraEntity
             {
                 Ip = device.IpAddress,
@@ -53,16 +54,15 @@ public sealed class CameraInventoryStore : ICameraInventoryStore
                 Firmware = device.FirmwareVersion,
                 SerialNumber = device.SerialNumber,
                 Hostname = device.Hostname,
-                FirstSeen = firstSeen,
+                FirstSeen = device.FirstSeenAt,
                 LastSeen = device.LastSeenAt
             };
 
-            // Add incorpora la entidad al contexto; SaveChanges asignará el Id SQLite.
-            _db.Cameras.Add(camera);
+            db.Cameras.Add(camera);
         }
         else
         {
-            // Los campos se actualizan solo cuando el descubrimiento proporciona un valor válido.
+            // Los datos descubiertos se actualizan sin borrar información previa válida.
             camera.Ip = device.IpAddress;
             camera.Mac ??= device.MacAddress;
             camera.Manufacturer = device.Manufacturer ?? camera.Manufacturer;
@@ -73,8 +73,7 @@ public sealed class CameraInventoryStore : ICameraInventoryStore
             camera.LastSeen = device.LastSeenAt;
         }
 
-        // Info almacena capacidades no tabuladas en columnas independientes.
-        // Se mantiene legible y permite ampliar el inventario sin migrar por cada nueva capacidad.
+        // Info conserva capacidades extensibles sin obligarnos a crear una migración por cada propiedad nueva.
         camera.Info = System.Text.Json.JsonSerializer.Serialize(new
         {
             device.OnvifSupported,
@@ -91,9 +90,7 @@ public sealed class CameraInventoryStore : ICameraInventoryStore
             device.RtspPort
         });
 
-        // SaveChanges persiste tanto la alta como la actualización y deja disponible el Id real de la cámara.
-        await _db.SaveChangesAsync(cancellationToken);
-
+        await db.SaveChangesAsync(cancellationToken);
         return camera.Id;
     }
 }
