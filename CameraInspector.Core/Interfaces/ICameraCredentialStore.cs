@@ -13,13 +13,17 @@ public interface ICameraCredentialStore
         int cameraId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Crea o actualiza la referencia de credencial asociada a la cámara.
-    /// </summary>
+    /// <summary>Crea o actualiza la referencia de credencial asociada a la cámara.</summary>
     Task SaveAsync(
         int cameraId,
         string username,
         Guid credentialRef,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Actualiza el momento en el que la credencial fue verificada correctamente.</summary>
+    Task MarkVerifiedAsync(
+        int cameraId,
+        DateTimeOffset verifiedAt,
         CancellationToken cancellationToken = default);
 
     /// <summary>Elimina la asociación de credencial de la cámara.</summary>
