@@ -23,15 +23,12 @@ public sealed class WsDiscoveryOnvifService : IOnvifDiscoveryService
         CancellationToken cancellationToken = default)
     {
         var messageId = $"uuid:{Guid.NewGuid()}";
-
-        // probe es el XML de WS-Discovery enviado al grupo multicast ONVIF.
         var probe = BuildProbe(messageId);
         var payload = Encoding.UTF8.GetBytes(probe);
 
         using var socket = new UdpClient(AddressFamily.InterNetwork);
         socket.EnableBroadcast = true;
 
-        // Reutilizamos la interfaz local disponible para enviar el Probe al grupo ONVIF.
         var endpoint = new IPEndPoint(MulticastAddress, DiscoveryPort);
         await socket.SendAsync(payload, payload.Length, endpoint);
 
@@ -44,7 +41,6 @@ public sealed class WsDiscoveryOnvifService : IOnvifDiscoveryService
             if (remaining <= TimeSpan.Zero)
                 break;
 
-            // receiveTask representa una espera única por una respuesta ProbeMatch.
             var receiveTask = socket.ReceiveAsync(cancellationToken).AsTask();
             var completedTask = await Task.WhenAny(
                 receiveTask,
@@ -58,7 +54,6 @@ public sealed class WsDiscoveryOnvifService : IOnvifDiscoveryService
             if (parsed is null)
                 continue;
 
-            // Evitamos duplicar respuestas del mismo dispositivo/XAddr.
             if (results.Any(item => string.Equals(
                     item.DeviceServiceXAddr,
                     parsed.DeviceServiceXAddr,
@@ -102,19 +97,17 @@ public sealed class WsDiscoveryOnvifService : IOnvifDiscoveryService
                 .FirstOrDefault(element => element.Name.LocalName == "EndpointReference")?
                 .Value;
 
-            // xAddrsText contiene las direcciones anunciadas por el dispositivo en el XML de WS-Discovery.
-            var xAddrsText = document.Descendants()
+            // xAddrs contiene todos los endpoints publicados por WS-Discovery.
+            var xAddrs = document.Descendants()
                 .FirstOrDefault(element => element.Name.LocalName == "XAddrs")?
-                .Value;
+                .Value?
+                .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
 
-            // xAddrs elimina espacios y valores vacíos para trabajar únicamente con URLs candidatas.
-            var xAddrs = xAddrsText?
-                .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
-                ?? Array.Empty<string>();
+            if (xAddrs is null)
+                return null;
 
             // xAddr es el primer endpoint HTTP/HTTPS absoluto que podremos consumir posteriormente.
             var xAddr = xAddrs.FirstOrDefault(IsAbsoluteHttpUri);
-
             if (string.IsNullOrWhiteSpace(xAddr))
                 return null;
 
@@ -128,7 +121,9 @@ public sealed class WsDiscoveryOnvifService : IOnvifDiscoveryService
 
             return new OnvifDiscoveryResult
             {
-                MessageId = deviceReference,
+                // MessageId representa la referencia publicada por el dispositivo; si el paquete
+                // no la contiene conservamos una cadena vacía en lugar de propagar null al modelo.
+                MessageId = deviceReference ?? string.Empty,
                 DeviceServiceXAddr = xAddr,
                 Types = string.IsNullOrWhiteSpace(types) ? null : types,
                 Scopes = string.IsNullOrWhiteSpace(scopes) ? null : scopes
@@ -141,16 +136,11 @@ public sealed class WsDiscoveryOnvifService : IOnvifDiscoveryService
         }
     }
 
-    /// <summary>
-    /// Valida que una cadena represente una URL HTTP/HTTPS absoluta.
-    /// </summary>
     private static bool IsAbsoluteHttpUri(string value)
     {
-        // uri recibe la cadena candidata convertida a Uri.
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
             return false;
 
-        // El endpoint debe utilizar HTTP o HTTPS para poder ser consumido por las capas ONVIF posteriores.
         return string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
                || string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
     }
