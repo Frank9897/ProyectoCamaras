@@ -41,6 +41,9 @@ namespace CameraInspector.Persistence.Migrations
                     b.HasIndex("CameraId")
                         .IsUnique();
 
+                    b.HasIndex("CredentialRef")
+                        .IsUnique();
+
                     b.ToTable("CameraCredentials");
                 });
 
@@ -87,6 +90,8 @@ namespace CameraInspector.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Ip");
+
+                    b.HasIndex("Mac");
 
                     b.ToTable("Cameras");
                 });
@@ -219,11 +224,8 @@ namespace CameraInspector.Persistence.Migrations
             modelBuilder.Entity("CameraInspector.Persistence.Entities.CameraEntity", b =>
                 {
                     b.Navigation("Credential");
-
                     b.Navigation("Events");
-
                     b.Navigation("Interfaces");
-
                     b.Navigation("Tests");
                 });
 #pragma warning restore 612, 618
