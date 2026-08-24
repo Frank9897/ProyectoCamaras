@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -64,12 +65,26 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
 
         try
         {
+            // parsedAddress convierte la IP textual al tipo esperado por el overload de Ping
+            // que admite CancellationToken en .NET 9.
+            if (!IPAddress.TryParse(ipAddress, out var parsedAddress))
+            {
+                stopwatch.Stop();
+                return new DiagnosticResult
+                {
+                    TestName = "Ping",
+                    Success = false,
+                    Duration = stopwatch.Elapsed,
+                    Message = $"La dirección IP '{ipAddress}' no es válida."
+                };
+            }
+
             // ping es una instancia local porque Ping no se comparte entre operaciones concurrentes de este servicio.
             using var ping = new Ping();
 
             // reply contiene el resultado ICMP devuelto por Windows.
             var reply = await ping.SendPingAsync(
-                ipAddress,
+                parsedAddress,
                 timeout: 1200,
                 cancellationToken);
 
@@ -174,11 +189,24 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
 
         try
         {
+            // parsedAddress convierte la IP textual al tipo requerido por ConnectAsync con cancelación.
+            if (!IPAddress.TryParse(device.IpAddress, out var parsedAddress))
+            {
+                stopwatch.Stop();
+                return new DiagnosticResult
+                {
+                    TestName = "RTSP",
+                    Success = false,
+                    Duration = stopwatch.Elapsed,
+                    Message = $"La dirección IP '{device.IpAddress}' no es válida."
+                };
+            }
+
             // client intenta establecer una conexión TCP simple con el endpoint RTSP.
             using var client = new TcpClient();
 
             await client.ConnectAsync(
-                device.IpAddress,
+                parsedAddress,
                 port,
                 cancellationToken);
 
