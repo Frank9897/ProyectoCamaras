@@ -54,7 +54,7 @@ public sealed class VivotekProvider : ICameraProvider
         };
 
         // endpoint consulta la información básica del servidor mediante CGI.
-        // VIVOTEK documenta /cgi-bin/sysinfo.cgi para esta finalidad.
+        // El fabricante documenta este endpoint para compatibilidad con cámaras que exponen la API CGI clásica.
         var endpoint = $"http://{device.IpAddress.Trim()}/cgi-bin/sysinfo.cgi";
 
         using var response = await client.GetAsync(endpoint, cancellationToken);
@@ -68,17 +68,19 @@ public sealed class VivotekProvider : ICameraProvider
 
         var values = ParseKeyValueResponse(responseText);
 
-        // Model identifica el modelo que el firmware expone por el CGI.
+        // Model identifica el valor de modelo que realmente devolvió esta API.
         var model = GetValue(values, "Model");
-        // CapVersion identifica la versión de capacidades del CGI, no la versión del firmware.
-        // Se conserva como evidencia local, pero no se asigna a FirmwareVersion porque semánticamente son datos distintos.
-        _ = GetValue(values, "CapVersion");
+        // CapVersion identifica la versión de capacidades del CGI y se conserva únicamente como evidencia local.
+        var capabilityVersion = GetValue(values, "CapVersion");
 
         return new CameraProviderInfo
         {
-            ProviderName = Name,
+            ProviderName = string.IsNullOrWhiteSpace(capabilityVersion)
+                ? Name
+                : $"{Name} (CapVersion {capabilityVersion})",
             Manufacturer = "VIVOTEK",
             Model = model,
+            // Esta API clásica no nos garantiza un campo separado de firmware.
             FirmwareVersion = null,
             SerialNumber = null,
             MacAddress = null,
