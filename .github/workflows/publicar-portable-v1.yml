@@ -1,0 +1,69 @@
+name: Publicar Camera Inspector v1.0
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  publicar:
+    runs-on: windows-latest
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restaurar dependencias
+        run: dotnet restore
+
+      - name: Compilar solucion
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Ejecutar pruebas
+        run: dotnet test --configuration Release --no-build --no-restore
+
+      - name: Publicar aplicacion portable x64
+        run: >-
+          dotnet publish CameraInspector.App/CameraInspector.App.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --no-restore
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=None
+          -p:DebugSymbols=false
+          -o publish/CameraInspector-v1.0-win-x64
+
+      - name: Crear archivo de version
+        shell: pwsh
+        run: |
+          $path = 'publish/CameraInspector-v1.0-win-x64/VERSION.txt'
+          @(
+            'Camera Inspector'
+            'Version: 1.0.0'
+            'Runtime: win-x64'
+            'Distribucion: portable self-contained'
+            "Commit: $env:GITHUB_SHA"
+          ) | Set-Content -Path $path -Encoding utf8
+
+      - name: Empaquetar ZIP portable
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path 'publish/CameraInspector-v1.0-win-x64/*' `
+            -DestinationPath 'publish/CameraInspector-v1.0-win-x64.zip' `
+            -Force
+
+      - name: Publicar artefacto portable
+        uses: actions/upload-artifact@v4
+        with:
+          name: CameraInspector-v1.0-win-x64
+          path: publish/CameraInspector-v1.0-win-x64.zip
+          if-no-files-found: error
