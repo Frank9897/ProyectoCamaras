@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using CameraInspector.App.ViewModels;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -12,7 +13,7 @@ namespace CameraInspector.App;
 /// </summary>
 public sealed partial class ImagingViewModel : ObservableObject
 {
-    private readonly DiscoveredDevice _device;
+    private readonly DeviceViewModel _deviceViewModel;
     private readonly IOnvifImagingService _imagingService;
     private readonly ICredentialStore _credentialStore;
     private readonly ICameraCredentialStore _cameraCredentialStore;
@@ -28,14 +29,14 @@ public sealed partial class ImagingViewModel : ObservableObject
     public event EventHandler? RequestClose;
 
     public ImagingViewModel(
-        DiscoveredDevice device,
+        DeviceViewModel deviceViewModel,
         IOnvifImagingService imagingService,
         ICredentialStore credentialStore,
         ICameraCredentialStore cameraCredentialStore)
     {
-        // _device identifica la cámara que se está configurando.
-        _device = device;
-        // _imagingService encapsula SOAP ONVIF.
+        // _deviceViewModel conserva tanto el DiscoveredDevice como el CameraId persistente del inventario.
+        _deviceViewModel = deviceViewModel;
+        // _imagingService encapsula las operaciones SOAP ONVIF de Imaging.
         _imagingService = imagingService;
         // _credentialStore recupera el secreto desde Windows Credential Manager.
         _credentialStore = credentialStore;
@@ -54,7 +55,7 @@ public sealed partial class ImagingViewModel : ObservableObject
 
             // loaded contiene la configuración que la cámara reporta actualmente.
             var loaded = await _imagingService.GetImagingSettingsAsync(
-                _device,
+                _deviceViewModel.Device,
                 credentials.Value.Username,
                 credentials.Value.Password);
 
@@ -83,7 +84,7 @@ public sealed partial class ImagingViewModel : ObservableObject
                 return;
 
             var saved = await _imagingService.SetImagingSettingsAsync(
-                _device,
+                _deviceViewModel.Device,
                 Settings,
                 credentials.Value.Username,
                 credentials.Value.Password);
@@ -103,7 +104,8 @@ public sealed partial class ImagingViewModel : ObservableObject
 
     private async Task<(string Username, string Password)?> GetCredentialsAsync()
     {
-        if (_device.CameraId is not int cameraId)
+        // CameraId pertenece al DeviceViewModel porque es identidad de persistencia y no de Core.
+        if (_deviceViewModel.CameraId is not int cameraId)
         {
             StatusText = "La cámara aún no tiene identidad persistente para reutilizar credenciales.";
             return null;
