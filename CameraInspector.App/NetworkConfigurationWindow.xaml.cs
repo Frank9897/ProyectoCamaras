@@ -5,11 +5,13 @@ using CameraInspector.Core.Interfaces;
 namespace CameraInspector.App;
 
 /// <summary>
-/// Ventana de consulta de red ONVIF.
-/// La interfaz actual es deliberadamente de solo lectura para evitar cambios accidentales.
+/// Ventana de administración de red ONVIF.
+/// La lectura es automática; las escrituras requieren confirmación explícita.
 /// </summary>
 public partial class NetworkConfigurationWindow : Window
 {
+    private readonly NetworkConfigurationEditViewModel _viewModel;
+
     public NetworkConfigurationWindow(
         DeviceViewModel deviceViewModel,
         IOnvifDeviceService onvifDeviceService,
@@ -18,17 +20,17 @@ public partial class NetworkConfigurationWindow : Window
     {
         InitializeComponent();
 
-        // viewModel conserva la identidad de inventario y coordina la consulta autenticada.
-        var viewModel = new NetworkConfigurationViewModel(
+        // _viewModel coordina lectura y edición controlada de la red sin exponer contraseñas a la UI.
+        _viewModel = new NetworkConfigurationEditViewModel(
             deviceViewModel,
             onvifDeviceService,
             credentialStore,
             cameraCredentialStore);
 
-        DataContext = viewModel;
-        viewModel.RequestClose += (_, _) => Close();
+        DataContext = _viewModel;
+        _viewModel.RequestClose += (_, _) => Close();
 
-        // La ventana intenta cargar la configuración al abrirse; no ejecuta ninguna escritura.
-        Loaded += async (_, _) => await viewModel.LoadCommand.ExecuteAsync(null);
+        // Al abrir solo se consulta el estado actual; ninguna escritura ocurre automáticamente.
+        Loaded += async (_, _) => await _viewModel.LoadCommand.ExecuteAsync(null);
     }
 }
