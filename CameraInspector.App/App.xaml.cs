@@ -103,9 +103,11 @@ public partial class App : Application
                     services.AddSingleton<CameraProviderResolver>();
                     services.AddSingleton<ICameraProviderResolver>(sp =>
                         sp.GetRequiredService<CameraProviderResolver>());
+
                     // Estas operaciones propietarias solo se ejecutan tras una acción explícita del técnico.
                     services.AddSingleton<IVivotekSnapshotService, VivotekSnapshotService>();
                     services.AddSingleton<IVivotekPtzService, VivotekPtzService>();
+                    services.AddSingleton<IVivotekParameterService, VivotekParameterService>();
 
                     // ---- Capa 6: Diagnóstico ----
                     services.AddSingleton<ICameraDiagnosticService, Network.Diagnostics.CameraDiagnosticService>();
