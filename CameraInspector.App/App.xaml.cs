@@ -7,6 +7,7 @@ using CameraInspector.Network;
 using CameraInspector.Network.OnvifDiscovery;
 using CameraInspector.Network.Providers;
 using CameraInspector.Network.Providers.Hikvision;
+using CameraInspector.Network.Providers.Vivotek;
 using CameraInspector.Persistence;
 using CameraInspector.Video;
 using Microsoft.EntityFrameworkCore;
@@ -98,6 +99,7 @@ public partial class App : Application
                     // ---- Providers propietarios ----
                     // Los providers se evalúan por evidencia antes de realizar operaciones autenticadas.
                     services.AddSingleton<ICameraProvider, HikvisionProvider>();
+                    services.AddSingleton<ICameraProvider, VivotekProvider>();
                     services.AddSingleton<CameraProviderResolver>();
                     services.AddSingleton<ICameraProviderResolver>(sp =>
                         sp.GetRequiredService<CameraProviderResolver>());
