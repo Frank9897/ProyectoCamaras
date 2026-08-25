@@ -18,6 +18,7 @@ namespace CameraInspector.App;
 public partial class MainWindow : Window
 {
     private readonly IVideoPlayerService _videoPlayerService;
+    private readonly IOnvifDeviceService _onvifDeviceService;
     private readonly IOnvifImagingService _imagingService;
     private readonly IOnvifEventService _eventService;
     private readonly ICameraProviderResolver _providerResolver;
@@ -30,6 +31,7 @@ public partial class MainWindow : Window
     public MainWindow(
         MainViewModel viewModel,
         IVideoPlayerService videoPlayerService,
+        IOnvifDeviceService onvifDeviceService,
         IOnvifImagingService imagingService,
         IOnvifEventService eventService,
         ICameraProviderResolver providerResolver,
@@ -44,13 +46,12 @@ public partial class MainWindow : Window
         // DataContext conecta todos los bindings de la ventana con MainViewModel.
         DataContext = viewModel;
         _videoPlayerService = videoPlayerService;
+        _onvifDeviceService = onvifDeviceService;
         _imagingService = imagingService;
         _eventService = eventService;
         _providerResolver = providerResolver;
         _vivotekSnapshotService = vivotekSnapshotService;
-        // _vivotekPtzService ejecuta exclusivamente los comandos PTZ propietarios de VIVOTEK.
         _vivotekPtzService = vivotekPtzService;
-        // _vivotekParameterService consulta grupos CGI en modo lectura.
         _vivotekParameterService = vivotekParameterService;
         _credentialStore = credentialStore;
         _cameraCredentialStore = cameraCredentialStore;
@@ -71,6 +72,7 @@ public partial class MainWindow : Window
         var contextMenu = new ContextMenu();
         var exportInventoryItem = new MenuItem { Header = "Exportar inventario CSV" };
         var exportHistoryItem = new MenuItem { Header = "Exportar historial CSV" };
+        var networkItem = new MenuItem { Header = "Configuración de red" };
         var ptzItem = new MenuItem { Header = "Control PTZ" };
         var imagingItem = new MenuItem { Header = "Ajustes de imagen" };
         var eventsItem = new MenuItem { Header = "Eventos ONVIF" };
@@ -82,6 +84,7 @@ public partial class MainWindow : Window
 
         exportInventoryItem.Click += (_, _) => ExportInventoryCsv();
         exportHistoryItem.Click += (_, _) => ExportHistoryCsv();
+        networkItem.Click += (_, _) => OpenNetworkConfigurationWindow();
         ptzItem.Click += (_, _) => OpenPtzWindow();
         imagingItem.Click += (_, _) => OpenImagingWindow();
         eventsItem.Click += (_, _) => OpenEventsWindow();
@@ -94,6 +97,7 @@ public partial class MainWindow : Window
         contextMenu.Items.Add(exportInventoryItem);
         contextMenu.Items.Add(exportHistoryItem);
         contextMenu.Items.Add(new Separator());
+        contextMenu.Items.Add(networkItem);
         contextMenu.Items.Add(ptzItem);
         contextMenu.Items.Add(vivotekPtzItem);
         contextMenu.Items.Add(vivotekParametersItem);
@@ -111,6 +115,7 @@ public partial class MainWindow : Window
             {
                 exportInventoryItem.IsEnabled = viewModel?.Devices.Count > 0;
                 exportHistoryItem.IsEnabled = false;
+                networkItem.IsEnabled = false;
                 ptzItem.IsEnabled = false;
                 vivotekPtzItem.IsEnabled = false;
                 vivotekParametersItem.IsEnabled = false;
@@ -127,6 +132,7 @@ public partial class MainWindow : Window
 
             exportInventoryItem.IsEnabled = viewModel.Devices.Count > 0;
             exportHistoryItem.IsEnabled = viewModel.DiagnosticHistory.Count > 0;
+            networkItem.IsEnabled = selected.OnvifSupported;
             ptzItem.IsEnabled = selected.HasPtzService;
             vivotekPtzItem.IsEnabled = isVivotek;
             vivotekParametersItem.IsEnabled = isVivotek;
@@ -136,6 +142,27 @@ public partial class MainWindow : Window
             snapshotItem.IsEnabled = _videoPlayerService.Player.IsPlaying;
             vivotekSnapshotItem.IsEnabled = isVivotek;
         };
+    }
+
+    private void OpenNetworkConfigurationWindow()
+    {
+        if (DataContext is not MainViewModel viewModel || viewModel.SelectedDevice is null)
+            return;
+
+        if (!viewModel.SelectedDevice.OnvifSupported)
+        {
+            ShowInformation("La cámara seleccionada no tiene ONVIF confirmado.", "Configuración de red");
+            return;
+        }
+
+        new NetworkConfigurationWindow(
+            viewModel.SelectedDevice,
+            _onvifDeviceService,
+            _credentialStore,
+            _cameraCredentialStore)
+        {
+            Owner = this
+        }.ShowDialog();
     }
 
     private void ExportInventoryCsv()
@@ -158,7 +185,6 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog(this) != true)
             return;
 
-        // deviceModels convierte los ViewModels de UI a modelos técnicos sin exponer la capa de presentación al generador.
         var deviceModels = viewModel.Devices.Select(viewModelItem => viewModelItem.Device).ToList();
         var csv = CsvExportService.ExportInventory(deviceModels);
 
@@ -191,7 +217,6 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog(this) != true)
             return;
 
-        // historyModels conserva los registros tal como fueron cargados desde SQLite.
         var historyModels = viewModel.DiagnosticHistory.ToList();
         var csv = CsvExportService.ExportDiagnosticHistory(historyModels, viewModel.SelectedDevice.Device);
 
@@ -226,13 +251,11 @@ public partial class MainWindow : Window
     {
         if (DataContext is not MainViewModel viewModel || viewModel.SelectedDevice is null)
             return;
-
         if (!viewModel.SelectedDevice.HasPtzService)
         {
             ShowInformation("La cámara seleccionada no anuncia un servicio PTZ ONVIF.", "PTZ");
             return;
         }
-
         new PtzWindow(viewModel) { Owner = this }.ShowDialog();
     }
 
@@ -240,18 +263,12 @@ public partial class MainWindow : Window
     {
         if (DataContext is not MainViewModel viewModel || viewModel.SelectedDevice is null)
             return;
-
         if (!IsVivotekDevice(viewModel.SelectedDevice.Device))
         {
             ShowInformation("La cámara seleccionada no fue identificada como VIVOTEK.", "PTZ VIVOTEK");
             return;
         }
-
-        new VivotekPtzWindow(
-            viewModel.SelectedDevice,
-            _vivotekPtzService,
-            _credentialStore,
-            _cameraCredentialStore)
+        new VivotekPtzWindow(viewModel.SelectedDevice, _vivotekPtzService, _credentialStore, _cameraCredentialStore)
         {
             Owner = this
         }.ShowDialog();
@@ -261,18 +278,12 @@ public partial class MainWindow : Window
     {
         if (DataContext is not MainViewModel viewModel || viewModel.SelectedDevice is null)
             return;
-
         if (!IsVivotekDevice(viewModel.SelectedDevice.Device))
         {
             ShowInformation("La cámara seleccionada no fue identificada como VIVOTEK.", "Parámetros VIVOTEK");
             return;
         }
-
-        new VivotekParametersWindow(
-            viewModel.SelectedDevice,
-            _vivotekParameterService,
-            _credentialStore,
-            _cameraCredentialStore)
+        new VivotekParametersWindow(viewModel.SelectedDevice, _vivotekParameterService, _credentialStore, _cameraCredentialStore)
         {
             Owner = this
         }.ShowDialog();
@@ -282,13 +293,11 @@ public partial class MainWindow : Window
     {
         if (DataContext is not MainViewModel viewModel || viewModel.SelectedDevice is null)
             return;
-
         if (!viewModel.SelectedDevice.HasImagingService)
         {
             ShowInformation("La cámara seleccionada no anuncia un servicio Imaging ONVIF.", "Imaging");
             return;
         }
-
         new ImagingWindow(viewModel.SelectedDevice, _imagingService, _credentialStore, _cameraCredentialStore)
         {
             Owner = this
@@ -299,13 +308,11 @@ public partial class MainWindow : Window
     {
         if (DataContext is not MainViewModel viewModel || viewModel.SelectedDevice is null)
             return;
-
         if (!viewModel.SelectedDevice.HasEventsService)
         {
             ShowInformation("La cámara seleccionada no anuncia un servicio de eventos ONVIF.", "Eventos");
             return;
         }
-
         new EventsWindow(viewModel.SelectedDevice, _eventService, _credentialStore, _cameraCredentialStore)
         {
             Owner = this
@@ -316,18 +323,12 @@ public partial class MainWindow : Window
     {
         if (DataContext is not MainViewModel viewModel || viewModel.SelectedDevice is null)
             return;
-
         if (_providerResolver.Resolve(viewModel.SelectedDevice.Device) is null)
         {
             ShowInformation("No existe un provider propietario compatible con esta cámara.", "Provider");
             return;
         }
-
-        new ProviderInfoWindow(
-            viewModel.SelectedDevice,
-            _providerResolver,
-            _credentialStore,
-            _cameraCredentialStore)
+        new ProviderInfoWindow(viewModel.SelectedDevice, _providerResolver, _credentialStore, _cameraCredentialStore)
         {
             Owner = this
         }.ShowDialog();
@@ -349,33 +350,22 @@ public partial class MainWindow : Window
             AddExtension = true,
             FileName = $"camera_{DateTime.Now:yyyyMMdd_HHmmss}.png"
         };
-
         if (dialog.ShowDialog(this) != true)
             return;
 
         try
         {
             var saved = _videoPlayerService.TakeSnapshot(dialog.FileName);
-
             if (!saved)
             {
                 ShowInformation("LibVLC todavía no tiene un frame disponible. Intente nuevamente en unos segundos.", "Snapshot");
                 return;
             }
-
-            MessageBox.Show(
-                $"Snapshot solicitado correctamente.\n\n{dialog.FileName}",
-                "Camera Inspector — Snapshot",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+            MessageBox.Show($"Snapshot solicitado correctamente.\n\n{dialog.FileName}", "Camera Inspector — Snapshot", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
-            MessageBox.Show(
-                $"No se pudo capturar el snapshot:\n\n{ex.Message}",
-                "Camera Inspector — Snapshot",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            MessageBox.Show($"No se pudo capturar el snapshot:\n\n{ex.Message}", "Camera Inspector — Snapshot", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -383,34 +373,29 @@ public partial class MainWindow : Window
     {
         if (DataContext is not MainViewModel viewModel || viewModel.SelectedDevice is null)
             return;
-
         var selected = viewModel.SelectedDevice;
         if (!IsVivotekDevice(selected.Device))
         {
             ShowInformation("La cámara seleccionada no fue identificada como VIVOTEK.", "Snapshot VIVOTEK");
             return;
         }
-
         if (selected.CameraId is not int cameraId)
         {
             ShowInformation("La cámara todavía no tiene identidad persistente en el inventario.", "Snapshot VIVOTEK");
             return;
         }
-
         var savedInfo = await _cameraCredentialStore.GetAsync(cameraId);
         if (savedInfo is null)
         {
             ShowInformation("No hay credenciales guardadas para esta cámara. Guárdelas primero desde el panel principal.", "Snapshot VIVOTEK");
             return;
         }
-
         var credentials = await _credentialStore.GetAsync(savedInfo.CredentialRef);
         if (credentials is null)
         {
             ShowInformation("La credencial asociada ya no existe en Windows Credential Manager.", "Snapshot VIVOTEK");
             return;
         }
-
         var dialog = new SaveFileDialog
         {
             Title = "Guardar snapshot VIVOTEK",
@@ -419,33 +404,16 @@ public partial class MainWindow : Window
             AddExtension = true,
             FileName = $"vivotek_{DateTime.Now:yyyyMMdd_HHmmss}.jpg"
         };
-
         if (dialog.ShowDialog(this) != true)
             return;
-
         try
         {
-            var saved = await _vivotekSnapshotService.SaveSnapshotAsync(
-                selected.IpAddress,
-                credentials.Username,
-                credentials.Password,
-                dialog.FileName);
-
-            MessageBox.Show(
-                saved
-                    ? $"Snapshot VIVOTEK guardado correctamente.\n\n{dialog.FileName}"
-                    : "La cámara no devolvió un snapshot válido.",
-                "Camera Inspector — Snapshot VIVOTEK",
-                MessageBoxButton.OK,
-                saved ? MessageBoxImage.Information : MessageBoxImage.Warning);
+            var saved = await _vivotekSnapshotService.SaveSnapshotAsync(selected.IpAddress, credentials.Username, credentials.Password, dialog.FileName);
+            MessageBox.Show(saved ? $"Snapshot VIVOTEK guardado correctamente.\n\n{dialog.FileName}" : "La cámara no devolvió un snapshot válido.", "Camera Inspector — Snapshot VIVOTEK", MessageBoxButton.OK, saved ? MessageBoxImage.Information : MessageBoxImage.Warning);
         }
         catch (Exception ex)
         {
-            MessageBox.Show(
-                $"No se pudo obtener el snapshot VIVOTEK:\n\n{ex.Message}",
-                "Camera Inspector — Snapshot VIVOTEK",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            MessageBox.Show($"No se pudo obtener el snapshot VIVOTEK:\n\n{ex.Message}", "Camera Inspector — Snapshot VIVOTEK", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -463,20 +431,16 @@ public partial class MainWindow : Window
         where T : DependencyObject
     {
         var childrenCount = VisualTreeHelper.GetChildrenCount(parent);
-
         for (var index = 0; index < childrenCount; index++)
         {
             // child representa el elemento visual actual que estamos recorriendo.
             var child = VisualTreeHelper.GetChild(parent, index);
-
             if (child is T typedChild)
                 return typedChild;
-
             var nestedResult = FindVisualChild<T>(child);
             if (nestedResult is not null)
                 return nestedResult;
         }
-
         return null;
     }
 }
