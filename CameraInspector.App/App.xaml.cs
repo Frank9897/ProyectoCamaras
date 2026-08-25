@@ -103,6 +103,8 @@ public partial class App : Application
                     services.AddSingleton<CameraProviderResolver>();
                     services.AddSingleton<ICameraProviderResolver>(sp =>
                         sp.GetRequiredService<CameraProviderResolver>());
+                    // El snapshot VIVOTEK se mantiene como operación propietaria independiente de LibVLC.
+                    services.AddSingleton<IVivotekSnapshotService, VivotekSnapshotService>();
 
                     // ---- Capa 6: Diagnóstico ----
                     services.AddSingleton<ICameraDiagnosticService, Network.Diagnostics.CameraDiagnosticService>();
