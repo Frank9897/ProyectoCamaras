@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using CameraInspector.App.ViewModels;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -12,7 +13,7 @@ namespace CameraInspector.App;
 /// </summary>
 public sealed partial class EventsViewModel : ObservableObject
 {
-    private readonly DiscoveredDevice _device;
+    private readonly DeviceViewModel _deviceViewModel;
     private readonly IOnvifEventService _eventService;
     private readonly ICredentialStore _credentialStore;
     private readonly ICameraCredentialStore _cameraCredentialStore;
@@ -25,14 +26,14 @@ public sealed partial class EventsViewModel : ObservableObject
     public event EventHandler? RequestClose;
 
     public EventsViewModel(
-        DiscoveredDevice device,
+        DeviceViewModel deviceViewModel,
         IOnvifEventService eventService,
         ICredentialStore credentialStore,
         ICameraCredentialStore cameraCredentialStore)
     {
-        // _device identifica la cámara cuya cola de eventos vamos a consultar.
-        _device = device;
-        // _eventService encapsula PullMessages ONVIF.
+        // _deviceViewModel conserva tanto el dispositivo de red como su identidad persistente.
+        _deviceViewModel = deviceViewModel;
+        // _eventService encapsula las operaciones PullMessages ONVIF.
         _eventService = eventService;
         // _credentialStore recupera el secreto desde Windows Credential Manager.
         _credentialStore = credentialStore;
@@ -51,7 +52,7 @@ public sealed partial class EventsViewModel : ObservableObject
 
             // messages contiene el lote de eventos devuelto por la cámara.
             var messages = await _eventService.PullMessagesAsync(
-                _device,
+                _deviceViewModel.Device,
                 credentials.Value.Username,
                 credentials.Value.Password,
                 timeoutSeconds: 5,
@@ -74,7 +75,8 @@ public sealed partial class EventsViewModel : ObservableObject
 
     private async Task<(string Username, string Password)?> GetCredentialsAsync()
     {
-        if (_device.CameraId is not int cameraId)
+        // CameraId pertenece al ViewModel y no al modelo Core del dispositivo.
+        if (_deviceViewModel.CameraId is not int cameraId)
         {
             StatusText = "La cámara aún no está inventariada.";
             return null;
