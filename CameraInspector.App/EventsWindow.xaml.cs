@@ -17,8 +17,9 @@ public partial class EventsWindow : Window
     {
         InitializeComponent();
 
+        // El ViewModel recibe el DeviceViewModel completo para conservar CameraId y el modelo de red.
         var viewModel = new EventsViewModel(
-            deviceViewModel.Device,
+            deviceViewModel,
             eventService,
             credentialStore,
             cameraCredentialStore);
