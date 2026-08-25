@@ -18,6 +18,7 @@ public partial class MainWindow : Window
     private readonly IVideoPlayerService _videoPlayerService;
     private readonly IOnvifImagingService _imagingService;
     private readonly IOnvifEventService _eventService;
+    private readonly ICameraProviderResolver _providerResolver;
     private readonly ICredentialStore _credentialStore;
     private readonly ICameraCredentialStore _cameraCredentialStore;
 
@@ -26,6 +27,7 @@ public partial class MainWindow : Window
         IVideoPlayerService videoPlayerService,
         IOnvifImagingService imagingService,
         IOnvifEventService eventService,
+        ICameraProviderResolver providerResolver,
         ICredentialStore credentialStore,
         ICameraCredentialStore cameraCredentialStore)
     {
@@ -35,9 +37,9 @@ public partial class MainWindow : Window
         DataContext = viewModel;
         // _videoPlayerService administra el motor multimedia y conserva el MediaPlayer durante la vida de la ventana.
         _videoPlayerService = videoPlayerService;
-        // Los siguientes servicios ejecutan las capacidades ONVIF avanzadas de la cámara seleccionada.
         _imagingService = imagingService;
         _eventService = eventService;
+        _providerResolver = providerResolver;
         _credentialStore = credentialStore;
         _cameraCredentialStore = cameraCredentialStore;
 
@@ -50,7 +52,6 @@ public partial class MainWindow : Window
 
     private void ConfigureCameraContextMenu()
     {
-        // dataGrid es la tabla principal donde el técnico selecciona una cámara.
         var dataGrid = FindVisualChild<DataGrid>(this);
         if (dataGrid is null)
             return;
@@ -59,21 +60,23 @@ public partial class MainWindow : Window
         var ptzItem = new MenuItem { Header = "Control PTZ" };
         var imagingItem = new MenuItem { Header = "Ajustes de imagen" };
         var eventsItem = new MenuItem { Header = "Eventos ONVIF" };
+        var providerItem = new MenuItem { Header = "Información propietaria" };
         var snapshotItem = new MenuItem { Header = "Capturar snapshot" };
 
         ptzItem.Click += (_, _) => OpenPtzWindow();
         imagingItem.Click += (_, _) => OpenImagingWindow();
         eventsItem.Click += (_, _) => OpenEventsWindow();
+        providerItem.Click += (_, _) => OpenProviderInfoWindow();
         snapshotItem.Click += (_, _) => SaveSnapshot();
 
         contextMenu.Items.Add(ptzItem);
         contextMenu.Items.Add(imagingItem);
         contextMenu.Items.Add(eventsItem);
+        contextMenu.Items.Add(providerItem);
         contextMenu.Items.Add(new Separator());
         contextMenu.Items.Add(snapshotItem);
         dataGrid.ContextMenu = contextMenu;
 
-        // El menú se recalcula cada vez que se abre para reflejar las capacidades reales de la cámara seleccionada.
         contextMenu.Opened += (_, _) =>
         {
             if (DataContext is not MainViewModel viewModel || viewModel.SelectedDevice is null)
@@ -81,6 +84,7 @@ public partial class MainWindow : Window
                 ptzItem.IsEnabled = false;
                 imagingItem.IsEnabled = false;
                 eventsItem.IsEnabled = false;
+                providerItem.IsEnabled = false;
                 snapshotItem.IsEnabled = false;
                 return;
             }
@@ -89,6 +93,7 @@ public partial class MainWindow : Window
             ptzItem.IsEnabled = selected.HasPtzService;
             imagingItem.IsEnabled = selected.HasImagingService;
             eventsItem.IsEnabled = selected.HasEventsService;
+            providerItem.IsEnabled = _providerResolver.Resolve(selected.Device) is not null;
             snapshotItem.IsEnabled = _videoPlayerService.Player.IsPlaying;
         };
     }
@@ -104,8 +109,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var window = new PtzWindow(viewModel) { Owner = this };
-        window.ShowDialog();
+        new PtzWindow(viewModel) { Owner = this }.ShowDialog();
     }
 
     private void OpenImagingWindow()
@@ -119,14 +123,10 @@ public partial class MainWindow : Window
             return;
         }
 
-        var window = new ImagingWindow(
-            viewModel.SelectedDevice,
-            _imagingService,
-            _credentialStore,
-            _cameraCredentialStore)
-        { Owner = this };
-
-        window.ShowDialog();
+        new ImagingWindow(viewModel.SelectedDevice, _imagingService, _credentialStore, _cameraCredentialStore)
+        {
+            Owner = this
+        }.ShowDialog();
     }
 
     private void OpenEventsWindow()
@@ -140,19 +140,35 @@ public partial class MainWindow : Window
             return;
         }
 
-        var window = new EventsWindow(
+        new EventsWindow(viewModel.SelectedDevice, _eventService, _credentialStore, _cameraCredentialStore)
+        {
+            Owner = this
+        }.ShowDialog();
+    }
+
+    private void OpenProviderInfoWindow()
+    {
+        if (DataContext is not MainViewModel viewModel || viewModel.SelectedDevice is null)
+            return;
+
+        if (_providerResolver.Resolve(viewModel.SelectedDevice.Device) is null)
+        {
+            ShowInformation("No existe un provider propietario compatible con esta cámara.", "Provider");
+            return;
+        }
+
+        new ProviderInfoWindow(
             viewModel.SelectedDevice,
-            _eventService,
+            _providerResolver,
             _credentialStore,
             _cameraCredentialStore)
-        { Owner = this };
-
-        window.ShowDialog();
+        {
+            Owner = this
+        }.ShowDialog();
     }
 
     private void SaveSnapshot()
     {
-        // snapshot solo puede ejecutarse cuando LibVLC ya tiene una salida de video activa.
         if (!_videoPlayerService.Player.IsPlaying)
         {
             ShowInformation("No existe una reproducción de video activa para capturar.", "Snapshot");
