@@ -5,6 +5,8 @@ using CameraInspector.App.ViewModels;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.Network;
 using CameraInspector.Network.OnvifDiscovery;
+using CameraInspector.Network.Providers;
+using CameraInspector.Network.Providers.Hikvision;
 using CameraInspector.Persistence;
 using CameraInspector.Video;
 using Microsoft.EntityFrameworkCore;
@@ -59,22 +61,17 @@ public partial class App : Application
                 .ConfigureServices((_, services) =>
                 {
                     // ---- Persistencia (SQLite) ----
-                    // La factory crea un DbContext nuevo por operación y evita compartir una instancia
-                    // no thread-safe entre el ViewModel y tareas asíncronas de la aplicación.
                     services.AddDbContextFactory<CameraInspectorDbContext>(options =>
                         options.UseSqlite($"Data Source={CameraInspectorDbContext.GetDefaultDbPath()}"));
 
-                    // Los stores son seguros como singleton porque cada operación obtiene su propio DbContext.
                     services.AddSingleton<ICameraInventoryStore, CameraInventoryStore>();
                     services.AddSingleton<IDiagnosticHistoryStore, DiagnosticHistoryStore>();
                     services.AddSingleton<ICameraCredentialStore, CameraCredentialStore>();
 
                     // ---- HTTP compartido ----
-                    // _httpClient es una sola instancia reutilizable para reducir sockets innecesarios.
                     services.AddSingleton(new HttpClient { Timeout = TimeSpan.FromSeconds(3) });
 
                     // ---- Seguridad ----
-                    // Guarda contraseñas en Windows Credential Manager; SQLite solo conserva CredentialRef.
                     services.AddSingleton<ICredentialStore, WindowsCredentialStore>();
 
                     // ---- Capa 3: Descubrimiento ----
@@ -102,6 +99,11 @@ public partial class App : Application
                     services.AddSingleton<IOnvifImagingService, Network.OnvifMedia.OnvifImagingService>();
                     services.AddSingleton<IOnvifEventService, Network.OnvifMedia.OnvifEventService>();
 
+                    // ---- Providers propietarios ----
+                    // Los providers se evalúan por evidencia antes de realizar operaciones autenticadas.
+                    services.AddSingleton<ICameraProvider, HikvisionProvider>();
+                    services.AddSingleton<CameraProviderResolver>();
+
                     // ---- Capa 6: Diagnóstico ----
                     services.AddSingleton<ICameraDiagnosticService, Network.Diagnostics.CameraDiagnosticService>();
 
@@ -118,7 +120,6 @@ public partial class App : Application
             // Services conserva el ServiceProvider activo para ventanas auxiliares creadas desde la UI.
             Services = _host.Services;
 
-            // La factory se utiliza para crear un contexto temporal exclusivamente para migraciones.
             await using (var scope = _host.Services.CreateAsyncScope())
             {
                 var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<CameraInspectorDbContext>>();
