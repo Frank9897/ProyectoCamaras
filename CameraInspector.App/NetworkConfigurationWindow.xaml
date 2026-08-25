@@ -61,7 +61,7 @@
                                   IsChecked="{Binding UseDhcp}"
                                   Margin="0,0,0,14" />
 
-                        <Grid IsEnabled="{Binding UseDhcp, Converter={StaticResource InverseBooleanConverter}}">
+                        <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
@@ -94,7 +94,7 @@
                                 BorderBrush="{StaticResource BorderBrush2}"
                                 BorderThickness="1">
                             <TextBlock TextWrapping="Wrap"
-                                       Text="ADVERTENCIA: cambiar la IP puede cortar la conexión con la cámara. La aplicación pedirá confirmación antes de enviar el cambio y mostrará si ONVIF indicó que hace falta reiniciar." 
+                                       Text="ADVERTENCIA: cambiar la IP puede cortar la conexión con la cámara. La aplicación pedirá confirmación antes de enviar el cambio y mostrará si ONVIF indicó que hace falta reiniciar."
                                        Foreground="{StaticResource TextBrush}" />
                         </Border>
 
