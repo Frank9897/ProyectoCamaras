@@ -7,7 +7,7 @@ namespace CameraInspector.Network.Providers;
 /// Selecciona el primer provider propietario que pueda operar sobre el dispositivo.
 /// La resolución se mantiene independiente de la UI.
 /// </summary>
-public sealed class CameraProviderResolver
+public sealed class CameraProviderResolver : ICameraProviderResolver
 {
     private readonly IReadOnlyList<ICameraProvider> _providers;
 
