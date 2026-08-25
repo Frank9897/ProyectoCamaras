@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Xml.Linq;
@@ -87,6 +88,57 @@ public sealed class OnvifDeviceService : IOnvifDeviceService
         };
     }
 
+    public async Task<OnvifNetworkConfiguration?> GetNetworkConfigurationAsync(
+        DiscoveredDevice device,
+        string username,
+        string password,
+        CancellationToken cancellationToken = default)
+    {
+        var endpoint = ResolveDeviceServiceEndpoint(device);
+        if (endpoint is null)
+            return null;
+
+        // credentials son obligatorias para estas consultas porque son operaciones READ_SYSTEM de Device Management.
+        var security = BuildSecurity(username, password);
+
+        var interfacesXml = await SendSoapAsync(
+            endpoint,
+            "http://www.onvif.org/ver10/device/wsdl/GetNetworkInterfaces",
+            "<tds:GetNetworkInterfaces/>",
+            security,
+            cancellationToken);
+
+        var protocolsXml = await SendSoapAsync(
+            endpoint,
+            "http://www.onvif.org/ver10/device/wsdl/GetNetworkProtocols",
+            "<tds:GetNetworkProtocols/>",
+            security,
+            cancellationToken);
+
+        var gatewayXml = await SendSoapAsync(
+            endpoint,
+            "http://www.onvif.org/ver10/device/wsdl/GetNetworkDefaultGateway",
+            "<tds:GetNetworkDefaultGateway/>",
+            security,
+            cancellationToken);
+
+        if (interfacesXml is null && protocolsXml is null && gatewayXml is null)
+            return null;
+
+        var configuration = new OnvifNetworkConfiguration();
+
+        if (interfacesXml is not null)
+            ParseNetworkInterfaces(interfacesXml, configuration);
+
+        if (protocolsXml is not null)
+            ParseNetworkProtocols(protocolsXml, configuration);
+
+        if (gatewayXml is not null)
+            ParseNetworkGateways(gatewayXml, configuration);
+
+        return configuration;
+    }
+
     /// <summary>
     /// Resuelve el endpoint prioritariamente desde WS-Discovery y mantiene un fallback
     /// convencional para dispositivos que todavía no fueron descubiertos mediante XAddr.
@@ -145,6 +197,95 @@ public sealed class OnvifDeviceService : IOnvifDeviceService
             return null;
 
         return await response.Content.ReadAsStringAsync(cancellationToken);
+    }
+
+    private static void ParseNetworkInterfaces(string xml, OnvifNetworkConfiguration configuration)
+    {
+        var document = XDocument.Parse(xml);
+
+        foreach (var element in document.Descendants().Where(item => item.Name.LocalName == "NetworkInterfaces"))
+        {
+            var token = (string?)element.Attribute("token");
+            if (string.IsNullOrWhiteSpace(token))
+                continue;
+
+            var info = element.Elements().FirstOrDefault(item => item.Name.LocalName == "Info");
+            var ipv4 = element.Descendants().FirstOrDefault(item => item.Name.LocalName == "IPv4");
+            var ipv4Config = ipv4?.Descendants().FirstOrDefault(item => item.Name.LocalName == "Config");
+            var dhcp = ParseNullableBool(ipv4Config?.Elements().FirstOrDefault(item => item.Name.LocalName == "DHCP")?.Value);
+            var manual = ipv4Config?.Descendants().FirstOrDefault(item => item.Name.LocalName == "Manual");
+
+            configuration.Interfaces.Add(new OnvifNetworkInterfaceInfo
+            {
+                Token = token,
+                Enabled = ParseBool(element.Elements().FirstOrDefault(item => item.Name.LocalName == "Enabled")?.Value),
+                Name = GetElementValue(info, "Name"),
+                HwAddress = GetElementValue(info, "HwAddress"),
+                Mtu = ParseInt(GetElementValue(info, "MTU")),
+                IPv4Enabled = ParseNullableBool(ipv4?.Elements().FirstOrDefault(item => item.Name.LocalName == "Enabled")?.Value),
+                IPv4Dhcp = dhcp,
+                IPv4Address = GetElementValue(manual, "Address"),
+                IPv4PrefixLength = ParseInt(GetElementValue(manual, "PrefixLength"))
+            });
+        }
+    }
+
+    private static void ParseNetworkProtocols(string xml, OnvifNetworkConfiguration configuration)
+    {
+        var document = XDocument.Parse(xml);
+
+        foreach (var element in document.Descendants().Where(item => item.Name.LocalName == "NetworkProtocols"))
+        {
+            var name = GetElementValue(element, "Name");
+            if (string.IsNullOrWhiteSpace(name))
+                continue;
+
+            var item = new OnvifNetworkProtocolInfo
+            {
+                Name = name,
+                Enabled = ParseBool(GetElementValue(element, "Enabled"))
+            };
+
+            foreach (var portNode in element.Elements().Where(node => node.Name.LocalName == "Port"))
+            {
+                if (int.TryParse(portNode.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var port))
+                    item.Ports.Add(port);
+            }
+
+            configuration.Protocols.Add(item);
+        }
+    }
+
+    private static void ParseNetworkGateways(string xml, OnvifNetworkConfiguration configuration)
+    {
+        var document = XDocument.Parse(xml);
+
+        foreach (var node in document.Descendants().Where(item => item.Name.LocalName == "IPv4Address"))
+        {
+            var value = node.Value.Trim();
+            if (!string.IsNullOrWhiteSpace(value) && !configuration.IPv4Gateways.Contains(value, StringComparer.OrdinalIgnoreCase))
+                configuration.IPv4Gateways.Add(value);
+        }
+    }
+
+    private static string? GetElementValue(XElement? parent, string localName)
+    {
+        return parent?.Elements().FirstOrDefault(item => item.Name.LocalName == localName)?.Value?.Trim();
+    }
+
+    private static bool ParseBool(string? value) =>
+        bool.TryParse(value, out var result) && result;
+
+    private static bool? ParseNullableBool(string? value)
+    {
+        return bool.TryParse(value, out var result) ? result : null;
+    }
+
+    private static int? ParseInt(string? value)
+    {
+        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var result)
+            ? result
+            : null;
     }
 
     private static string? FindServiceXAddr(XDocument document, string serviceName)
