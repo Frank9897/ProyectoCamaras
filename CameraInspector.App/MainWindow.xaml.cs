@@ -19,6 +19,7 @@ public partial class MainWindow : Window
     private readonly IOnvifImagingService _imagingService;
     private readonly IOnvifEventService _eventService;
     private readonly ICameraProviderResolver _providerResolver;
+    private readonly IVivotekSnapshotService _vivotekSnapshotService;
     private readonly ICredentialStore _credentialStore;
     private readonly ICameraCredentialStore _cameraCredentialStore;
 
@@ -28,6 +29,7 @@ public partial class MainWindow : Window
         IOnvifImagingService imagingService,
         IOnvifEventService eventService,
         ICameraProviderResolver providerResolver,
+        IVivotekSnapshotService vivotekSnapshotService,
         ICredentialStore credentialStore,
         ICameraCredentialStore cameraCredentialStore)
     {
@@ -40,6 +42,8 @@ public partial class MainWindow : Window
         _imagingService = imagingService;
         _eventService = eventService;
         _providerResolver = providerResolver;
+        // _vivotekSnapshotService ejecuta exclusivamente el snapshot propietario de VIVOTEK.
+        _vivotekSnapshotService = vivotekSnapshotService;
         _credentialStore = credentialStore;
         _cameraCredentialStore = cameraCredentialStore;
 
@@ -62,12 +66,14 @@ public partial class MainWindow : Window
         var eventsItem = new MenuItem { Header = "Eventos ONVIF" };
         var providerItem = new MenuItem { Header = "Información propietaria" };
         var snapshotItem = new MenuItem { Header = "Capturar snapshot" };
+        var vivotekSnapshotItem = new MenuItem { Header = "Snapshot VIVOTEK" };
 
         ptzItem.Click += (_, _) => OpenPtzWindow();
         imagingItem.Click += (_, _) => OpenImagingWindow();
         eventsItem.Click += (_, _) => OpenEventsWindow();
         providerItem.Click += (_, _) => OpenProviderInfoWindow();
         snapshotItem.Click += (_, _) => SaveSnapshot();
+        vivotekSnapshotItem.Click += async (_, _) => await SaveVivotekSnapshotAsync();
 
         contextMenu.Items.Add(ptzItem);
         contextMenu.Items.Add(imagingItem);
@@ -75,6 +81,7 @@ public partial class MainWindow : Window
         contextMenu.Items.Add(providerItem);
         contextMenu.Items.Add(new Separator());
         contextMenu.Items.Add(snapshotItem);
+        contextMenu.Items.Add(vivotekSnapshotItem);
         dataGrid.ContextMenu = contextMenu;
 
         contextMenu.Opened += (_, _) =>
@@ -86,6 +93,7 @@ public partial class MainWindow : Window
                 eventsItem.IsEnabled = false;
                 providerItem.IsEnabled = false;
                 snapshotItem.IsEnabled = false;
+                vivotekSnapshotItem.IsEnabled = false;
                 return;
             }
 
@@ -95,6 +103,7 @@ public partial class MainWindow : Window
             eventsItem.IsEnabled = selected.HasEventsService;
             providerItem.IsEnabled = _providerResolver.Resolve(selected.Device) is not null;
             snapshotItem.IsEnabled = _videoPlayerService.Player.IsPlaying;
+            vivotekSnapshotItem.IsEnabled = IsVivotekDevice(selected.Device);
         };
     }
 
@@ -212,6 +221,83 @@ public partial class MainWindow : Window
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
+    }
+
+    private async Task SaveVivotekSnapshotAsync()
+    {
+        if (DataContext is not MainViewModel viewModel || viewModel.SelectedDevice is null)
+            return;
+
+        var selected = viewModel.SelectedDevice;
+        if (!IsVivotekDevice(selected.Device))
+        {
+            ShowInformation("La cámara seleccionada no fue identificada como VIVOTEK.", "Snapshot VIVOTEK");
+            return;
+        }
+
+        if (selected.CameraId is not int cameraId)
+        {
+            ShowInformation("La cámara todavía no tiene identidad persistente en el inventario.", "Snapshot VIVOTEK");
+            return;
+        }
+
+        var savedInfo = await _cameraCredentialStore.GetAsync(cameraId);
+        if (savedInfo is null)
+        {
+            ShowInformation("No hay credenciales guardadas para esta cámara. Guárdelas primero desde el panel principal.", "Snapshot VIVOTEK");
+            return;
+        }
+
+        var credentials = await _credentialStore.GetAsync(savedInfo.CredentialRef);
+        if (credentials is null)
+        {
+            ShowInformation("La credencial asociada ya no existe en Windows Credential Manager.", "Snapshot VIVOTEK");
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Title = "Guardar snapshot VIVOTEK",
+            Filter = "Imagen JPEG (*.jpg)|*.jpg",
+            DefaultExt = ".jpg",
+            AddExtension = true,
+            FileName = $"vivotek_{DateTime.Now:yyyyMMdd_HHmmss}.jpg"
+        };
+
+        if (dialog.ShowDialog(this) != true)
+            return;
+
+        try
+        {
+            // saved indica que la cámara devolvió una imagen JPEG válida y se guardó en disco.
+            var saved = await _vivotekSnapshotService.SaveSnapshotAsync(
+                selected.IpAddress,
+                credentials.Username,
+                credentials.Password,
+                dialog.FileName);
+
+            MessageBox.Show(
+                saved
+                    ? $"Snapshot VIVOTEK guardado correctamente.\n\n{dialog.FileName}"
+                    : "La cámara no devolvió un snapshot válido.",
+                "Camera Inspector — Snapshot VIVOTEK",
+                MessageBoxButton.OK,
+                saved ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"No se pudo obtener el snapshot VIVOTEK:\n\n{ex.Message}",
+                "Camera Inspector — Snapshot VIVOTEK",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    private bool IsVivotekDevice(CameraInspector.Core.Models.DiscoveredDevice device)
+    {
+        var provider = _providerResolver.Resolve(device);
+        return provider?.Name.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase) == true;
     }
 
     private static void ShowInformation(string message, string title) =>
