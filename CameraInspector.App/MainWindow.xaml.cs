@@ -1,9 +1,11 @@
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using Microsoft.Win32;
 using CameraInspector.App.ViewModels;
 using CameraInspector.Core.Interfaces;
+using CameraInspector.Core.Services;
 using CameraInspector.Video;
 
 namespace CameraInspector.App;
@@ -67,6 +69,8 @@ public partial class MainWindow : Window
             return;
 
         var contextMenu = new ContextMenu();
+        var exportInventoryItem = new MenuItem { Header = "Exportar inventario CSV" };
+        var exportHistoryItem = new MenuItem { Header = "Exportar historial CSV" };
         var ptzItem = new MenuItem { Header = "Control PTZ" };
         var imagingItem = new MenuItem { Header = "Ajustes de imagen" };
         var eventsItem = new MenuItem { Header = "Eventos ONVIF" };
@@ -76,6 +80,8 @@ public partial class MainWindow : Window
         var vivotekPtzItem = new MenuItem { Header = "Control PTZ VIVOTEK" };
         var vivotekParametersItem = new MenuItem { Header = "Parámetros VIVOTEK" };
 
+        exportInventoryItem.Click += (_, _) => ExportInventoryCsv();
+        exportHistoryItem.Click += (_, _) => ExportHistoryCsv();
         ptzItem.Click += (_, _) => OpenPtzWindow();
         imagingItem.Click += (_, _) => OpenImagingWindow();
         eventsItem.Click += (_, _) => OpenEventsWindow();
@@ -85,6 +91,9 @@ public partial class MainWindow : Window
         vivotekPtzItem.Click += (_, _) => OpenVivotekPtzWindow();
         vivotekParametersItem.Click += (_, _) => OpenVivotekParametersWindow();
 
+        contextMenu.Items.Add(exportInventoryItem);
+        contextMenu.Items.Add(exportHistoryItem);
+        contextMenu.Items.Add(new Separator());
         contextMenu.Items.Add(ptzItem);
         contextMenu.Items.Add(vivotekPtzItem);
         contextMenu.Items.Add(vivotekParametersItem);
@@ -100,6 +109,8 @@ public partial class MainWindow : Window
         {
             if (DataContext is not MainViewModel viewModel || viewModel.SelectedDevice is null)
             {
+                exportInventoryItem.IsEnabled = viewModel?.Devices.Count > 0;
+                exportHistoryItem.IsEnabled = false;
                 ptzItem.IsEnabled = false;
                 vivotekPtzItem.IsEnabled = false;
                 vivotekParametersItem.IsEnabled = false;
@@ -114,6 +125,8 @@ public partial class MainWindow : Window
             var selected = viewModel.SelectedDevice;
             var isVivotek = IsVivotekDevice(selected.Device);
 
+            exportInventoryItem.IsEnabled = viewModel.Devices.Count > 0;
+            exportHistoryItem.IsEnabled = viewModel.DiagnosticHistory.Count > 0;
             ptzItem.IsEnabled = selected.HasPtzService;
             vivotekPtzItem.IsEnabled = isVivotek;
             vivotekParametersItem.IsEnabled = isVivotek;
@@ -123,6 +136,90 @@ public partial class MainWindow : Window
             snapshotItem.IsEnabled = _videoPlayerService.Player.IsPlaying;
             vivotekSnapshotItem.IsEnabled = isVivotek;
         };
+    }
+
+    private void ExportInventoryCsv()
+    {
+        if (DataContext is not MainViewModel viewModel || viewModel.Devices.Count == 0)
+        {
+            ShowInformation("No hay cámaras disponibles para exportar.", "Exportación");
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Title = "Exportar inventario de cámaras",
+            Filter = "CSV (*.csv)|*.csv",
+            DefaultExt = ".csv",
+            AddExtension = true,
+            FileName = $"inventario_camaras_{DateTime.Now:yyyyMMdd_HHmmss}.csv"
+        };
+
+        if (dialog.ShowDialog(this) != true)
+            return;
+
+        // deviceModels convierte los ViewModels de UI a modelos técnicos sin exponer la capa de presentación al generador.
+        var deviceModels = viewModel.Devices.Select(viewModelItem => viewModelItem.Device).ToList();
+        var csv = CsvExportService.ExportInventory(deviceModels);
+
+        SaveUtf8Csv(dialog.FileName, csv, "Inventario exportado correctamente.");
+    }
+
+    private void ExportHistoryCsv()
+    {
+        if (DataContext is not MainViewModel viewModel || viewModel.SelectedDevice is null)
+        {
+            ShowInformation("Seleccione una cámara antes de exportar su historial.", "Exportación");
+            return;
+        }
+
+        if (viewModel.DiagnosticHistory.Count == 0)
+        {
+            ShowInformation("La cámara seleccionada no tiene historial de diagnóstico para exportar.", "Exportación");
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Title = "Exportar historial de diagnóstico",
+            Filter = "CSV (*.csv)|*.csv",
+            DefaultExt = ".csv",
+            AddExtension = true,
+            FileName = $"historial_{viewModel.SelectedDevice.IpAddress}_{DateTime.Now:yyyyMMdd_HHmmss}.csv"
+        };
+
+        if (dialog.ShowDialog(this) != true)
+            return;
+
+        // historyModels conserva los registros tal como fueron cargados desde SQLite.
+        var historyModels = viewModel.DiagnosticHistory.ToList();
+        var csv = CsvExportService.ExportDiagnosticHistory(historyModels, viewModel.SelectedDevice.Device);
+
+        SaveUtf8Csv(dialog.FileName, csv, "Historial exportado correctamente.");
+    }
+
+    private static void SaveUtf8Csv(string filePath, string csv, string successMessage)
+    {
+        try
+        {
+            // utf8WithBom permite que Excel en Windows detecte automáticamente UTF-8 y preserve acentos.
+            var utf8WithBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
+            File.WriteAllText(filePath, csv, utf8WithBom);
+
+            MessageBox.Show(
+                $"{successMessage}\n\n{filePath}",
+                "Camera Inspector — Exportación",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"No se pudo guardar el CSV:\n\n{ex.Message}",
+                "Camera Inspector — Exportación",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
     }
 
     private void OpenPtzWindow()
