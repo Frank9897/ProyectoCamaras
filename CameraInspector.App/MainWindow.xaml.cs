@@ -21,6 +21,7 @@ public partial class MainWindow : Window
     private readonly ICameraProviderResolver _providerResolver;
     private readonly IVivotekSnapshotService _vivotekSnapshotService;
     private readonly IVivotekPtzService _vivotekPtzService;
+    private readonly IVivotekParameterService _vivotekParameterService;
     private readonly ICredentialStore _credentialStore;
     private readonly ICameraCredentialStore _cameraCredentialStore;
 
@@ -32,6 +33,7 @@ public partial class MainWindow : Window
         ICameraProviderResolver providerResolver,
         IVivotekSnapshotService vivotekSnapshotService,
         IVivotekPtzService vivotekPtzService,
+        IVivotekParameterService vivotekParameterService,
         ICredentialStore credentialStore,
         ICameraCredentialStore cameraCredentialStore)
     {
@@ -46,6 +48,8 @@ public partial class MainWindow : Window
         _vivotekSnapshotService = vivotekSnapshotService;
         // _vivotekPtzService ejecuta exclusivamente los comandos PTZ propietarios de VIVOTEK.
         _vivotekPtzService = vivotekPtzService;
+        // _vivotekParameterService consulta grupos CGI en modo lectura.
+        _vivotekParameterService = vivotekParameterService;
         _credentialStore = credentialStore;
         _cameraCredentialStore = cameraCredentialStore;
 
@@ -70,6 +74,7 @@ public partial class MainWindow : Window
         var snapshotItem = new MenuItem { Header = "Capturar snapshot" };
         var vivotekSnapshotItem = new MenuItem { Header = "Snapshot VIVOTEK" };
         var vivotekPtzItem = new MenuItem { Header = "Control PTZ VIVOTEK" };
+        var vivotekParametersItem = new MenuItem { Header = "Parámetros VIVOTEK" };
 
         ptzItem.Click += (_, _) => OpenPtzWindow();
         imagingItem.Click += (_, _) => OpenImagingWindow();
@@ -78,9 +83,11 @@ public partial class MainWindow : Window
         snapshotItem.Click += (_, _) => SaveSnapshot();
         vivotekSnapshotItem.Click += async (_, _) => await SaveVivotekSnapshotAsync();
         vivotekPtzItem.Click += (_, _) => OpenVivotekPtzWindow();
+        vivotekParametersItem.Click += (_, _) => OpenVivotekParametersWindow();
 
         contextMenu.Items.Add(ptzItem);
         contextMenu.Items.Add(vivotekPtzItem);
+        contextMenu.Items.Add(vivotekParametersItem);
         contextMenu.Items.Add(imagingItem);
         contextMenu.Items.Add(eventsItem);
         contextMenu.Items.Add(providerItem);
@@ -95,6 +102,7 @@ public partial class MainWindow : Window
             {
                 ptzItem.IsEnabled = false;
                 vivotekPtzItem.IsEnabled = false;
+                vivotekParametersItem.IsEnabled = false;
                 imagingItem.IsEnabled = false;
                 eventsItem.IsEnabled = false;
                 providerItem.IsEnabled = false;
@@ -108,6 +116,7 @@ public partial class MainWindow : Window
 
             ptzItem.IsEnabled = selected.HasPtzService;
             vivotekPtzItem.IsEnabled = isVivotek;
+            vivotekParametersItem.IsEnabled = isVivotek;
             imagingItem.IsEnabled = selected.HasImagingService;
             eventsItem.IsEnabled = selected.HasEventsService;
             providerItem.IsEnabled = _providerResolver.Resolve(selected.Device) is not null;
@@ -144,6 +153,27 @@ public partial class MainWindow : Window
         new VivotekPtzWindow(
             viewModel.SelectedDevice,
             _vivotekPtzService,
+            _credentialStore,
+            _cameraCredentialStore)
+        {
+            Owner = this
+        }.ShowDialog();
+    }
+
+    private void OpenVivotekParametersWindow()
+    {
+        if (DataContext is not MainViewModel viewModel || viewModel.SelectedDevice is null)
+            return;
+
+        if (!IsVivotekDevice(viewModel.SelectedDevice.Device))
+        {
+            ShowInformation("La cámara seleccionada no fue identificada como VIVOTEK.", "Parámetros VIVOTEK");
+            return;
+        }
+
+        new VivotekParametersWindow(
+            viewModel.SelectedDevice,
+            _vivotekParameterService,
             _credentialStore,
             _cameraCredentialStore)
         {
