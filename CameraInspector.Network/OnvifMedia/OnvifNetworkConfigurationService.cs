@@ -40,6 +40,9 @@ public sealed class OnvifNetworkConfigurationService : IOnvifNetworkConfiguratio
         if (endpoint is null)
             return Failure("No se pudo resolver el Device Service ONVIF.");
 
+        // validatedPrefix evita volver a acceder a Nullable.Value después de la validación.
+        var validatedPrefix = prefixLength.GetValueOrDefault();
+
         var security = WsSecurityHeaderBuilder.Build(username, password);
         var ipv4Configuration = useDhcp
             ? """
@@ -52,7 +55,7 @@ public sealed class OnvifNetworkConfigurationService : IOnvifNetworkConfiguratio
               <tt:Enabled>true</tt:Enabled>
               <tt:Manual>
                 <tt:Address>{SecurityEscape(ipv4Address!)}</tt:Address>
-                <tt:PrefixLength>{prefixLength.Value}</tt:PrefixLength>
+                <tt:PrefixLength>{validatedPrefix}</tt:PrefixLength>
               </tt:Manual>
               <tt:DHCP>false</tt:DHCP>
               """;
