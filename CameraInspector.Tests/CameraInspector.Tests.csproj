@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\CameraInspector.Core\CameraInspector.Core.csproj" />
+    <ProjectReference Include="..\CameraInspector.Network\CameraInspector.Network.csproj" />
   </ItemGroup>
 
 </Project>
