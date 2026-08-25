@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private readonly IOnvifEventService _eventService;
     private readonly ICameraProviderResolver _providerResolver;
     private readonly IVivotekSnapshotService _vivotekSnapshotService;
+    private readonly IVivotekPtzService _vivotekPtzService;
     private readonly ICredentialStore _credentialStore;
     private readonly ICameraCredentialStore _cameraCredentialStore;
 
@@ -30,6 +31,7 @@ public partial class MainWindow : Window
         IOnvifEventService eventService,
         ICameraProviderResolver providerResolver,
         IVivotekSnapshotService vivotekSnapshotService,
+        IVivotekPtzService vivotekPtzService,
         ICredentialStore credentialStore,
         ICameraCredentialStore cameraCredentialStore)
     {
@@ -37,13 +39,13 @@ public partial class MainWindow : Window
 
         // DataContext conecta todos los bindings de la ventana con MainViewModel.
         DataContext = viewModel;
-        // _videoPlayerService administra el motor multimedia y conserva el MediaPlayer durante la vida de la ventana.
         _videoPlayerService = videoPlayerService;
         _imagingService = imagingService;
         _eventService = eventService;
         _providerResolver = providerResolver;
-        // _vivotekSnapshotService ejecuta exclusivamente el snapshot propietario de VIVOTEK.
         _vivotekSnapshotService = vivotekSnapshotService;
+        // _vivotekPtzService ejecuta exclusivamente los comandos PTZ propietarios de VIVOTEK.
+        _vivotekPtzService = vivotekPtzService;
         _credentialStore = credentialStore;
         _cameraCredentialStore = cameraCredentialStore;
 
@@ -67,6 +69,7 @@ public partial class MainWindow : Window
         var providerItem = new MenuItem { Header = "Información propietaria" };
         var snapshotItem = new MenuItem { Header = "Capturar snapshot" };
         var vivotekSnapshotItem = new MenuItem { Header = "Snapshot VIVOTEK" };
+        var vivotekPtzItem = new MenuItem { Header = "Control PTZ VIVOTEK" };
 
         ptzItem.Click += (_, _) => OpenPtzWindow();
         imagingItem.Click += (_, _) => OpenImagingWindow();
@@ -74,8 +77,10 @@ public partial class MainWindow : Window
         providerItem.Click += (_, _) => OpenProviderInfoWindow();
         snapshotItem.Click += (_, _) => SaveSnapshot();
         vivotekSnapshotItem.Click += async (_, _) => await SaveVivotekSnapshotAsync();
+        vivotekPtzItem.Click += (_, _) => OpenVivotekPtzWindow();
 
         contextMenu.Items.Add(ptzItem);
+        contextMenu.Items.Add(vivotekPtzItem);
         contextMenu.Items.Add(imagingItem);
         contextMenu.Items.Add(eventsItem);
         contextMenu.Items.Add(providerItem);
@@ -89,6 +94,7 @@ public partial class MainWindow : Window
             if (DataContext is not MainViewModel viewModel || viewModel.SelectedDevice is null)
             {
                 ptzItem.IsEnabled = false;
+                vivotekPtzItem.IsEnabled = false;
                 imagingItem.IsEnabled = false;
                 eventsItem.IsEnabled = false;
                 providerItem.IsEnabled = false;
@@ -98,12 +104,15 @@ public partial class MainWindow : Window
             }
 
             var selected = viewModel.SelectedDevice;
+            var isVivotek = IsVivotekDevice(selected.Device);
+
             ptzItem.IsEnabled = selected.HasPtzService;
+            vivotekPtzItem.IsEnabled = isVivotek;
             imagingItem.IsEnabled = selected.HasImagingService;
             eventsItem.IsEnabled = selected.HasEventsService;
             providerItem.IsEnabled = _providerResolver.Resolve(selected.Device) is not null;
             snapshotItem.IsEnabled = _videoPlayerService.Player.IsPlaying;
-            vivotekSnapshotItem.IsEnabled = IsVivotekDevice(selected.Device);
+            vivotekSnapshotItem.IsEnabled = isVivotek;
         };
     }
 
@@ -119,6 +128,27 @@ public partial class MainWindow : Window
         }
 
         new PtzWindow(viewModel) { Owner = this }.ShowDialog();
+    }
+
+    private void OpenVivotekPtzWindow()
+    {
+        if (DataContext is not MainViewModel viewModel || viewModel.SelectedDevice is null)
+            return;
+
+        if (!IsVivotekDevice(viewModel.SelectedDevice.Device))
+        {
+            ShowInformation("La cámara seleccionada no fue identificada como VIVOTEK.", "PTZ VIVOTEK");
+            return;
+        }
+
+        new VivotekPtzWindow(
+            viewModel.SelectedDevice,
+            _vivotekPtzService,
+            _credentialStore,
+            _cameraCredentialStore)
+        {
+            Owner = this
+        }.ShowDialog();
     }
 
     private void OpenImagingWindow()
@@ -198,7 +228,6 @@ public partial class MainWindow : Window
 
         try
         {
-            // saved indica si LibVLC aceptó la solicitud de captura del frame actual.
             var saved = _videoPlayerService.TakeSnapshot(dialog.FileName);
 
             if (!saved)
@@ -269,7 +298,6 @@ public partial class MainWindow : Window
 
         try
         {
-            // saved indica que la cámara devolvió una imagen JPEG válida y se guardó en disco.
             var saved = await _vivotekSnapshotService.SaveSnapshotAsync(
                 selected.IpAddress,
                 credentials.Username,
@@ -294,10 +322,10 @@ public partial class MainWindow : Window
         }
     }
 
-    private bool IsVivotekDevice(CameraInspector.Core.Models.DiscoveredDevice device)
+    private static bool IsVivotekDevice(CameraInspector.Core.Models.DiscoveredDevice device)
     {
-        var provider = _providerResolver.Resolve(device);
-        return provider?.Name.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase) == true;
+        var manufacturer = device.Manufacturer ?? string.Empty;
+        return manufacturer.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void ShowInformation(string message, string title) =>
