@@ -5,7 +5,7 @@ namespace CameraInspector.Video;
 
 /// <summary>
 /// Reproductor RTSP basado en LibVLCSharp.
-/// Se encarga exclusivamente del ciclo de vida de LibVLC, Media y MediaPlayer.
+/// Mantiene un reproductor visible para la vista previa y otro reproductor independiente para grabación.
 /// </summary>
 public sealed class LibVlcVideoPlayerService : IVideoPlayerService
 {
@@ -13,28 +13,42 @@ public sealed class LibVlcVideoPlayerService : IVideoPlayerService
     private readonly LibVLC _libVlc;
 
     /// <summary>
-    /// Medio RTSP actualmente asociado al reproductor.
-    /// Se conserva mientras está activo para mantener correctamente su ciclo de vida nativo.
+    /// Medio RTSP actualmente asociado al reproductor visible.
     /// </summary>
     private Media? _currentMedia;
 
-    /// <summary>Instancia que controla la reproducción y entrega los frames al VideoView de WPF.</summary>
+    /// <summary>
+    /// MediaPlayer que entrega la reproducción visible al VideoView de WPF.
+    /// </summary>
     public MediaPlayer Player { get; }
+
+    /// <summary>
+    /// Medio RTSP actualmente asociado al reproductor de grabación.
+    /// </summary>
+    private Media? _recordingMedia;
+
+    /// <summary>
+    /// Reproductor secundario que mantiene la conexión RTSP dedicada a la grabación.
+    /// </summary>
+    private MediaPlayer? _recordingPlayer;
+
+    /// <summary>
+    /// Indica si existe una grabación activa en el reproductor secundario.
+    /// </summary>
+    public bool IsRecording => _recordingPlayer?.IsPlaying == true;
 
     public LibVlcVideoPlayerService()
     {
-        // Usamos el nombre totalmente calificado para evitar que el namespace CameraInspector.Core
-        // sea interpretado como si contuviera el método Initialize.
+        // Usamos el nombre totalmente calificado para evitar conflictos con el namespace CameraInspector.Core.
         global::LibVLCSharp.Shared.Core.Initialize();
 
-        // _libVlc contiene el motor multimedia. El cache y RTSP-TCP priorizan estabilidad
-        // para redes CCTV frente a una latencia mínima.
+        // _libVlc contiene el motor multimedia. El cache y RTSP-TCP priorizan estabilidad para CCTV.
         _libVlc = new LibVLC(
             "--quiet",
             "--network-caching=500",
             "--rtsp-tcp");
 
-        // Player administra la reproducción actual y queda expuesto para enlazarlo al VideoView.
+        // Player administra la reproducción visible actual.
         Player = new MediaPlayer(_libVlc);
     }
 
@@ -48,15 +62,8 @@ public sealed class LibVlcVideoPlayerService : IVideoPlayerService
         // Stop detiene la reproducción anterior y libera el Media nativo anterior.
         Stop();
 
-        // _currentMedia representa la nueva fuente RTSP y se mantiene viva mientras se reproduce.
-        _currentMedia = new Media(_libVlc, stream.RtspUri, FromType.FromLocation);
-
-        // La autenticación se pasa como opciones de LibVLC y no se persiste en CameraStreamInfo.
-        if (!string.IsNullOrWhiteSpace(username))
-            _currentMedia.AddOption($":rtsp-user={EscapeOption(username)}");
-
-        if (!string.IsNullOrWhiteSpace(password))
-            _currentMedia.AddOption($":rtsp-pwd={EscapeOption(password)}");
+        // _currentMedia representa la nueva fuente RTSP visible.
+        _currentMedia = CreateRtspMedia(stream, username, password);
 
         // MediaPlayer.Play inicia la conexión RTSP y entrega el video al VideoView asociado.
         Player.Play(_currentMedia);
@@ -64,11 +71,11 @@ public sealed class LibVlcVideoPlayerService : IVideoPlayerService
 
     public void Stop()
     {
-        // IsPlaying indica si existe una reproducción activa que deba detenerse.
+        // Player.IsPlaying indica si existe una reproducción visible activa.
         if (Player.IsPlaying)
             Player.Stop();
 
-        // Liberamos el Media anterior después de detener el reproductor.
+        // Liberamos el Media anterior después de detener el reproductor visible.
         _currentMedia?.Dispose();
         _currentMedia = null;
     }
@@ -78,7 +85,7 @@ public sealed class LibVlcVideoPlayerService : IVideoPlayerService
         // ArgumentNullException evita pasar una ruta vacía al componente nativo de LibVLC.
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
 
-        // Snapshot requiere una salida de video activa; sin reproducción no existe frame que capturar.
+        // Snapshot requiere una salida de video activa.
         if (!Player.IsPlaying)
             return false;
 
@@ -86,9 +93,67 @@ public sealed class LibVlcVideoPlayerService : IVideoPlayerService
         return Player.TakeSnapshot(0, filePath, width, height);
     }
 
+    public bool StartRecording(
+        CameraStreamInfo stream,
+        string? username,
+        string? password,
+        string filePath)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+
+        // StopRecording evita dejar una grabación anterior usando recursos nativos.
+        StopRecording();
+
+        // _recordingMedia representa la misma fuente RTSP, pero con una salida sout hacia disco.
+        _recordingMedia = CreateRtspMedia(stream, username, password);
+
+        // destination es una ruta local explícitamente seleccionada por el técnico.
+        var destination = EscapeSoutPath(filePath);
+
+        // sout escribe el stream directamente en MPEG-TS sin transcodificar, reduciendo CPU y latencia.
+        _recordingMedia.AddOption($":sout=#std{{access=file,mux=ts,dst=\"{destination}\"}}");
+        // no-sout-display evita que el reproductor secundario intente renderizar una segunda ventana de video.
+        _recordingMedia.AddOption(":no-sout-display");
+        // sout-keep conserva la salida mientras la fuente permanezca activa.
+        _recordingMedia.AddOption(":sout-keep");
+
+        // _recordingPlayer es independiente del Player visible, por lo que la vista previa continúa funcionando.
+        _recordingPlayer = new MediaPlayer(_libVlc);
+
+        // started indica si LibVLC aceptó iniciar la reproducción dedicada a grabación.
+        var started = _recordingPlayer.Play(_recordingMedia);
+
+        if (!started)
+        {
+            StopRecording();
+            return false;
+        }
+
+        return true;
+    }
+
+    public void StopRecording()
+    {
+        // Si existe un reproductor de grabación activo, lo detenemos antes de liberar el Media.
+        if (_recordingPlayer is not null)
+        {
+            if (_recordingPlayer.IsPlaying)
+                _recordingPlayer.Stop();
+
+            _recordingPlayer.Dispose();
+            _recordingPlayer = null;
+        }
+
+        // _recordingMedia debe liberarse después del reproductor que lo estaba consumiendo.
+        _recordingMedia?.Dispose();
+        _recordingMedia = null;
+    }
+
     public void Dispose()
     {
-        // Stop libera el medio actualmente abierto antes de destruir Player y LibVLC.
+        // La grabación tiene prioridad de liberación antes de destruir el motor LibVLC.
+        StopRecording();
         Stop();
 
         // Player debe liberarse antes del motor LibVLC para cerrar correctamente recursos nativos.
@@ -97,9 +162,37 @@ public sealed class LibVlcVideoPlayerService : IVideoPlayerService
     }
 
     /// <summary>
+    /// Crea un objeto Media RTSP con autenticación opcional.
+    /// </summary>
+    private Media CreateRtspMedia(
+        CameraStreamInfo stream,
+        string? username,
+        string? password)
+    {
+        // media representa la fuente RTSP solicitada por la cámara.
+        var media = new Media(_libVlc, stream.RtspUri, FromType.FromLocation);
+
+        // La autenticación se pasa como opciones de LibVLC y no se persiste en CameraStreamInfo.
+        if (!string.IsNullOrWhiteSpace(username))
+            media.AddOption($":rtsp-user={EscapeOption(username)}");
+
+        if (!string.IsNullOrWhiteSpace(password))
+            media.AddOption($":rtsp-pwd={EscapeOption(password)}");
+
+        return media;
+    }
+
+    /// <summary>
     /// Escapa mínimamente caracteres que podrían alterar el formato de una opción de LibVLC.
     /// </summary>
     private static string EscapeOption(string value) =>
+        value.Replace("\\", "\\\\", StringComparison.Ordinal)
+             .Replace("\"", "\\\"", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Escapa una ruta Windows para que pueda viajar dentro de una opción sout delimitada por comillas.
+    /// </summary>
+    private static string EscapeSoutPath(string value) =>
         value.Replace("\\", "\\\\", StringComparison.Ordinal)
              .Replace("\"", "\\\"", StringComparison.Ordinal);
 }
