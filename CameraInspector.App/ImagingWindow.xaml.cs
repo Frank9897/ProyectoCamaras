@@ -17,8 +17,9 @@ public partial class ImagingWindow : Window
     {
         InitializeComponent();
 
+        // El ViewModel recibe el DeviceViewModel completo para conservar CameraId y el modelo de red.
         var viewModel = new ImagingViewModel(
-            deviceViewModel.Device,
+            deviceViewModel,
             imagingService,
             credentialStore,
             cameraCredentialStore);
