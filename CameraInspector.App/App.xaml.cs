@@ -23,11 +23,7 @@ public partial class App : Application
 {
     private IHost? _host;
 
-    /// <summary>
-    /// Proveedor de servicios activo. Se expone para pequeñas ventanas auxiliares de UI
-    /// que no forman parte del flujo principal y necesitan resolver un servicio del host.
-    /// La lógica de negocio sigue viviendo en servicios e interfaces de Core/Network.
-    /// </summary>
+    /// <summary>Proveedor de servicios activo para ventanas auxiliares.</summary>
     public static IServiceProvider? Services { get; private set; }
 
     public App()
@@ -103,6 +99,8 @@ public partial class App : Application
                     // Los providers se evalúan por evidencia antes de realizar operaciones autenticadas.
                     services.AddSingleton<ICameraProvider, HikvisionProvider>();
                     services.AddSingleton<CameraProviderResolver>();
+                    services.AddSingleton<ICameraProviderResolver>(sp =>
+                        sp.GetRequiredService<CameraProviderResolver>());
 
                     // ---- Capa 6: Diagnóstico ----
                     services.AddSingleton<ICameraDiagnosticService, Network.Diagnostics.CameraDiagnosticService>();
@@ -116,8 +114,6 @@ public partial class App : Application
                 .Build();
 
             await _host.StartAsync();
-
-            // Services conserva el ServiceProvider activo para ventanas auxiliares creadas desde la UI.
             Services = _host.Services;
 
             await using (var scope = _host.Services.CreateAsyncScope())
