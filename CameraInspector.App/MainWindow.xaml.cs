@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -111,9 +112,9 @@ public partial class MainWindow : Window
 
         contextMenu.Opened += (_, _) =>
         {
-            if (DataContext is not MainViewModel viewModel || viewModel.SelectedDevice is null)
+            if (DataContext is not MainViewModel currentViewModel)
             {
-                exportInventoryItem.IsEnabled = viewModel?.Devices.Count > 0;
+                exportInventoryItem.IsEnabled = false;
                 exportHistoryItem.IsEnabled = false;
                 networkItem.IsEnabled = false;
                 ptzItem.IsEnabled = false;
@@ -127,11 +128,28 @@ public partial class MainWindow : Window
                 return;
             }
 
-            var selected = viewModel.SelectedDevice;
+            // currentViewModel queda siempre inicializado antes de consultar la selección actual.
+            if (currentViewModel.SelectedDevice is null)
+            {
+                exportInventoryItem.IsEnabled = currentViewModel.Devices.Count > 0;
+                exportHistoryItem.IsEnabled = false;
+                networkItem.IsEnabled = false;
+                ptzItem.IsEnabled = false;
+                vivotekPtzItem.IsEnabled = false;
+                vivotekParametersItem.IsEnabled = false;
+                imagingItem.IsEnabled = false;
+                eventsItem.IsEnabled = false;
+                providerItem.IsEnabled = false;
+                snapshotItem.IsEnabled = false;
+                vivotekSnapshotItem.IsEnabled = false;
+                return;
+            }
+
+            var selected = currentViewModel.SelectedDevice;
             var isVivotek = IsVivotekDevice(selected.Device);
 
-            exportInventoryItem.IsEnabled = viewModel.Devices.Count > 0;
-            exportHistoryItem.IsEnabled = viewModel.DiagnosticHistory.Count > 0;
+            exportInventoryItem.IsEnabled = currentViewModel.Devices.Count > 0;
+            exportHistoryItem.IsEnabled = currentViewModel.DiagnosticHistory.Count > 0;
             networkItem.IsEnabled = selected.OnvifSupported;
             ptzItem.IsEnabled = selected.HasPtzService;
             vivotekPtzItem.IsEnabled = isVivotek;
