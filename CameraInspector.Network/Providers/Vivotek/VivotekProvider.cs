@@ -71,18 +71,15 @@ public sealed class VivotekProvider : ICameraProvider
         // Model identifica el modelo que el firmware expone por el CGI.
         var model = GetValue(values, "Model");
         // CapVersion identifica la versión de capacidades del CGI, no la versión del firmware.
-        var capabilityVersion = GetValue(values, "CapVersion");
+        // Se conserva como evidencia local, pero no se asigna a FirmwareVersion porque semánticamente son datos distintos.
+        _ = GetValue(values, "CapVersion");
 
         return new CameraProviderInfo
         {
             ProviderName = Name,
             Manufacturer = "VIVOTEK",
             Model = model,
-            // Guardamos la versión de capacidades en FirmwareVersion solo como respaldo cuando
-            // el CGI no expone un campo de firmware separado. Esto se distingue mediante el texto.
-            FirmwareVersion = string.IsNullOrWhiteSpace(capabilityVersion)
-                ? null
-                : $"CGI CapVersion {capabilityVersion}",
+            FirmwareVersion = null,
             SerialNumber = null,
             MacAddress = null,
             DeviceType = "Network Camera"
