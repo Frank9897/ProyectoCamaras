@@ -6,7 +6,7 @@ namespace CameraInspector.Network.Providers.Vivotek;
 
 /// <summary>
 /// Provider propietario de VIVOTEK mediante CGI.
-/// Esta primera versión solo realiza lectura de información básica del dispositivo.
+/// Primero intenta consultar system.info mediante getparam.cgi y deja sysinfo.cgi como compatibilidad secundaria.
 /// </summary>
 public sealed class VivotekProvider : ICameraProvider
 {
@@ -53,25 +53,31 @@ public sealed class VivotekProvider : ICameraProvider
             Timeout = _timeout
         };
 
-        // endpoint consulta la información básica del servidor mediante CGI.
-        // El fabricante documenta este endpoint para compatibilidad con cámaras que exponen la API CGI clásica.
-        var endpoint = $"http://{device.IpAddress.Trim()}/cgi-bin/sysinfo.cgi";
+        // Primer intento: API CGI moderna de lectura del grupo system.info.
+        // VIVOTEK documenta getparam.cgi para consultar grupos y system.info expone modelo,
+        // número de serie y firmware en varias generaciones de cámaras.
+        var modernEndpoint = $"http://{device.IpAddress.Trim()}/cgi-bin/anonymous/getparam.cgi?system.info";
+        var modernResponse = await TryGetAsync(client, modernEndpoint, cancellationToken);
 
-        using var response = await client.GetAsync(endpoint, cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        if (modernResponse is not null)
+        {
+            var values = ParseKeyValueResponse(modernResponse);
+            var modernInfo = BuildModernInfo(values);
+
+            if (modernInfo is not null)
+                return modernInfo;
+        }
+
+        // Segundo intento: API sysinfo clásica para firmware que todavía la exponen.
+        var legacyEndpoint = $"http://{device.IpAddress.Trim()}/cgi-bin/sysinfo.cgi";
+        var legacyResponse = await TryGetAsync(client, legacyEndpoint, cancellationToken);
+
+        if (legacyResponse is null)
             return null;
 
-        // responseText contiene pares clave=valor separados por líneas.
-        var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(responseText))
-            return null;
-
-        var values = ParseKeyValueResponse(responseText);
-
-        // Model identifica el valor de modelo que realmente devolvió esta API.
-        var model = GetValue(values, "Model");
-        // CapVersion identifica la versión de capacidades del CGI y se conserva únicamente como evidencia local.
-        var capabilityVersion = GetValue(values, "CapVersion");
+        var legacyValues = ParseKeyValueResponse(legacyResponse);
+        var model = GetValue(legacyValues, "Model");
+        var capabilityVersion = GetValue(legacyValues, "CapVersion");
 
         return new CameraProviderInfo
         {
@@ -80,10 +86,72 @@ public sealed class VivotekProvider : ICameraProvider
                 : $"{Name} (CapVersion {capabilityVersion})",
             Manufacturer = "VIVOTEK",
             Model = model,
-            // Esta API clásica no nos garantiza un campo separado de firmware.
             FirmwareVersion = null,
             SerialNumber = null,
             MacAddress = null,
+            DeviceType = "Network Camera"
+        };
+    }
+
+    /// <summary>
+    /// Ejecuta una petición GET y devuelve el cuerpo de texto solamente ante una respuesta HTTP exitosa.
+    /// </summary>
+    private static async Task<string?> TryGetAsync(
+        HttpClient client,
+        string endpoint,
+        CancellationToken cancellationToken)
+    {
+        // response contiene el resultado HTTP de la cámara para el endpoint consultado.
+        using var response = await client.GetAsync(endpoint, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            return null;
+
+        // body contiene la respuesta textual CGI que después será convertida a pares clave=valor.
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        return string.IsNullOrWhiteSpace(body) ? null : body;
+    }
+
+    /// <summary>
+    /// Construye la información común a partir del grupo system.info.
+    /// </summary>
+    private CameraProviderInfo? BuildModernInfo(IReadOnlyDictionary<string, string> values)
+    {
+        // modelName puede venir como system.info_modelname o como modelname dependiendo de la generación.
+        var modelName = GetFirstValue(values,
+            "modelname",
+            "system.info_modelname");
+
+        // extendedModelName conserva el nombre de producto/ODM cuando la cámara lo expone.
+        var extendedModelName = GetFirstValue(values,
+            "extendedmodelname",
+            "system.info_extendedmodelname");
+
+        // serialNumber es documentado por VIVOTEK como la MAC de producto sin separadores en varias generaciones.
+        var serialNumber = GetFirstValue(values,
+            "serialnumber",
+            "system.info_serialnumber");
+
+        // firmwareVersion contiene la versión de firmware en el formato definido por VIVOTEK.
+        var firmwareVersion = GetFirstValue(values,
+            "firmwareversion",
+            "system.info_firmwareversion");
+
+        if (string.IsNullOrWhiteSpace(modelName)
+            && string.IsNullOrWhiteSpace(extendedModelName)
+            && string.IsNullOrWhiteSpace(serialNumber)
+            && string.IsNullOrWhiteSpace(firmwareVersion))
+        {
+            return null;
+        }
+
+        return new CameraProviderInfo
+        {
+            ProviderName = Name,
+            Manufacturer = "VIVOTEK",
+            Model = string.IsNullOrWhiteSpace(extendedModelName) ? modelName : extendedModelName,
+            FirmwareVersion = firmwareVersion,
+            SerialNumber = serialNumber,
+            MacAddress = NormalizeMac(serialNumber),
             DeviceType = "Network Camera"
         };
     }
@@ -117,6 +185,23 @@ public sealed class VivotekProvider : ICameraProvider
     }
 
     /// <summary>
+    /// Obtiene el primer parámetro disponible entre varias variantes de nombre.
+    /// </summary>
+    private static string? GetFirstValue(
+        IReadOnlyDictionary<string, string> values,
+        params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            var value = GetValue(values, key);
+            if (!string.IsNullOrWhiteSpace(value))
+                return value;
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Obtiene un parámetro ignorando diferencias de mayúsculas/minúsculas.
     /// </summary>
     private static string? GetValue(IReadOnlyDictionary<string, string> values, string key)
@@ -124,5 +209,23 @@ public sealed class VivotekProvider : ICameraProvider
         return values.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
             ? value
             : null;
+    }
+
+    /// <summary>
+    /// Normaliza una MAC de 12 caracteres a un formato legible cuando el valor realmente parece una MAC.
+    /// </summary>
+    private static string? NormalizeMac(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var compact = value.Replace(":", string.Empty, StringComparison.Ordinal)
+            .Replace("-", string.Empty, StringComparison.Ordinal)
+            .Trim();
+
+        if (compact.Length != 12 || compact.Any(character => !Uri.IsHexDigit(character)))
+            return null;
+
+        return string.Join(":", Enumerable.Range(0, 6).Select(index => compact.Substring(index * 2, 2).ToUpperInvariant()));
     }
 }
