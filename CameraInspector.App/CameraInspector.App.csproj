@@ -7,7 +7,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>CameraInspector.App</RootNamespace>
-    <!-- Agregar <ApplicationIcon>Assets\app.ico</ApplicationIcon> cuando exista el ícono -->
+    <AssemblyName>CameraInspector</AssemblyName>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <InformationalVersion>1.0.0</InformationalVersion>
+    <!-- El icono se agregara cuando incorporemos el recurso definitivo de la aplicacion. -->
   </PropertyGroup>
 
   <ItemGroup>
