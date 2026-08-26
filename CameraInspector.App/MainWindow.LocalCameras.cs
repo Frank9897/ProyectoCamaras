@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using CameraInspector.Video;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace CameraInspector.App;
 
@@ -33,6 +34,7 @@ public partial class MainWindow
 
     private static void AddLocalCameraMenuItem(MainWindow window)
     {
+        // Reutilizamos el helper privado existente en MainWindow.xaml.cs para no duplicar lógica del árbol visual.
         var dataGrid = FindVisualChild<DataGrid>(window);
         if (dataGrid?.ContextMenu is not ContextMenu contextMenu)
             return;
@@ -46,20 +48,20 @@ public partial class MainWindow
         {
             Header = "Cámaras locales / USB",
             Tag = tag,
-            IsEnabled = App.Services?.GetService(typeof(LocalCameraService)) is not null
+            IsEnabled = App.Services?.GetService<LocalCameraService>() is not null
         };
 
         localCameraItem.Click += (_, _) => OpenLocalCameraWindow(window);
 
-        // Insertamos la opción al principio para separarla visualmente del bloque de funciones de cámaras IP.
+        // Insertamos la opción al principio para separar claramente el flujo local del flujo IP.
         contextMenu.Items.Insert(0, new Separator());
         contextMenu.Items.Insert(0, localCameraItem);
     }
 
     private static void OpenLocalCameraWindow(MainWindow owner)
     {
-        // service se resuelve desde el contenedor para conservar una única instancia del enumerador local.
-        var service = App.Services?.GetService(typeof(LocalCameraService)) as LocalCameraService;
+        // service se resuelve desde DI para conservar una única instancia del acceso local.
+        var service = App.Services?.GetService<LocalCameraService>();
         if (service is null)
         {
             MessageBox.Show(
@@ -74,22 +76,5 @@ public partial class MainWindow
         {
             Owner = owner
         }.ShowDialog();
-    }
-
-    private static T? FindVisualChild<T>(DependencyObject parent)
-        where T : DependencyObject
-    {
-        if (parent is T typed)
-            return typed;
-
-        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
-        {
-            var child = VisualTreeHelper.GetChild(parent, index);
-            var result = FindVisualChild<T>(child);
-            if (result is not null)
-                return result;
-        }
-
-        return null;
     }
 }
