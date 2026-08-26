@@ -8,8 +8,7 @@ namespace CameraInspector.Video;
 
 /// <summary>
 /// Implementación de cámaras locales mediante DirectShow + LibVLC.
-/// DirectShow permite enumerar los dispositivos de vídeo que Windows expone como fuentes de captura;
-/// LibVLC reutiliza el mismo motor multimedia utilizado por las cámaras IP.
+/// DirectShow enumera fuentes de vídeo que Windows expone localmente y LibVLC abre la fuente seleccionada.
 /// </summary>
 public sealed class LocalCameraService : ILocalCameraService
 {
@@ -17,20 +16,15 @@ public sealed class LocalCameraService : ILocalCameraService
     private Media? _currentMedia;
     private MediaPlayer? _currentPlayer;
 
-    /// <summary>
-    /// Evento que permite a la UI reemplazar temporalmente el reproductor visible por el reproductor local.
-    /// </summary>
+    /// <summary>Notifica a la ventana qué MediaPlayer debe mostrar o retirar.</summary>
     public event EventHandler<MediaPlayer?>? PlayerChanged;
 
-    /// <summary>
-    /// Reproductor activo para la cámara local seleccionada.
-    /// </summary>
+    /// <summary>Reproductor local actualmente activo.</summary>
     public MediaPlayer? Player => _currentPlayer;
 
     public LocalCameraService()
     {
-        // La aplicación ya inicializa LibVLC en el servicio principal; esta instancia comparte únicamente la tecnología.
-        // Se inicializa aquí también para que el servicio pueda utilizarse de manera independiente en tests o ventanas futuras.
+        // Inicializamos el motor multimedia local para capturas DirectShow.
         global::LibVLCSharp.Shared.Core.Initialize();
         _libVlc = new LibVLC("--quiet", "--live-caching=100");
     }
@@ -38,21 +32,22 @@ public sealed class LocalCameraService : ILocalCameraService
     public IReadOnlyList<LocalCameraDevice> GetAvailableCameras()
     {
         var cameras = new List<LocalCameraDevice>();
-        DsDevice[]? devices = null;
 
         try
         {
-            // devices contiene las fuentes de vídeo DirectShow registradas por Windows.
-            devices = DsDevice.GetDevicesOfCat(FilterCategory.VideoInputDevice);
+            // devices contiene las fuentes de vídeo registradas en la categoría VideoInputDevice de DirectShow.
+            var devices = DsDevice.GetDevicesOfCat(FilterCategory.VideoInputDevice);
 
             foreach (var device in devices)
             {
                 try
                 {
-                    // Name es el nombre amigable que también utiliza normalmente el módulo dshow de LibVLC.
+                    // name es el nombre amigable utilizado por Windows para la fuente de vídeo.
                     var name = device.Name;
-                    // DevicePath permite conservar una identidad más estable aunque el nombre amigable cambie.
-                    var path = TryGetDevicePath(device);
+                    // devicePath es un identificador único de captura cuando el driver lo proporciona.
+                    var devicePath = device.DevicePath;
+                    // monikerString sirve como referencia técnica del moniker COM para diagnóstico.
+                    var monikerString = device.Mon?.ToString();
 
                     if (string.IsNullOrWhiteSpace(name))
                         continue;
@@ -60,26 +55,26 @@ public sealed class LocalCameraService : ILocalCameraService
                     cameras.Add(new LocalCameraDevice
                     {
                         Name = name,
-                        DevicePath = path,
-                        MonikerString = TryGetMonikerString(device),
+                        DevicePath = devicePath,
+                        MonikerString = monikerString,
                         IsVideoCaptureDevice = true,
                         Status = "Disponible"
                     });
                 }
                 catch
                 {
-                    // Un dispositivo defectuoso no debe impedir enumerar las demás webcams.
+                    // Un driver problemático no debe impedir detectar las demás cámaras locales.
                 }
                 finally
                 {
-                    // DirectShow utiliza COM; liberamos cada moniker tras copiar la información necesaria.
+                    // Liberamos la referencia COM del dispositivo después de copiar sus datos.
                     ReleaseComObject(device);
                 }
             }
         }
         catch
         {
-            // Si DirectShow no está disponible o un driver falla, devolvemos una lista vacía sin tumbar la app.
+            // Un fallo de DirectShow se traduce en una lista vacía y no bloquea el resto de la aplicación.
         }
 
         return cameras
@@ -91,23 +86,21 @@ public sealed class LocalCameraService : ILocalCameraService
     {
         ArgumentNullException.ThrowIfNull(camera);
 
+        // Una única captura local activa simplifica el control del hardware y evita conflictos de driver.
         Stop();
 
-        // dshow:// es la fuente de entrada local de DirectShow dentro de LibVLC.
+        // dshow:// es el origen de captura DirectShow de VLC en Windows.
         _currentMedia = new Media(_libVlc, new Uri("dshow://"), FromType.FromLocation);
-
-        // dshow-vdev selecciona la webcam por el nombre que Windows expone a DirectShow.
+        // dshow-vdev selecciona la fuente por FriendlyName/Name registrado en DirectShow.
         _currentMedia.AddOption($":dshow-vdev={EscapeOption(camera.Name)}");
-        // No abrimos micrófono de forma implícita: el objetivo de esta fase es vídeo local.
+        // En esta fase solo necesitamos vídeo; no abrimos un micrófono asociado automáticamente.
         _currentMedia.AddOption(":dshow-adev=none");
-        // live-caching pequeño reduce la latencia de una webcam frente a una reproducción de archivo.
+        // live-caching pequeño para reducir la latencia de la vista previa local.
         _currentMedia.AddOption(":live-caching=100");
-        // Evitamos que LibVLC abra una ventana propia; la UI WPF seguirá controlando el destino del vídeo.
-        _currentMedia.AddOption(":no-video-title-show");
 
         _currentPlayer = new MediaPlayer(_libVlc);
 
-        // started indica si LibVLC aceptó el inicio de la captura local.
+        // started indica si LibVLC aceptó la creación de la fuente DirectShow.
         var started = _currentPlayer.Play(_currentMedia);
         if (!started)
         {
@@ -123,7 +116,7 @@ public sealed class LocalCameraService : ILocalCameraService
     {
         if (_currentPlayer is not null)
         {
-            // IsPlaying indica si la fuente DirectShow permanece activa.
+            // IsPlaying indica si la captura local continúa activa.
             if (_currentPlayer.IsPlaying)
                 _currentPlayer.Stop();
 
@@ -131,7 +124,7 @@ public sealed class LocalCameraService : ILocalCameraService
             _currentPlayer = null;
         }
 
-        // El Media nativo debe liberarse después del MediaPlayer que lo estaba utilizando.
+        // Liberamos el medio nativo después de cerrar el MediaPlayer.
         _currentMedia?.Dispose();
         _currentMedia = null;
 
@@ -144,48 +137,22 @@ public sealed class LocalCameraService : ILocalCameraService
         _libVlc.Dispose();
     }
 
-    private static string? TryGetDevicePath(DsDevice device)
-    {
-        try
-        {
-            // DevicePath existe en versiones de DirectShowLib.Net que exponen la propiedad del dispositivo.
-            return string.IsNullOrWhiteSpace(device.DevicePath) ? null : device.DevicePath;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static string? TryGetMonikerString(DsDevice device)
-    {
-        try
-        {
-            // MonikerString sirve como identificador técnico para diagnósticos, no se muestra como dato principal al usuario.
-            return device.MonikerString;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
     private static string EscapeOption(string value) =>
         value.Replace("\\", "\\\\", StringComparison.Ordinal)
              .Replace("\"", "\\\"", StringComparison.Ordinal);
 
     private static void ReleaseComObject(object instance)
     {
-        if (Marshal.IsComObject(instance))
+        if (!Marshal.IsComObject(instance))
+            return;
+
+        try
         {
-            try
-            {
-                Marshal.FinalReleaseComObject(instance);
-            }
-            catch
-            {
-                // Algunos drivers no exponen correctamente el ciclo COM; no propagamos ese fallo a la UI.
-            }
+            Marshal.FinalReleaseComObject(instance);
+        }
+        catch
+        {
+            // Ignoramos fallos aislados de liberación COM provocados por drivers no estándar.
         }
     }
 }
