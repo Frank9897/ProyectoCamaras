@@ -114,6 +114,10 @@ public partial class App : Application
 
                     // ---- Capa 7: Video ----
                     services.AddSingleton<IVideoPlayerService, LibVlcVideoPlayerService>();
+                    // ---- Capa 7B: Video local/UVC ----
+                    services.AddSingleton<LocalCameraService>();
+                    services.AddSingleton<ILocalCameraService>(sp =>
+                        sp.GetRequiredService<LocalCameraService>());
 
                     services.AddSingleton<MainViewModel>();
                     services.AddSingleton<MainWindow>();
