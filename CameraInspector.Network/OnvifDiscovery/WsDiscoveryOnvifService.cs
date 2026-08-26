@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
 using System.Xml.Linq;
@@ -10,7 +9,8 @@ namespace CameraInspector.Network.OnvifDiscovery;
 
 /// <summary>
 /// Implementación del descubrimiento ONVIF mediante WS-Discovery.
-/// Envía un Probe multicast y transforma cada ProbeMatch en un resultado de dominio.
+/// El socket puede quedar asociado a una interfaz concreta para evitar que Windows
+/// envíe el multicast por otro adaptador distinto al puerto que el técnico seleccionó.
 /// </summary>
 public sealed class WsDiscoveryOnvifService : IOnvifDiscoveryService
 {
@@ -20,15 +20,30 @@ public sealed class WsDiscoveryOnvifService : IOnvifDiscoveryService
     private readonly TimeSpan _discoveryTimeout = TimeSpan.FromSeconds(2);
 
     public async Task<IReadOnlyList<OnvifDiscoveryResult>> DiscoverAsync(
+        NetworkInterfaceInfo? networkInterface = null,
         CancellationToken cancellationToken = default)
     {
+        // messageId identifica de forma única este Probe para depuración y correlación de respuestas.
         var messageId = $"uuid:{Guid.NewGuid()}";
+        // probe contiene el mensaje WS-Discovery dirigido a NetworkVideoTransmitter.
         var probe = BuildProbe(messageId);
+        // payload es el mensaje convertido a UTF-8 para enviarlo por UDP.
         var payload = Encoding.UTF8.GetBytes(probe);
 
-        using var socket = new UdpClient(AddressFamily.InterNetwork);
+        // Si conocemos la IP del puerto seleccionado, enlazamos el socket explícitamente a esa interfaz.
+        using var socket = networkInterface is null
+            ? new UdpClient(AddressFamily.InterNetwork)
+            : new UdpClient(new IPEndPoint(networkInterface.IpAddress, 0));
+
         socket.EnableBroadcast = true;
 
+        if (networkInterface is not null)
+        {
+            // JoinMulticastGroup fija la interfaz local que recibirá las respuestas multicast.
+            socket.JoinMulticastGroup(MulticastAddress, networkInterface.IpAddress);
+        }
+
+        // endpoint representa el destino estándar de WS-Discovery.
         var endpoint = new IPEndPoint(MulticastAddress, DiscoveryPort);
         await socket.SendAsync(payload, payload.Length, endpoint);
 
@@ -37,10 +52,12 @@ public sealed class WsDiscoveryOnvifService : IOnvifDiscoveryService
 
         while (!cancellationToken.IsCancellationRequested)
         {
+            // remaining evita esperar indefinidamente si la red no devuelve ProbeMatch.
             var remaining = deadline - DateTimeOffset.UtcNow;
             if (remaining <= TimeSpan.Zero)
                 break;
 
+            // receiveTask espera respuestas en el mismo socket asociado a la interfaz seleccionada.
             var receiveTask = socket.ReceiveAsync(cancellationToken).AsTask();
             var completedTask = await Task.WhenAny(
                 receiveTask,
@@ -54,6 +71,7 @@ public sealed class WsDiscoveryOnvifService : IOnvifDiscoveryService
             if (parsed is null)
                 continue;
 
+            // Evitamos agregar dos veces el mismo Device Service anunciado por la cámara.
             if (results.Any(item => string.Equals(
                     item.DeviceServiceXAddr,
                     parsed.DeviceServiceXAddr,
