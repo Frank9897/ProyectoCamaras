@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
 using DirectShowLib;
@@ -16,7 +17,7 @@ public sealed class LocalCameraService : ILocalCameraService
     private Media? _currentMedia;
     private MediaPlayer? _currentPlayer;
 
-    /// <summary>Notifica a la ventana qué MediaPlayer debe mostrar o retirar.</summary>
+    /// <summary>Notifica a la UI qué MediaPlayer debe mostrar o retirar.</summary>
     public event EventHandler<MediaPlayer?>? PlayerChanged;
 
     /// <summary>Reproductor local actualmente activo.</summary>
@@ -44,19 +45,34 @@ public sealed class LocalCameraService : ILocalCameraService
                 {
                     // name es el nombre amigable utilizado por Windows para la fuente de vídeo.
                     var name = device.Name;
-                    // devicePath es un identificador único de captura cuando el driver lo proporciona.
+                    // devicePath permite conservar una identidad física/única cuando el driver la proporciona.
                     var devicePath = device.DevicePath;
-                    // monikerString sirve como referencia técnica del moniker COM para diagnóstico.
+                    // monikerString conserva una referencia técnica del moniker COM para diagnóstico.
                     var monikerString = device.Mon?.ToString();
 
                     if (string.IsNullOrWhiteSpace(name))
                         continue;
+
+                    // transport resume si el DevicePath contiene evidencia típica de un dispositivo USB.
+                    var transport = string.IsNullOrWhiteSpace(devicePath)
+                        ? "Local/Virtual"
+                        : devicePath.Contains("usb#vid_", StringComparison.OrdinalIgnoreCase)
+                            ? "USB"
+                            : "Local/Virtual";
+
+                    // usbVendorId identifica al fabricante del dispositivo USB cuando el driver expone VID_.
+                    var usbVendorId = ExtractUsbId(devicePath, "vid_");
+                    // usbProductId identifica el producto USB cuando el driver expone PID_.
+                    var usbProductId = ExtractUsbId(devicePath, "pid_");
 
                     cameras.Add(new LocalCameraDevice
                     {
                         Name = name,
                         DevicePath = devicePath,
                         MonikerString = monikerString,
+                        Transport = transport,
+                        UsbVendorId = usbVendorId,
+                        UsbProductId = usbProductId,
                         IsVideoCaptureDevice = true,
                         Status = "Disponible"
                     });
@@ -135,6 +151,16 @@ public sealed class LocalCameraService : ILocalCameraService
     {
         Stop();
         _libVlc.Dispose();
+    }
+
+    private static string? ExtractUsbId(string? devicePath, string token)
+    {
+        if (string.IsNullOrWhiteSpace(devicePath))
+            return null;
+
+        // match localiza exactamente cuatro dígitos hexadecimales después de VID_ o PID_.
+        var match = Regex.Match(devicePath, $@"{Regex.Escape(token)}([0-9a-fA-F]{{4}})", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return match.Success ? match.Groups[1].Value.ToUpperInvariant() : null;
     }
 
     private static string EscapeOption(string value) =>
