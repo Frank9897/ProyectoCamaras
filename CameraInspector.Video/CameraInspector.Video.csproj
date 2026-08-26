@@ -10,6 +10,8 @@
   <ItemGroup>
     <PackageReference Include="LibVLCSharp" Version="3.10.1" />
     <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.23.1" />
+    <!-- DirectShowLib.Net aporta las interfaces COM necesarias para enumerar webcams/UVC de Windows. -->
+    <PackageReference Include="DirectShowLib.Net" Version="3.0.0" />
   </ItemGroup>
 
   <ItemGroup>
