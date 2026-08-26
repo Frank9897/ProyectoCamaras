@@ -38,17 +38,16 @@
 
                 <TextBlock DockPanel.Dock="Bottom"
                            Margin="0,10,0,0"
-                           Text="Solo se muestran fuentes de captura de vídeo. Un teléfono conectado por USB no aparecerá aquí hasta que Windows lo exponga como cámara."
+                           Text="Un teléfono por USB solo aparece aquí si Windows lo expone como fuente de vídeo/cámara. MTP por sí solo no es una cámara de captura."
                            Foreground="{StaticResource TextDimBrush}"
                            TextWrapping="Wrap"
                            FontSize="10"/>
 
                 <ListBox x:Name="CameraList"
-                         ItemsSource="{Binding Cameras}"
-                         SelectedItem="{Binding SelectedCamera, Mode=TwoWay}"
                          Background="{StaticResource Panel2Brush}"
                          BorderBrush="{StaticResource BorderBrush2}"
-                         BorderThickness="1">
+                         BorderThickness="1"
+                         SelectionChanged="CameraList_SelectionChanged">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <Border Padding="8" Margin="3"
@@ -95,16 +94,17 @@
                                    FontSize="12"
                                    FontWeight="Bold"
                                    Foreground="{StaticResource AccentBrush}"/>
-                        <TextBlock Text="{Binding SelectedCamera.Name}"
+                        <TextBlock x:Name="SelectedCameraNameText"
                                    Margin="0,4,0,0"
                                    Foreground="{StaticResource TextBrush}"
                                    TextWrapping="Wrap"/>
                     </StackPanel>
                     <Button Grid.Column="1"
+                            x:Name="StopButton"
                             Content="DETENER"
                             Width="90"
                             Height="30"
-                            Command="{Binding StopCommand}"
+                            Click="StopButton_Click"
                             Style="{StaticResource SecondaryButton}"/>
                 </Grid>
 
@@ -120,7 +120,7 @@
                         Background="{StaticResource PanelBrush}"
                         BorderBrush="{StaticResource BorderBrush2}"
                         BorderThickness="1">
-                    <TextBlock Text="{Binding StatusText}"
+                    <TextBlock x:Name="StatusTextBlock"
                                FontFamily="Consolas"
                                FontSize="11"
                                Foreground="{StaticResource TextDimBrush}"
