@@ -45,10 +45,9 @@ public sealed class NetworkInterfaceService : INetworkInterfaceService
                 .FirstOrDefault(address =>
                     address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
 
-            // usesDhcp informa si Windows tiene DHCP habilitado para este adaptador.
-            var usesDhcp = ipv4.PrefixOrigin == PrefixOrigin.Dhcp
-                           || ipv4.AddressPreferredLifetime != TimeSpan.Zero
-                              && ipProperties.DhcpServerAddresses.Any();
+            // usesDhcp usa directamente la propiedad que Windows expone para la interfaz IPv4.
+            var ipv4Properties = ipProperties.GetIPv4Properties();
+            var usesDhcp = ipv4Properties?.IsDhcpEnabled ?? false;
 
             // macAddress mantiene la identidad física del puerto para mostrarla al técnico.
             var macAddress = nic.GetPhysicalAddress().ToString();
