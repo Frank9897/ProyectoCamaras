@@ -4,14 +4,19 @@ namespace CameraInspector.Core.Interfaces;
 
 /// <summary>
 /// Contrato encargado de descubrir dispositivos ONVIF mediante WS-Discovery.
-/// La interfaz vive en Core para que la capa de aplicación no dependa de UDP ni de una implementación concreta.
+/// Permite indicar la interfaz local desde la que debe salir el multicast.
 /// </summary>
 public interface IOnvifDiscoveryService
 {
     /// <summary>
-    /// Envía un Probe WS-Discovery y devuelve los dispositivos ONVIF que respondan dentro del tiempo indicado.
+    /// Envía un Probe WS-Discovery y devuelve los dispositivos ONVIF que respondan.
     /// </summary>
-    /// <param name="cancellationToken">Token utilizado para cancelar la espera y cerrar el descubrimiento.</param>
+    /// <param name="networkInterface">
+    /// Interfaz local que debe utilizarse para enviar y recibir el descubrimiento.
+    /// Si es null, la implementación utilizará el comportamiento por defecto del sistema operativo.
+    /// </param>
+    /// <param name="cancellationToken">Token utilizado para cancelar la espera.</param>
     Task<IReadOnlyList<OnvifDiscoveryResult>> DiscoverAsync(
+        NetworkInterfaceInfo? networkInterface = null,
         CancellationToken cancellationToken = default);
 }
