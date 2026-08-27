@@ -15,19 +15,35 @@ namespace CameraInspector.Video;
 /// </summary>
 public sealed class LocalCameraService : ILocalCameraService
 {
+    // _sync protege el último frame y el grabador cuando el hilo de captura y la UI acceden simultáneamente.
     private readonly object _sync = new();
+    // _capture mantiene abierto el dispositivo de vídeo seleccionado.
     private VideoCapture? _capture;
+    // _captureCts permite detener limpiamente el bucle de captura.
     private CancellationTokenSource? _captureCts;
+    // _captureTask representa el trabajo de lectura de frames en segundo plano.
     private Task? _captureTask;
+    // _latestFrame conserva una copia reciente para snapshot y para la grabación.
     private Mat? _latestFrame;
+    // _videoWriter solo existe mientras el usuario mantiene activa una grabación.
     private VideoWriter? _videoWriter;
+    // _captureFps guarda la frecuencia que el driver expone para el stream.
     private double _captureFps = 30;
+    // _captureWidth contiene el ancho nativo del stream.
     private int _captureWidth;
+    // _captureHeight contiene el alto nativo del stream.
     private int _captureHeight;
+    // _framesCaptured acumula la cantidad de frames realmente recibidos del dispositivo.
     private long _framesCaptured;
+    // _lastFrameAtUtc identifica cuándo llegó el último frame válido.
     private DateTimeOffset _lastFrameAtUtc = DateTimeOffset.MinValue;
 
-    /// <summary>Emite frames BGRA listos para que WPF los muestre.</summary>
+    // PreviewTargetFps limita las actualizaciones visuales; la cámara puede seguir capturando a su FPS nativo.
+    private const int PreviewTargetFps = 20;
+    // PreviewMaxWidth evita convertir imágenes gigantes cuando solo necesitamos una vista previa técnica.
+    private const int PreviewMaxWidth = 960;
+
+    /// <summary>Emite frames BGRA destinados a la vista previa WPF.</summary>
     public event EventHandler<LocalCameraFrame>? FrameReady;
 
     /// <summary>Diagnóstico de enumeración de cámaras locales.</summary>
@@ -66,7 +82,7 @@ public sealed class LocalCameraService : ILocalCameraService
                 {
                     // name es el nombre amigable que Windows muestra al usuario.
                     var name = device.Name;
-                    // devicePath conserva la identidad técnica del dispositivo para diagnóstico y matching futuro.
+                    // devicePath conserva la identidad técnica para diagnóstico y matching futuro.
                     var devicePath = device.DevicePath;
                     // monikerString conserva el identificador COM de DirectShow.
                     var monikerString = device.Mon?.ToString();
@@ -159,6 +175,7 @@ public sealed class LocalCameraService : ILocalCameraService
 
             try
             {
+                // candidate abre el índice de captura asociado a esta fuente local.
                 candidate = new VideoCapture(camera.CaptureIndex, attempt.Backend);
                 if (!candidate.IsOpened())
                 {
@@ -209,24 +226,23 @@ public sealed class LocalCameraService : ILocalCameraService
                 _framesCaptured = 1;
                 _lastFrameAtUtc = DateTimeOffset.UtcNow;
 
-                // _latestFrame conserva una copia independiente para snapshot y grabación.
                 lock (_sync)
                 {
+                    // _latestFrame es una única copia de trabajo, no una cola acumulativa.
                     _latestFrame?.Dispose();
                     _latestFrame = firstFrame.Clone();
                 }
 
-                // El primer frame se publica antes de iniciar el loop para que la UI pueda mostrar imagen inmediatamente.
+                // Publicamos el primer frame inmediatamente para que la UI muestre imagen sin esperar otro ciclo.
                 PublishFrame(firstFrame);
 
                 _captureCts = new CancellationTokenSource();
                 _captureTask = Task.Run(() => CaptureLoop(_captureCts.Token), CancellationToken.None);
 
-                // GetBackendName devuelve el backend realmente seleccionado por OpenCV.
                 LastCaptureDiagnostic =
                     $"STREAM ACTIVO · Backend: {candidate.GetBackendName()} · " +
                     $"Resolución: {_captureWidth}x{_captureHeight} · FPS: {_captureFps:0.##} · " +
-                    "Frames recibidos: 1.";
+                    $"Preview: máximo {PreviewTargetFps} FPS / {PreviewMaxWidth}px.";
 
                 return Task.FromResult(true);
             }
@@ -253,7 +269,12 @@ public sealed class LocalCameraService : ILocalCameraService
     private async Task CaptureLoop(CancellationToken cancellationToken)
     {
         using var frame = new Mat();
-        var stopwatch = Stopwatch.StartNew();
+        // previewClock mide el tiempo sin depender de la velocidad real que reporte el driver.
+        var previewClock = Stopwatch.StartNew();
+        // lastPreviewMilliseconds guarda cuándo publicamos la última imagen a WPF.
+        var lastPreviewMilliseconds = -1_000L;
+        // previewIntervalMilliseconds determina el intervalo entre actualizaciones visuales.
+        var previewIntervalMilliseconds = Math.Max(1, 1000 / PreviewTargetFps);
 
         try
         {
@@ -266,7 +287,6 @@ public sealed class LocalCameraService : ILocalCameraService
                 // Read solicita el siguiente buffer de vídeo al backend de Windows.
                 if (!capture.Read(frame) || frame.Empty())
                 {
-                    // El dispositivo continúa abierto, pero sin frame; lo informamos sin cerrar inmediatamente el dispositivo.
                     LastCaptureDiagnostic =
                         $"STREAM DEGRADADO · Backend: {capture.GetBackendName()} · " +
                         $"Frames recibidos: {_framesCaptured} · sin frame en este ciclo.";
@@ -276,31 +296,27 @@ public sealed class LocalCameraService : ILocalCameraService
 
                 lock (_sync)
                 {
-                    // Reemplazamos la copia anterior para que snapshot utilice siempre la imagen más reciente.
+                    // Reemplazamos la única copia de snapshot; no acumulamos frames en memoria.
                     _latestFrame?.Dispose();
                     _latestFrame = frame.Clone();
 
-                    // El writer solo existe cuando el usuario inició explícitamente una grabación.
+                    // La grabación utiliza el frame nativo completo, no el frame reducido del preview.
                     _videoWriter?.Write(frame);
                 }
 
                 _framesCaptured++;
                 _lastFrameAtUtc = DateTimeOffset.UtcNow;
 
-                // PublishFrame convierte la imagen OpenCV a BGRA32 para WPF.
-                PublishFrame(frame);
-
-                // Actualizamos periódicamente el diagnóstico con el número real de frames recibidos.
-                if (stopwatch.ElapsedMilliseconds >= 1000)
+                // nowMilliseconds permite descartar trabajo visual innecesario sin frenar la captura.
+                var nowMilliseconds = previewClock.ElapsedMilliseconds;
+                if (nowMilliseconds - lastPreviewMilliseconds >= previewIntervalMilliseconds)
                 {
-                    LastCaptureDiagnostic =
-                        $"STREAM ACTIVO · Backend: {capture.GetBackendName()} · " +
-                        $"Resolución: {_captureWidth}x{_captureHeight} · " +
-                        $"Frames recibidos: {_framesCaptured} · Último frame: {_lastFrameAtUtc:HH:mm:ss}.";
-                    stopwatch.Restart();
+                    lastPreviewMilliseconds = nowMilliseconds;
+                    // PublishFrame reduce la resolución solo para el preview y entrega como máximo PreviewTargetFps.
+                    PublishFrame(frame);
                 }
 
-                await Task.Delay(1, cancellationToken);
+                // Read normalmente bloquea esperando el siguiente frame; no necesitamos un retardo artificial adicional.
             }
         }
         catch (OperationCanceledException)
@@ -311,6 +327,10 @@ public sealed class LocalCameraService : ILocalCameraService
         {
             LastCaptureDiagnostic = $"La captura se detuvo por un error: {ex.Message}";
         }
+        finally
+        {
+            previewClock.Stop();
+        }
     }
 
     private void PublishFrame(Mat bgrFrame)
@@ -318,23 +338,24 @@ public sealed class LocalCameraService : ILocalCameraService
         if (bgrFrame.Empty())
             return;
 
+        // previewFrame es una copia reducida solo cuando la cámara entrega una resolución superior al límite visual.
+        using var previewFrame = PreparePreviewFrame(bgrFrame);
         using var bgra = new Mat();
 
-        // El driver normalmente entrega BGR8; estos casos cubren escala de grises y BGRA sin conversión innecesaria.
-        if (bgrFrame.Channels() == 1)
-            Cv2.CvtColor(bgrFrame, bgra, ColorConversionCodes.GRAY2BGRA);
-        else if (bgrFrame.Channels() == 4)
-            bgrFrame.CopyTo(bgra);
+        if (previewFrame.Channels() == 1)
+            Cv2.CvtColor(previewFrame, bgra, ColorConversionCodes.GRAY2BGRA);
+        else if (previewFrame.Channels() == 4)
+            previewFrame.CopyTo(bgra);
         else
-            Cv2.CvtColor(bgrFrame, bgra, ColorConversionCodes.BGR2BGRA);
+            Cv2.CvtColor(previewFrame, bgra, ColorConversionCodes.BGR2BGRA);
 
-        // stride indica los bytes necesarios para una fila BGRA32 completa.
+        // stride indica los bytes de una fila BGRA32 completa.
         var stride = checked(bgra.Width * 4);
-        // byteCount es el tamaño total del buffer administrado que recibirá WPF.
+        // byteCount indica cuántos bytes se copiarán al buffer administrado.
         var byteCount = checked(stride * bgra.Height);
+        // pixels contiene únicamente la imagen que la UI necesita mostrar.
         var pixels = new byte[byteCount];
 
-        // Copiamos los píxeles desde la memoria nativa de OpenCV a memoria administrada.
         Marshal.Copy(bgra.Data, pixels, 0, byteCount);
 
         FrameReady?.Invoke(this, new LocalCameraFrame
@@ -347,6 +368,28 @@ public sealed class LocalCameraService : ILocalCameraService
         });
     }
 
+    private static Mat PreparePreviewFrame(Mat source)
+    {
+        // sourceWidth es el ancho nativo que entregó la webcam.
+        var sourceWidth = source.Width;
+        // sourceHeight es el alto nativo que entregó la webcam.
+        var sourceHeight = source.Height;
+
+        if (sourceWidth <= PreviewMaxWidth)
+            return source.Clone();
+
+        // scale mantiene la proporción original al reducir la imagen para la interfaz.
+        var scale = PreviewMaxWidth / (double)sourceWidth;
+        // previewHeight calcula la altura proporcional al nuevo ancho.
+        var previewHeight = Math.Max(1, (int)Math.Round(sourceHeight * scale));
+        // resized es el frame optimizado que se convertirá a BGRA.
+        var resized = new Mat();
+
+        // INTER_AREA está pensado para reducción y evita procesar más píxeles de los necesarios en WPF.
+        Cv2.Resize(source, resized, new Size(PreviewMaxWidth, previewHeight), 0, 0, InterpolationFlags.Area);
+        return resized;
+    }
+
     public bool TakeSnapshot(string filePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
@@ -356,14 +399,14 @@ public sealed class LocalCameraService : ILocalCameraService
         {
             lock (_sync)
             {
-                // Clonamos el último frame para poder escribirlo fuera del lock de captura.
+                // Clonamos el último frame completo para no escribir mientras otro hilo lo reemplaza.
                 if (_latestFrame is null || _latestFrame.Empty())
                     return false;
 
                 snapshot = _latestFrame.Clone();
             }
 
-            // PNG conserva el frame sin pérdida.
+            // El snapshot conserva la resolución nativa del dispositivo, no la resolución reducida del preview.
             return Cv2.ImWrite(filePath, snapshot);
         }
         catch (Exception ex)
@@ -393,7 +436,7 @@ public sealed class LocalCameraService : ILocalCameraService
             {
                 StopRecordingUnsafe();
 
-                // MJPG/AVI prioriza compatibilidad local y evita depender de un codec H.264 del sistema.
+                // MJPG/AVI prioriza compatibilidad local y evita depender de un codec H.264 específico del sistema.
                 var writer = new VideoWriter(
                     filePath,
                     VideoCaptureAPIs.ANY,
@@ -433,7 +476,7 @@ public sealed class LocalCameraService : ILocalCameraService
 
     private void StopRecordingUnsafe()
     {
-        // El writer solo se crea/libera bajo _sync mientras CaptureLoop escribe frames.
+        // El writer solo se crea/libera bajo _sync mientras CaptureLoop escribe los frames.
         _videoWriter?.Release();
         _videoWriter?.Dispose();
         _videoWriter = null;
