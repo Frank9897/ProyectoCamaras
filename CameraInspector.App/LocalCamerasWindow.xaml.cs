@@ -1,4 +1,5 @@
 using Microsoft.Win32;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
@@ -13,9 +14,19 @@ namespace CameraInspector.App;
 /// </summary>
 public partial class LocalCamerasWindow : Window
 {
+    // _cameraService enumera, captura frames, genera snapshots y controla grabaciones locales.
     private readonly LocalCameraService _cameraService;
+    // _selectedCamera conserva el dispositivo actualmente seleccionado en la interfaz.
     private LocalCameraDevice? _selectedCamera;
+    // _previewBitmap es un único bitmap reutilizado durante toda la captura mientras no cambie la resolución.
     private WriteableBitmap? _previewBitmap;
+    // _pendingFrame conserva solamente el último frame recibido que todavía no se ha pintado.
+    private LocalCameraFrame? _pendingFrame;
+    // _frameDispatchPending evita llenar Dispatcher con decenas de operaciones si la UI se retrasa.
+    private bool _frameDispatchPending;
+    // _frameSync protege el buffer pendiente entre el hilo de captura y el hilo de interfaz.
+    private readonly object _frameSync = new();
+    // _displayedFrames cuenta los frames que realmente llegaron a WriteableBitmap.
     private long _displayedFrames;
 
     public LocalCamerasWindow(LocalCameraService cameraService)
@@ -24,7 +35,6 @@ public partial class LocalCamerasWindow : Window
 
         InitializeComponent();
 
-        // _cameraService enumera, captura frames, genera snapshots y controla grabaciones locales.
         _cameraService = cameraService;
         _cameraService.FrameReady += CameraService_FrameReady;
 
@@ -33,6 +43,7 @@ public partial class LocalCamerasWindow : Window
         {
             _cameraService.FrameReady -= CameraService_FrameReady;
             _cameraService.Stop();
+            ClearPendingFrame();
         };
 
         UpdateActionButtons(null);
@@ -104,6 +115,7 @@ public partial class LocalCamerasWindow : Window
         NoVideoTextBlock.Visibility = Visibility.Visible;
         NoVideoTextBlock.Text = "NEGOCIANDO…";
         ResetPreviewBitmap();
+        ClearPendingFrame();
         UpdateActionButtons(camera);
 
         StatusTextBlock.Text =
@@ -111,7 +123,7 @@ public partial class LocalCamerasWindow : Window
 
         try
         {
-            // started solo significa que OpenCV recibió al menos un frame; el estado visual se confirma en FrameReady.
+            // started solo significa que OpenCV recibió al menos un frame; el estado visual se confirma al pintarlo.
             var started = await _cameraService.StartAsync(camera);
             if (!started)
             {
@@ -123,8 +135,8 @@ public partial class LocalCamerasWindow : Window
                 return;
             }
 
-            // No marcamos STREAM ACTIVO aquí: el evento FrameReady lo hará después de pintar el primer frame.
-            CaptureStateTextBlock.Text = "FRAME RECIBIDO";
+            // No marcamos STREAM ACTIVO aquí: RenderPendingFrame lo hará después de pintar un frame válido.
+            CaptureStateTextBlock.Text = "RECIBIENDO";
             NoVideoTextBlock.Visibility = Visibility.Visible;
             NoVideoTextBlock.Text = "PINTANDO PREVIEW…";
             StatusTextBlock.Text = BuildCameraStatus(camera, _cameraService.LastCaptureDiagnostic);
@@ -147,60 +159,100 @@ public partial class LocalCamerasWindow : Window
 
     private void CameraService_FrameReady(object? sender, LocalCameraFrame frame)
     {
-        // FrameReady puede ejecutarse desde el hilo de captura; WPF debe actualizarse desde su Dispatcher.
-        _ = Dispatcher.InvokeAsync(() =>
+        var scheduleRender = false;
+
+        lock (_frameSync)
         {
-            if (frame.Width <= 0 || frame.Height <= 0 || frame.Pixels.Length == 0)
+            // Solo conservamos el último frame; cualquier frame intermedio se descarta si la UI está ocupada.
+            _pendingFrame = frame;
+
+            // Un solo callback pendiente basta para drenar el último frame disponible.
+            if (!_frameDispatchPending)
             {
-                ResetPreviewBitmap();
-                NoVideoTextBlock.Visibility = Visibility.Visible;
-                NoVideoTextBlock.Text = "SIN SEÑAL";
-                return;
+                _frameDispatchPending = true;
+                scheduleRender = true;
             }
+        }
 
-            // Si cambia la resolución, construimos un WriteableBitmap nuevo con BGRA32 y lo reutilizamos para los siguientes frames.
-            if (_previewBitmap is null ||
-                _previewBitmap.PixelWidth != frame.Width ||
-                _previewBitmap.PixelHeight != frame.Height)
+        if (!scheduleRender)
+            return;
+
+        // BeginInvoke nunca bloquea el hilo de captura esperando a que WPF termine de pintar.
+        Dispatcher.BeginInvoke(
+            new Action(RenderPendingFrame),
+            System.Windows.Threading.DispatcherPriority.Render);
+    }
+
+    private void RenderPendingFrame()
+    {
+        LocalCameraFrame? frame;
+
+        lock (_frameSync)
+        {
+            // Recuperamos el frame más reciente y liberamos el flag para permitir que lleguen nuevos frames.
+            frame = _pendingFrame;
+            _pendingFrame = null;
+            _frameDispatchPending = false;
+        }
+
+        if (frame is null)
+            return;
+
+        if (frame.Width <= 0 || frame.Height <= 0 || frame.Pixels.Length == 0)
+        {
+            ResetPreviewBitmap();
+            NoVideoTextBlock.Visibility = Visibility.Visible;
+            NoVideoTextBlock.Text = "SIN SEÑAL";
+            CaptureStateTextBlock.Text = "DETENIDO";
+            return;
+        }
+
+        // El mismo WriteableBitmap recibe los frames consecutivos, evitando crear objetos WPF a cada captura.
+        if (_previewBitmap is null ||
+            _previewBitmap.PixelWidth != frame.Width ||
+            _previewBitmap.PixelHeight != frame.Height)
+        {
+            // _previewBitmap se crea mutable porque WritePixels necesita modificar su buffer posteriormente.
+            _previewBitmap = new WriteableBitmap(
+                frame.Width,
+                frame.Height,
+                96,
+                96,
+                System.Windows.Media.PixelFormats.Bgra32,
+                null);
+            VideoImage.Source = _previewBitmap;
+        }
+
+        // WritePixels copia únicamente el último frame al buffer ya existente.
+        _previewBitmap.WritePixels(
+            new Int32Rect(0, 0, frame.Width, frame.Height),
+            frame.Pixels,
+            frame.Stride,
+            0);
+
+        _displayedFrames++;
+        CaptureStateTextBlock.Text = "STREAM ACTIVO";
+        NoVideoTextBlock.Visibility = Visibility.Collapsed;
+
+        // Solo actualizamos texto cada 30 frames para no provocar repintados de texto innecesarios.
+        if (_displayedFrames == 1 || _displayedFrames % 30 == 0)
+        {
+            StatusTextBlock.Text = BuildCameraStatus(
+                _selectedCamera,
+                $"{_cameraService.LastCaptureDiagnostic} · Frames pintados en WPF: {_displayedFrames}.");
+        }
+
+        // Si llegó otro frame mientras renderizábamos, dejamos un único callback adicional pendiente.
+        lock (_frameSync)
+        {
+            if (_pendingFrame is not null && !_frameDispatchPending)
             {
-                _previewBitmap = new WriteableBitmap(
-                    frame.Width,
-                    frame.Height,
-                    96,
-                    96,
-                    System.Windows.Media.PixelFormats.Bgra32,
-                    null);
-                _previewBitmap.Freeze();
-                // WriteableBitmap debe permanecer mutable para recibir WritePixels; por ello recreamos una instancia no congelada.
-                _previewBitmap = new WriteableBitmap(
-                    frame.Width,
-                    frame.Height,
-                    96,
-                    96,
-                    System.Windows.Media.PixelFormats.Bgra32,
-                    null);
-                VideoImage.Source = _previewBitmap;
+                _frameDispatchPending = true;
+                Dispatcher.BeginInvoke(
+                    new Action(RenderPendingFrame),
+                    System.Windows.Threading.DispatcherPriority.Render);
             }
-
-            // WritePixels copia el buffer BGRA directamente al bitmap visible sin crear un objeto de imagen por frame.
-            _previewBitmap.WritePixels(
-                new Int32Rect(0, 0, frame.Width, frame.Height),
-                frame.Pixels,
-                frame.Stride,
-                0);
-
-            _displayedFrames++;
-            CaptureStateTextBlock.Text = "STREAM ACTIVO";
-            NoVideoTextBlock.Visibility = Visibility.Collapsed;
-
-            // Mostramos en vivo la cantidad de frames realmente pintados, no solo los que el backend capturó.
-            if (_displayedFrames == 1 || _displayedFrames % 30 == 0)
-            {
-                StatusTextBlock.Text = BuildCameraStatus(
-                    _selectedCamera,
-                    $"{_cameraService.LastCaptureDiagnostic} · Frames pintados en WPF: {_displayedFrames}.");
-            }
-        });
+        }
     }
 
     private void SnapshotButton_Click(object sender, RoutedEventArgs e)
@@ -208,7 +260,7 @@ public partial class LocalCamerasWindow : Window
         if (!_cameraService.IsCapturing)
             return;
 
-        // dialog permite guardar el último frame válido como PNG sin manejar rutas manualmente.
+        // dialog permite guardar el último frame completo como PNG sin manejar rutas manualmente.
         var dialog = new SaveFileDialog
         {
             Title = "Guardar snapshot de cámara local",
@@ -308,14 +360,25 @@ public partial class LocalCamerasWindow : Window
 
     private void ClearPreview()
     {
+        ClearPendingFrame();
         ResetPreviewBitmap();
         NoVideoTextBlock.Visibility = Visibility.Visible;
         NoVideoTextBlock.Text = "SIN SEÑAL";
     }
 
+    private void ClearPendingFrame()
+    {
+        lock (_frameSync)
+        {
+            // Reemplazar por null descarta cualquier frame que aún no haya llegado al renderizador.
+            _pendingFrame = null;
+            _frameDispatchPending = false;
+        }
+    }
+
     private void ResetPreviewBitmap()
     {
-        // Liberamos la referencia anterior al bitmap; WPF recogerá la imagen cuando ya no esté en uso.
+        // Liberamos la referencia al bitmap anterior al cambiar de cámara o detener la vista.
         _previewBitmap = null;
         _displayedFrames = 0;
         VideoImage.Source = null;
