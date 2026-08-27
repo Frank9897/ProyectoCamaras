@@ -2,7 +2,7 @@ using Microsoft.Win32;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Threading;
+using System.Windows.Media.Imaging;
 using CameraInspector.Core.Models;
 using CameraInspector.Video;
 
@@ -10,7 +10,7 @@ namespace CameraInspector.App;
 
 /// <summary>
 /// Ventana dedicada a dispositivos de captura locales.
-/// Mantiene aislada la experiencia USB/UVC de la grilla de cámaras IP.
+/// Recibe frames de la capa Video y no depende de LibVLC para renderizar cámaras UVC.
 /// </summary>
 public partial class LocalCamerasWindow : Window
 {
@@ -23,123 +23,154 @@ public partial class LocalCamerasWindow : Window
 
         InitializeComponent();
 
-        // _cameraService enumera, abre, captura snapshots y controla grabaciones locales.
+        // _cameraService enumera, captura frames, genera snapshots y controla grabaciones locales.
         _cameraService = cameraService;
-        _cameraService.PlayerChanged += CameraService_PlayerChanged;
+        _cameraService.FrameReady += CameraService_FrameReady;
 
         Loaded += (_, _) => RefreshCameras();
         Closed += (_, _) =>
         {
-            _cameraService.PlayerChanged -= CameraService_PlayerChanged;
-            _cameraService.StopRecording();
+            _cameraService.FrameReady -= CameraService_FrameReady;
             _cameraService.Stop();
         };
+
+        UpdateActionButtons(null);
     }
+
+    private void RefreshButton_Click(object sender, RoutedEventArgs e) => RefreshCameras();
 
     private void RefreshCameras()
     {
         try
         {
-            // cameras combina DirectShow y el respaldo PnP de Windows.
+            // cameras contiene las fuentes locales que Windows expone mediante DirectShow.
             var cameras = _cameraService.GetAvailableCameras();
             CameraList.ItemsSource = cameras;
 
             if (cameras.Count == 0)
             {
-                StatusTextBlock.Text = _cameraService.LastEnumerationDiagnostic;
+                _selectedCamera = null;
                 SelectedCameraNameText.Text = string.Empty;
+                CaptureStateTextBlock.Text = "SIN DISPOSITIVOS";
+                ClearPreview();
+                StatusTextBlock.Text = _cameraService.LastEnumerationDiagnostic;
                 UpdateActionButtons(null);
                 return;
             }
 
-            // previewCount muestra cuántas fuentes pueden abrirse con el pipeline multimedia actual.
-            var previewCount = cameras.Count(camera => camera.PreviewSupported);
+            // Mantenemos la selección actual si el dispositivo sigue conectado; de lo contrario usamos el primero.
+            var previousName = _selectedCamera?.Name;
+            var selected = cameras.FirstOrDefault(item => string.Equals(item.Name, previousName, StringComparison.OrdinalIgnoreCase))
+                           ?? cameras[0];
+            CameraList.SelectedItem = selected;
+
             StatusTextBlock.Text =
-                $"{cameras.Count} fuente(s) detectada(s) · {previewCount} con previsualización disponible.\n" +
-                _cameraService.LastEnumerationDiagnostic;
+                $"{cameras.Count} cámara(s) local(es) detectada(s).\n{_cameraService.LastEnumerationDiagnostic}";
         }
         catch (Exception ex)
         {
-            StatusTextBlock.Text = $"No se pudieron enumerar las cámaras locales: {ex.Message}";
+            _selectedCamera = null;
+            ClearPreview();
+            StatusTextBlock.Text = $"Error enumerando cámaras locales: {ex.Message}";
             UpdateActionButtons(null);
         }
     }
 
     private async void CameraList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        // camera representa la fuente local seleccionada por el técnico.
+        // camera representa la cámara local elegida por el técnico.
         if (CameraList.SelectedItem is not LocalCameraDevice camera)
         {
             _selectedCamera = null;
+            _cameraService.Stop();
+            ClearPreview();
+            CaptureStateTextBlock.Text = "SIN SELECCIÓN";
             UpdateActionButtons(null);
             return;
         }
 
         _selectedCamera = camera;
         SelectedCameraNameText.Text = camera.Name;
+        CaptureStateTextBlock.Text = "ABRIENDO";
+        NoVideoTextBlock.Visibility = Visibility.Visible;
+        NoVideoTextBlock.Text = "ABRIENDO…";
+        VideoImage.Source = null;
         UpdateActionButtons(camera);
 
         StatusTextBlock.Text =
-            $"Origen: {camera.DiscoverySource} · Transporte: {camera.Transport} · " +
-            $"VID: {camera.UsbVendorId ?? "N/D"} · PID: {camera.UsbProductId ?? "N/D"}\n" +
-            $"Estado: {camera.Status} · Preview declarado: {(camera.PreviewSupported ? "Sí" : "No")}";
-
-        if (!camera.PreviewSupported)
-        {
-            // Una entrada PnP puede existir sin una fuente DirectShow utilizable.
-            return;
-        }
+            BuildCameraStatus(camera, "Negociando captura con Media Foundation / DirectShow...");
 
         try
         {
-            StatusTextBlock.Text += "\nNegociando resolución y salida de vídeo...";
-
-            // started solo será true cuando LibVLC haya creado una salida de vídeo real.
-            var started = await _cameraService.PlayAsync(camera);
+            // started solo será true después de que OpenCV haya obtenido un frame real.
+            var started = await _cameraService.StartAsync(camera);
             if (!started)
             {
-                StatusTextBlock.Text += "\nNo se consiguió una salida de vídeo. Verifique permisos, driver o si otra aplicación usa la cámara.";
+                CaptureStateTextBlock.Text = "ERROR";
+                NoVideoTextBlock.Visibility = Visibility.Visible;
+                NoVideoTextBlock.Text = "SIN SEÑAL";
+                StatusTextBlock.Text = BuildCameraStatus(camera, _cameraService.LastCaptureDiagnostic);
                 UpdateActionButtons(camera);
                 return;
             }
 
-            // outputCount permite diferenciar una reproducción real de un Play() aceptado sin frames.
-            var outputCount = _cameraService.VideoOutputCount;
-            StatusTextBlock.Text += $"\nPREVIEW FUNCIONANDO · salidas de vídeo: {outputCount}";
+            CaptureStateTextBlock.Text = "STREAM ACTIVO";
+            NoVideoTextBlock.Visibility = Visibility.Collapsed;
+            StatusTextBlock.Text = BuildCameraStatus(camera, _cameraService.LastCaptureDiagnostic);
             UpdateActionButtons(camera);
         }
         catch (OperationCanceledException)
         {
-            StatusTextBlock.Text += "\nApertura cancelada.";
+            CaptureStateTextBlock.Text = "CANCELADO";
+            StatusTextBlock.Text = BuildCameraStatus(camera, "Apertura cancelada.");
         }
         catch (Exception ex)
         {
-            StatusTextBlock.Text += $"\nError al abrir la cámara: {ex.Message}";
+            CaptureStateTextBlock.Text = "ERROR";
+            NoVideoTextBlock.Visibility = Visibility.Visible;
+            NoVideoTextBlock.Text = "ERROR";
+            StatusTextBlock.Text = BuildCameraStatus(camera, $"Error al abrir la cámara: {ex.Message}");
             UpdateActionButtons(camera);
         }
     }
 
-    private void RefreshButton_Click(object sender, RoutedEventArgs e)
+    private void CameraService_FrameReady(object? sender, LocalCameraFrame frame)
     {
-        // Stop evita dejar el dispositivo físico ocupado mientras se vuelve a enumerar.
-        _cameraService.Stop();
-        RefreshCameras();
-    }
+        // FrameReady puede ejecutarse desde el hilo de captura; WPF debe actualizarse desde Dispatcher.
+        Dispatcher.InvokeAsync(() =>
+        {
+            if (frame.Width <= 0 || frame.Height <= 0 || frame.Pixels.Length == 0)
+            {
+                VideoImage.Source = null;
+                NoVideoTextBlock.Visibility = Visibility.Visible;
+                NoVideoTextBlock.Text = "SIN SEÑAL";
+                return;
+            }
 
-    private void StopButton_Click(object sender, RoutedEventArgs e)
-    {
-        _cameraService.Stop();
-        VideoSurface.MediaPlayer = null;
-        StatusTextBlock.Text = "Previsualización detenida.";
-        UpdateActionButtons(_selectedCamera);
+            // bitmap convierte BGRA32 en una imagen WPF independiente de OpenCV y LibVLC.
+            var bitmap = BitmapSource.Create(
+                frame.Width,
+                frame.Height,
+                96,
+                96,
+                System.Windows.Media.PixelFormats.Bgra32,
+                null,
+                frame.Pixels,
+                frame.Stride);
+
+            bitmap.Freeze();
+            VideoImage.Source = bitmap;
+            NoVideoTextBlock.Visibility = Visibility.Collapsed;
+            CaptureStateTextBlock.Text = "STREAM ACTIVO";
+        });
     }
 
     private void SnapshotButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_selectedCamera is null || _cameraService.VideoOutputCount == 0)
+        if (!_cameraService.IsCapturing)
             return;
 
-        // dialog permite elegir el nombre y ubicación del PNG sin escribir rutas manualmente.
+        // dialog permite guardar el último frame válido como PNG sin manejar rutas manualmente.
         var dialog = new SaveFileDialog
         {
             Title = "Guardar snapshot de cámara local",
@@ -151,56 +182,49 @@ public partial class LocalCamerasWindow : Window
         if (dialog.ShowDialog(this) != true)
             return;
 
-        try
-        {
-            // saved indica si LibVLC pudo capturar desde la salida de vídeo activa.
-            var saved = _cameraService.TakeSnapshot(dialog.FileName);
-            StatusTextBlock.Text = saved
-                ? $"Snapshot guardado: {dialog.FileName}"
-                : "No se pudo capturar el snapshot. La salida de vídeo no está disponible.";
-        }
-        catch (Exception ex)
-        {
-            StatusTextBlock.Text = $"Error al capturar snapshot: {ex.Message}";
-        }
+        var saved = _cameraService.TakeSnapshot(dialog.FileName);
+        StatusTextBlock.Text = BuildCameraStatus(
+            _selectedCamera,
+            saved ? $"Snapshot guardado: {dialog.FileName}" : _cameraService.LastCaptureDiagnostic);
     }
 
     private void RecordButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_selectedCamera is null || _cameraService.VideoOutputCount == 0)
+        if (!_cameraService.IsCapturing || _cameraService.IsRecording)
             return;
 
-        // dialog permite elegir el archivo MP4 de salida.
+        // La grabación local se almacena en AVI/MJPEG para priorizar compatibilidad sin depender de un codec H.264.
         var dialog = new SaveFileDialog
         {
             Title = "Guardar grabación de cámara local",
-            Filter = "Video MP4 (*.mp4)|*.mp4",
-            FileName = $"CameraInspector_{DateTime.Now:yyyyMMdd_HHmmss}.mp4",
+            Filter = "Video AVI MJPG (*.avi)|*.avi",
+            FileName = $"CameraInspector_{DateTime.Now:yyyyMMdd_HHmmss}.avi",
             AddExtension = true
         };
 
         if (dialog.ShowDialog(this) != true)
             return;
 
-        try
-        {
-            // started indica si se pudo crear el segundo pipeline de captura para grabar sin apagar la preview.
-            var started = _cameraService.StartRecording(dialog.FileName);
-            StatusTextBlock.Text = started
-                ? $"● GRABANDO · {dialog.FileName}"
-                : "No se pudo iniciar la grabación. La cámara debe estar previsualizándose.";
-            UpdateActionButtons(_selectedCamera);
-        }
-        catch (Exception ex)
-        {
-            StatusTextBlock.Text = $"Error al iniciar grabación: {ex.Message}";
-        }
+        var started = _cameraService.StartRecording(dialog.FileName);
+        StatusTextBlock.Text = BuildCameraStatus(
+            _selectedCamera,
+            started ? $"● GRABANDO · {dialog.FileName}" : _cameraService.LastCaptureDiagnostic);
+        UpdateActionButtons(_selectedCamera);
     }
 
     private void StopRecordButton_Click(object sender, RoutedEventArgs e)
     {
         _cameraService.StopRecording();
-        StatusTextBlock.Text = "Grabación detenida.";
+        StatusTextBlock.Text = BuildCameraStatus(_selectedCamera, "Grabación detenida.");
+        UpdateActionButtons(_selectedCamera);
+    }
+
+    private void StopButton_Click(object sender, RoutedEventArgs e)
+    {
+        _cameraService.Stop();
+        ClearPreview();
+        CaptureStateTextBlock.Text = "DETENIDO";
+        StatusTextBlock.Text = BuildCameraStatus(_selectedCamera, "Captura detenida.");
         UpdateActionButtons(_selectedCamera);
     }
 
@@ -209,7 +233,7 @@ public partial class LocalCamerasWindow : Window
         if (_selectedCamera is null)
             return;
 
-        // info construye una ficha técnica sin incluir secretos.
+        // info contiene únicamente metadatos del dispositivo; nunca incluye credenciales.
         var info = new StringBuilder()
             .AppendLine($"Nombre: {_selectedCamera.Name}")
             .AppendLine($"Origen: {_selectedCamera.DiscoverySource}")
@@ -217,9 +241,12 @@ public partial class LocalCamerasWindow : Window
             .AppendLine($"Estado: {_selectedCamera.Status}")
             .AppendLine($"VID: {_selectedCamera.UsbVendorId ?? "N/D"}")
             .AppendLine($"PID: {_selectedCamera.UsbProductId ?? "N/D"}")
-            .AppendLine($"Preview: {_selectedCamera.PreviewSupported}")
+            .AppendLine($"Índice de captura: {_selectedCamera.CaptureIndex}")
+            .AppendLine($"Preview declarado: {_selectedCamera.PreviewSupported}")
             .AppendLine($"DevicePath: {_selectedCamera.DevicePath ?? "N/D"}")
             .AppendLine($"Moniker: {_selectedCamera.MonikerString ?? "N/D"}")
+            .AppendLine()
+            .AppendLine(_cameraService.LastCaptureDiagnostic)
             .ToString();
 
         MessageBox.Show(
@@ -232,22 +259,29 @@ public partial class LocalCamerasWindow : Window
 
     private void UpdateActionButtons(LocalCameraDevice? camera)
     {
-        // hasPreview indica que LibVLC creó una salida de vídeo real.
-        var hasPreview = camera is not null && _cameraService.VideoOutputCount > 0;
-        SnapshotButton.IsEnabled = hasPreview;
-        RecordButton.IsEnabled = hasPreview && !_cameraService.IsRecording;
+        // captureActive exige una cámara actualmente abierta; una mera enumeración no habilita captura.
+        var captureActive = camera is not null && _cameraService.IsCapturing;
+        SnapshotButton.IsEnabled = captureActive;
+        RecordButton.IsEnabled = captureActive && !_cameraService.IsRecording;
         StopRecordButton.IsEnabled = _cameraService.IsRecording;
-        StopButton.IsEnabled = hasPreview;
+        StopButton.IsEnabled = captureActive;
         InfoButton.IsEnabled = camera is not null;
     }
 
-    private void CameraService_PlayerChanged(object? sender, LibVLCSharp.Shared.MediaPlayer? player)
+    private void ClearPreview()
     {
-        // LibVLC puede notificar desde otro hilo; WPF debe actualizarse mediante Dispatcher.
-        Dispatcher.InvokeAsync(() =>
-        {
-            VideoSurface.MediaPlayer = player;
-            UpdateActionButtons(_selectedCamera);
-        }, DispatcherPriority.Normal);
+        VideoImage.Source = null;
+        NoVideoTextBlock.Visibility = Visibility.Visible;
+        NoVideoTextBlock.Text = "SIN SEÑAL";
+    }
+
+    private static string BuildCameraStatus(LocalCameraDevice? camera, string message)
+    {
+        if (camera is null)
+            return message;
+
+        return $"Origen: {camera.DiscoverySource} · Transporte: {camera.Transport} · " +
+               $"VID: {camera.UsbVendorId ?? "N/D"} · PID: {camera.UsbProductId ?? "N/D"}\n" +
+               $"Estado Windows: {camera.Status}\n{message}";
     }
 }
