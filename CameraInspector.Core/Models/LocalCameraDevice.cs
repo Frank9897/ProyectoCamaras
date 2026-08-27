@@ -15,7 +15,13 @@ public sealed class LocalCameraDevice
     /// <summary>Identificador técnico del moniker DirectShow.</summary>
     public string? MonikerString { get; init; }
 
-    /// <summary>Transporte inferido a partir de DevicePath, por ejemplo USB o Local/Virtual.</summary>
+    /// <summary>Origen que permitió identificar el dispositivo.</summary>
+    public string DiscoverySource { get; init; } = "DirectShow";
+
+    /// <summary>Indica si la fuente puede abrirse mediante DirectShow y LibVLC.</summary>
+    public bool PreviewSupported { get; init; }
+
+    /// <summary>Transporte inferido a partir de DevicePath o del identificador PnP.</summary>
     public string Transport { get; init; } = "Local/Virtual";
 
     /// <summary>VID hexadecimal del dispositivo USB, si Windows lo expone.</summary>
@@ -24,7 +30,7 @@ public sealed class LocalCameraDevice
     /// <summary>PID hexadecimal del dispositivo USB, si Windows lo expone.</summary>
     public string? UsbProductId { get; init; }
 
-    /// <summary>Indica si la fuente pertenece a la categoría de captura de vídeo de DirectShow.</summary>
+    /// <summary>Indica si Windows lo clasifica como fuente de captura de vídeo.</summary>
     public bool IsVideoCaptureDevice { get; init; } = true;
 
     /// <summary>Estado actual observado durante la enumeración.</summary>
