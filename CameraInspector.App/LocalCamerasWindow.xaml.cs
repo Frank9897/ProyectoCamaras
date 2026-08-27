@@ -36,12 +36,20 @@ public partial class LocalCamerasWindow : Window
     {
         try
         {
-            // cameras contiene únicamente dispositivos pertenecientes a FilterCategory.VideoInputDevice.
+            // cameras combina DirectShow y, cuando es necesario, el respaldo PnP de Windows.
             var cameras = _cameraService.GetAvailableCameras();
             CameraList.ItemsSource = cameras;
-            StatusTextBlock.Text = cameras.Count == 0
-                ? "No se encontraron cámaras locales expuestas por Windows."
-                : $"{cameras.Count} fuente(s) de vídeo local(es) detectada(s).";
+
+            if (cameras.Count == 0)
+            {
+                // LastEnumerationDiagnostic conserva la causa técnica para diferenciar ausencia de cámara de un fallo del enumerador.
+                StatusTextBlock.Text = _cameraService.LastEnumerationDiagnostic;
+                return;
+            }
+
+            // previewCount indica cuántas fuentes pueden abrirse inmediatamente con LibVLC/DirectShow.
+            var previewCount = cameras.Count(camera => camera.PreviewSupported);
+            StatusTextBlock.Text = $"{cameras.Count} fuente(s) detectada(s) · {previewCount} con previsualización disponible.\n{_cameraService.LastEnumerationDiagnostic}";
         }
         catch (Exception ex)
         {
@@ -56,6 +64,15 @@ public partial class LocalCamerasWindow : Window
             return;
 
         SelectedCameraNameText.Text = camera.Name;
+
+        if (!camera.PreviewSupported)
+        {
+            // Una entrada PnP puede existir sin una fuente DirectShow utilizable; no la tratamos como un error de enumeración.
+            StatusTextBlock.Text = $"Detectada por {camera.DiscoverySource}, pero Windows no expone una fuente DirectShow utilizable para previsualización.";
+            VideoSurface.MediaPlayer = null;
+            return;
+        }
+
         StatusTextBlock.Text = $"Abriendo: {camera.Name}...";
 
         try
@@ -64,7 +81,7 @@ public partial class LocalCamerasWindow : Window
             var started = _cameraService.Play(camera);
             if (!started)
             {
-                StatusTextBlock.Text = "No fue posible abrir esta cámara local. Verifique si otra aplicación está utilizando el dispositivo.";
+                StatusTextBlock.Text = "La cámara fue detectada, pero no se pudo abrir la previsualización. Verifique si otro programa está utilizando el dispositivo.";
                 return;
             }
 
