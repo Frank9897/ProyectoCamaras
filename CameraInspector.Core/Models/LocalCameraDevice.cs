@@ -18,10 +18,13 @@ public sealed class LocalCameraDevice
     /// <summary>Origen que permitió identificar el dispositivo.</summary>
     public string DiscoverySource { get; init; } = "DirectShow";
 
-    /// <summary>Indica si la fuente puede abrirse mediante DirectShow y LibVLC.</summary>
+    /// <summary>Indica si existe una fuente local que puede abrirse.</summary>
     public bool PreviewSupported { get; init; }
 
-    /// <summary>Transporte inferido a partir de DevicePath o del identificador PnP.</summary>
+    /// <summary>Índice de captura utilizado por OpenCV en el backend Windows.</summary>
+    public int CaptureIndex { get; init; }
+
+    /// <summary>Transporte inferido a partir de DevicePath.</summary>
     public string Transport { get; init; } = "Local/Virtual";
 
     /// <summary>VID hexadecimal del dispositivo USB, si Windows lo expone.</summary>
