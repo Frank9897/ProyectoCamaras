@@ -77,6 +77,9 @@ public partial class App : Application
                     services.AddSingleton<IPingScanner, PingScanner>();
                     services.AddSingleton<IArpResolver, ArpResolver>();
                     services.AddSingleton<IOnvifDiscoveryService, WsDiscoveryOnvifService>();
+                    // El discovery propietario de VIVOTEK complementa ONVIF y permite localizar
+                    // cámaras conectadas directamente aunque no respondan a ICMP o WS-Discovery.
+                    services.AddSingleton<IVivotekDiscoveryService, VivotekDiscoveryService>();
                     services.AddSingleton<INetworkScanner, NetworkScanOrchestrator>();
 
                     // ---- Capa 4: Resolución de fabricante ----
