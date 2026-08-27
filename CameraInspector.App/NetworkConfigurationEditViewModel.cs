@@ -77,7 +77,7 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
 
         // Los valores editables se rellenan con el estado actual sin escribir todavía en la cámara.
         UseDhcp = value.IPv4Dhcp == true;
-        IPv4Address = value.IPv4Address ?? string.Empty;
+        Ipv4Address = value.IPv4Address ?? string.Empty;
         PrefixLength = (value.IPv4PrefixLength ?? 24).ToString();
     }
 
@@ -136,7 +136,7 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
         if (!UseDhcp)
         {
             // ipv4 verifica que no enviemos una dirección no IPv4 al dispositivo.
-            if (!IPAddress.TryParse(IPv4Address, out var ipv4)
+            if (!IPAddress.TryParse(Ipv4Address, out var ipv4)
                 || ipv4.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
             {
                 StatusText = "La IPv4 indicada no es válida.";
@@ -162,7 +162,7 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
         // La confirmación muestra el antes/después para evitar una modificación accidental.
         var result = MessageBox.Show(
             $"Se modificará la red de la cámara:\n\n" +
-            $"IP: {SelectedInterface.IPv4Address ?? "(DHCP)"} → {(UseDhcp ? "DHCP" : IPv4Address.Trim())}\n" +
+            $"IP: {SelectedInterface.IPv4Address ?? "(DHCP)"} → {(UseDhcp ? "DHCP" : Ipv4Address.Trim())}\n" +
             $"Prefijo: {SelectedInterface.IPv4PrefixLength?.ToString() ?? "?"} → {(UseDhcp ? "DHCP" : PrefixLength)}\n" +
             $"Gateway: {Gateways.FirstOrDefault() ?? "(sin gateway)"} → {(string.IsNullOrWhiteSpace(GatewayAddress) ? "(sin gateway)" : GatewayAddress.Trim())}\n\n" +
             "La cámara puede quedar inaccesible durante unos segundos. ¿Continuar?",
@@ -194,7 +194,7 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
                 credentials.Value.Password,
                 SelectedInterface.Token,
                 UseDhcp,
-                UseDhcp ? null : IPv4Address.Trim(),
+                UseDhcp ? null : Ipv4Address.Trim(),
                 prefix);
 
             if (!interfaceResult.Succeeded)
