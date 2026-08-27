@@ -106,7 +106,8 @@ public sealed class LocalCameraService : ILocalCameraService
         Stop();
 
         // dshow:// es el origen de captura DirectShow de VLC en Windows.
-        _currentMedia = new Media(_libVlc, new Uri("dshow://"), FromType.FromLocation);
+        // La API Media usada por esta versión de LibVLCSharp recibe el origen como string.
+        _currentMedia = new Media(_libVlc, "dshow://", FromType.FromLocation);
         // dshow-vdev selecciona la fuente por FriendlyName/Name registrado en DirectShow.
         _currentMedia.AddOption($":dshow-vdev={EscapeOption(camera.Name)}");
         // En esta fase solo necesitamos vídeo; no abrimos un micrófono asociado automáticamente.
