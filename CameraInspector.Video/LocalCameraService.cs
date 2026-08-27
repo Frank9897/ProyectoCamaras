@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using CameraInspector.Core.Interfaces;
@@ -10,7 +11,7 @@ namespace CameraInspector.Video;
 /// <summary>
 /// Captura de cámaras locales en Windows.
 /// DirectShow se utiliza para descubrir e identificar dispositivos; OpenCV captura los frames
-/// utilizando los backends nativos de Windows, priorizando Media Foundation y usando DirectShow como respaldo.
+/// priorizando DirectShow para webcams UVC y utilizando Media Foundation como respaldo.
 /// </summary>
 public sealed class LocalCameraService : ILocalCameraService
 {
@@ -23,6 +24,8 @@ public sealed class LocalCameraService : ILocalCameraService
     private double _captureFps = 30;
     private int _captureWidth;
     private int _captureHeight;
+    private long _framesCaptured;
+    private DateTimeOffset _lastFrameAtUtc = DateTimeOffset.MinValue;
 
     /// <summary>Emite frames BGRA listos para que WPF los muestre.</summary>
     public event EventHandler<LocalCameraFrame>? FrameReady;
@@ -53,8 +56,7 @@ public sealed class LocalCameraService : ILocalCameraService
 
         try
         {
-            // DirectShow proporciona nombres, DevicePath y una enumeración estable para este proceso.
-            // El orden se usa como índice candidato de OpenCV; Windows no garantiza que ese índice sea estable entre equipos.
+            // DirectShow proporciona nombres, DevicePath y una enumeración útil para mapear el dispositivo al índice de OpenCV.
             var devices = DsDevice.GetDevicesOfCat(FilterCategory.VideoInputDevice);
 
             for (var index = 0; index < devices.Length; index++)
@@ -62,17 +64,17 @@ public sealed class LocalCameraService : ILocalCameraService
                 var device = devices[index];
                 try
                 {
-                    // name es el FriendlyName registrado por Windows.
+                    // name es el nombre amigable que Windows muestra al usuario.
                     var name = device.Name;
-                    // devicePath conserva la identidad técnica para diagnóstico y futuras mejoras de matching.
+                    // devicePath conserva la identidad técnica del dispositivo para diagnóstico y matching futuro.
                     var devicePath = device.DevicePath;
-                    // monikerString permite conservar el identificador COM de DirectShow.
+                    // monikerString conserva el identificador COM de DirectShow.
                     var monikerString = device.Mon?.ToString();
 
                     if (string.IsNullOrWhiteSpace(name))
                         continue;
 
-                    // transport indica si el DevicePath contiene una referencia USB conocida.
+                    // transport clasifica el dispositivo como USB o Local/Virtual según su DevicePath.
                     var transport = string.IsNullOrWhiteSpace(devicePath)
                         ? "Local/Virtual"
                         : devicePath.Contains("usb#vid_", StringComparison.OrdinalIgnoreCase)
@@ -81,7 +83,7 @@ public sealed class LocalCameraService : ILocalCameraService
 
                     // usbVendorId identifica el fabricante USB a partir de VID_.
                     var usbVendorId = ExtractUsbId(devicePath, "vid_");
-                    // usbProductId identifica el modelo USB a partir de PID_.
+                    // usbProductId identifica el producto USB a partir de PID_.
                     var usbProductId = ExtractUsbId(devicePath, "pid_");
 
                     cameras.Add(new LocalCameraDevice
@@ -101,19 +103,19 @@ public sealed class LocalCameraService : ILocalCameraService
                 }
                 catch (Exception ex)
                 {
-                    // Un driver defectuoso no debe impedir que se enumeren las demás fuentes.
+                    // Un controlador defectuoso no debe impedir enumerar los dispositivos restantes.
                     diagnostics.Add($"DirectShow [{device.Name}]: {ex.Message}");
                 }
                 finally
                 {
-                    // DirectShow usa COM; liberamos la referencia después de copiar las propiedades necesarias.
+                    // Liberamos el objeto COM una vez copiadas todas las propiedades necesarias.
                     ReleaseComObject(device);
                 }
             }
         }
         catch (Exception ex)
         {
-            // Guardamos la excepción para mostrar al técnico la causa real de una lista vacía.
+            // Guardamos la excepción para explicar al técnico por qué la lista puede estar vacía.
             diagnostics.Add($"DirectShow: {ex.Message}");
         }
 
@@ -133,36 +135,69 @@ public sealed class LocalCameraService : ILocalCameraService
         ArgumentNullException.ThrowIfNull(camera);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Cerramos la fuente anterior antes de abrir una nueva para evitar que el driver quede bloqueado.
+        // Cerramos cualquier captura anterior antes de abrir otra para que el driver no quede ocupado.
         Stop();
 
-        var backends = new[]
+        // UVC suele comportarse mejor con DirectShow y MJPG en webcams que exponen varios modos comprimidos.
+        var attempts = new[]
         {
-            VideoCaptureAPIs.MSMF,
-            VideoCaptureAPIs.DSHOW,
-            VideoCaptureAPIs.ANY
+            new CaptureAttempt(VideoCaptureAPIs.DSHOW, 1280, 720, true),
+            new CaptureAttempt(VideoCaptureAPIs.DSHOW, 640, 480, true),
+            new CaptureAttempt(VideoCaptureAPIs.DSHOW, 1280, 720, false),
+            new CaptureAttempt(VideoCaptureAPIs.DSHOW, 640, 480, false),
+            new CaptureAttempt(VideoCaptureAPIs.MSMF, 1280, 720, false),
+            new CaptureAttempt(VideoCaptureAPIs.MSMF, 640, 480, false),
+            new CaptureAttempt(VideoCaptureAPIs.ANY, 0, 0, false)
         };
 
-        foreach (var backend in backends)
+        var diagnostics = new List<string>();
+
+        foreach (var attempt in attempts)
         {
             cancellationToken.ThrowIfCancellationRequested();
             VideoCapture? candidate = null;
 
             try
             {
-                // candidate abre el índice de captura asociado a esta fuente local.
-                candidate = new VideoCapture(camera.CaptureIndex, backend);
-
+                candidate = new VideoCapture(camera.CaptureIndex, attempt.Backend);
                 if (!candidate.IsOpened())
                 {
+                    diagnostics.Add($"{attempt.Description}: no abrió el dispositivo.");
                     candidate.Dispose();
                     continue;
                 }
 
-                // firstFrame confirma que el dispositivo entrega imágenes reales, no solo que OpenCV pudo abrirlo.
+                // FOURCC.MJPG pide al driver un modo MJPEG cuando la webcam lo soporta.
+                if (attempt.PreferMjpeg)
+                    candidate.Set(VideoCaptureProperties.FourCC, FourCC.MJPG);
+
+                // FrameWidth y FrameHeight solicitan la resolución deseada, pero el driver puede elegir otra compatible.
+                if (attempt.Width > 0)
+                    candidate.Set(VideoCaptureProperties.FrameWidth, attempt.Width);
+                if (attempt.Height > 0)
+                    candidate.Set(VideoCaptureProperties.FrameHeight, attempt.Height);
+                candidate.Set(VideoCaptureProperties.Fps, 30);
+
+                // Algunos drivers necesitan unos milisegundos para comenzar a entregar buffers después de abrirse.
+                Thread.Sleep(150);
+
                 using var firstFrame = new Mat();
-                if (!candidate.Read(firstFrame) || firstFrame.Empty())
+                var firstFrameReceived = false;
+
+                // Probamos varios Read para evitar descartar un modo que tarda unos ciclos en entregar el primer buffer.
+                for (var i = 0; i < 8 && !firstFrameReceived; i++)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (candidate.Read(firstFrame) && !firstFrame.Empty())
+                        firstFrameReceived = true;
+                    else
+                        Thread.Sleep(40);
+                }
+
+                if (!firstFrameReceived)
+                {
+                    diagnostics.Add($"{attempt.Description}: abierto pero no entregó frames.");
+                    candidate.Release();
                     candidate.Dispose();
                     continue;
                 }
@@ -171,37 +206,46 @@ public sealed class LocalCameraService : ILocalCameraService
                 _captureWidth = firstFrame.Width;
                 _captureHeight = firstFrame.Height;
                 _captureFps = NormalizeFps(candidate.Fps);
+                _framesCaptured = 1;
+                _lastFrameAtUtc = DateTimeOffset.UtcNow;
 
-                // _latestFrame conserva una copia independiente del frame para snapshot y grabación.
+                // _latestFrame conserva una copia independiente para snapshot y grabación.
                 lock (_sync)
                 {
                     _latestFrame?.Dispose();
                     _latestFrame = firstFrame.Clone();
                 }
 
-                // Publicamos el primer frame inmediatamente para que la UI muestre imagen sin esperar otro ciclo.
+                // El primer frame se publica antes de iniciar el loop para que la UI pueda mostrar imagen inmediatamente.
                 PublishFrame(firstFrame);
 
                 _captureCts = new CancellationTokenSource();
                 _captureTask = Task.Run(() => CaptureLoop(_captureCts.Token), CancellationToken.None);
 
-                // GetBackendName devuelve el backend que realmente consiguió abrir la cámara.
+                // GetBackendName devuelve el backend realmente seleccionado por OpenCV.
                 LastCaptureDiagnostic =
                     $"STREAM ACTIVO · Backend: {candidate.GetBackendName()} · " +
-                    $"Resolución: {_captureWidth}x{_captureHeight} · FPS: {_captureFps:0.##}.";
+                    $"Resolución: {_captureWidth}x{_captureHeight} · FPS: {_captureFps:0.##} · " +
+                    "Frames recibidos: 1.";
 
                 return Task.FromResult(true);
             }
+            catch (OperationCanceledException)
+            {
+                candidate?.Dispose();
+                throw;
+            }
             catch (Exception ex)
             {
-                LastCaptureDiagnostic = $"No se pudo abrir '{camera.Name}' con {backend}: {ex.Message}";
+                diagnostics.Add($"{attempt.Description}: {ex.Message}");
+                candidate?.Release();
                 candidate?.Dispose();
             }
         }
 
         LastCaptureDiagnostic =
-            $"No se pudo obtener ningún frame de '{camera.Name}' mediante Media Foundation/DirectShow. " +
-            "Verifique driver, privacidad de cámara y que otra aplicación no esté utilizando el dispositivo.";
+            $"La cámara '{camera.Name}' fue detectada, pero ningún modo entregó frames. " +
+            string.Join(" | ", diagnostics);
 
         return Task.FromResult(false);
     }
@@ -209,6 +253,7 @@ public sealed class LocalCameraService : ILocalCameraService
     private async Task CaptureLoop(CancellationToken cancellationToken)
     {
         using var frame = new Mat();
+        var stopwatch = Stopwatch.StartNew();
 
         try
         {
@@ -218,31 +263,49 @@ public sealed class LocalCameraService : ILocalCameraService
                 if (capture is null)
                     break;
 
-                // Read obtiene el siguiente frame entregado por el backend nativo de Windows.
+                // Read solicita el siguiente buffer de vídeo al backend de Windows.
                 if (!capture.Read(frame) || frame.Empty())
                 {
+                    // El dispositivo continúa abierto, pero sin frame; lo informamos sin cerrar inmediatamente el dispositivo.
+                    LastCaptureDiagnostic =
+                        $"STREAM DEGRADADO · Backend: {capture.GetBackendName()} · " +
+                        $"Frames recibidos: {_framesCaptured} · sin frame en este ciclo.";
                     await Task.Delay(20, cancellationToken);
                     continue;
                 }
 
                 lock (_sync)
                 {
-                    // Reemplazamos la copia anterior para que snapshot siempre utilice el frame más reciente.
+                    // Reemplazamos la copia anterior para que snapshot utilice siempre la imagen más reciente.
                     _latestFrame?.Dispose();
                     _latestFrame = frame.Clone();
 
-                    // Solo existe writer durante una grabación iniciada explícitamente por el usuario.
+                    // El writer solo existe cuando el usuario inició explícitamente una grabación.
                     _videoWriter?.Write(frame);
                 }
 
-                // Convertimos el frame de OpenCV a BGRA para WPF.
+                _framesCaptured++;
+                _lastFrameAtUtc = DateTimeOffset.UtcNow;
+
+                // PublishFrame convierte la imagen OpenCV a BGRA32 para WPF.
                 PublishFrame(frame);
+
+                // Actualizamos periódicamente el diagnóstico con el número real de frames recibidos.
+                if (stopwatch.ElapsedMilliseconds >= 1000)
+                {
+                    LastCaptureDiagnostic =
+                        $"STREAM ACTIVO · Backend: {capture.GetBackendName()} · " +
+                        $"Resolución: {_captureWidth}x{_captureHeight} · " +
+                        $"Frames recibidos: {_framesCaptured} · Último frame: {_lastFrameAtUtc:HH:mm:ss}.";
+                    stopwatch.Restart();
+                }
+
                 await Task.Delay(1, cancellationToken);
             }
         }
         catch (OperationCanceledException)
         {
-            // Detención normal solicitada por Stop().
+            // La cancelación forma parte del cierre normal de una captura.
         }
         catch (Exception ex)
         {
@@ -257,6 +320,7 @@ public sealed class LocalCameraService : ILocalCameraService
 
         using var bgra = new Mat();
 
+        // El driver normalmente entrega BGR8; estos casos cubren escala de grises y BGRA sin conversión innecesaria.
         if (bgrFrame.Channels() == 1)
             Cv2.CvtColor(bgrFrame, bgra, ColorConversionCodes.GRAY2BGRA);
         else if (bgrFrame.Channels() == 4)
@@ -264,13 +328,13 @@ public sealed class LocalCameraService : ILocalCameraService
         else
             Cv2.CvtColor(bgrFrame, bgra, ColorConversionCodes.BGR2BGRA);
 
-        // stride es la cantidad de bytes de una fila BGRA32 completa.
+        // stride indica los bytes necesarios para una fila BGRA32 completa.
         var stride = checked(bgra.Width * 4);
-        // byteCount es el tamaño total del buffer que recibirá WPF.
+        // byteCount es el tamaño total del buffer administrado que recibirá WPF.
         var byteCount = checked(stride * bgra.Height);
         var pixels = new byte[byteCount];
 
-        // Copiamos desde memoria nativa OpenCV a memoria administrada sin exponer Mat fuera de Video.
+        // Copiamos los píxeles desde la memoria nativa de OpenCV a memoria administrada.
         Marshal.Copy(bgra.Data, pixels, 0, byteCount);
 
         FrameReady?.Invoke(this, new LocalCameraFrame
@@ -292,14 +356,14 @@ public sealed class LocalCameraService : ILocalCameraService
         {
             lock (_sync)
             {
-                // Clonamos el frame para poder escribirlo fuera del lock y no detener la captura innecesariamente.
+                // Clonamos el último frame para poder escribirlo fuera del lock de captura.
                 if (_latestFrame is null || _latestFrame.Empty())
                     return false;
 
                 snapshot = _latestFrame.Clone();
             }
 
-            // PNG conserva el frame sin pérdida y no requiere un encoder multimedia adicional.
+            // PNG conserva el frame sin pérdida.
             return Cv2.ImWrite(filePath, snapshot);
         }
         catch (Exception ex)
@@ -329,7 +393,7 @@ public sealed class LocalCameraService : ILocalCameraService
             {
                 StopRecordingUnsafe();
 
-                // MJPG en AVI prioriza compatibilidad local y evita requerir un codec H.264 específico del sistema.
+                // MJPG/AVI prioriza compatibilidad local y evita depender de un codec H.264 del sistema.
                 var writer = new VideoWriter(
                     filePath,
                     VideoCaptureAPIs.ANY,
@@ -369,7 +433,7 @@ public sealed class LocalCameraService : ILocalCameraService
 
     private void StopRecordingUnsafe()
     {
-        // El writer solo se crea/libera bajo _sync mientras CaptureLoop escribe los frames.
+        // El writer solo se crea/libera bajo _sync mientras CaptureLoop escribe frames.
         _videoWriter?.Release();
         _videoWriter?.Dispose();
         _videoWriter = null;
@@ -396,6 +460,8 @@ public sealed class LocalCameraService : ILocalCameraService
             _latestFrame = null;
         }
 
+        _framesCaptured = 0;
+        _lastFrameAtUtc = DateTimeOffset.MinValue;
         _captureTask = null;
         LastCaptureDiagnostic = "Captura local detenida.";
         FrameReady?.Invoke(this, new LocalCameraFrame
@@ -415,7 +481,7 @@ public sealed class LocalCameraService : ILocalCameraService
 
     private static double NormalizeFps(double fps)
     {
-        // Algunos drivers devuelven 0, NaN o cifras fuera de rango; 30 FPS es un valor razonable para el grabador.
+        // Algunos drivers devuelven 0, NaN o valores fuera de rango; 30 FPS es un respaldo razonable.
         return double.IsFinite(fps) && fps is >= 1 and <= 120 ? fps : 30;
     }
 
@@ -444,7 +510,22 @@ public sealed class LocalCameraService : ILocalCameraService
         }
         catch
         {
-            // Algunos drivers no estándar pueden fallar durante la liberación COM; no bloqueamos la enumeración.
+            // Un driver no estándar puede fallar al liberar COM; la enumeración no debe detenerse por ello.
         }
+    }
+
+    /// <summary>
+    /// Describe un intento concreto de apertura para que el diagnóstico indique backend, resolución y formato solicitado.
+    /// </summary>
+    private readonly record struct CaptureAttempt(
+        VideoCaptureAPIs Backend,
+        int Width,
+        int Height,
+        bool PreferMjpeg)
+    {
+        // Description es un resumen legible del intento que aparece en el diagnóstico de fallos.
+        public string Description =>
+            $"{Backend} {(Width > 0 && Height > 0 ? $"{Width}x{Height}" : "predeterminada")} " +
+            $"{(PreferMjpeg ? "MJPG" : "nativa")}";
     }
 }
