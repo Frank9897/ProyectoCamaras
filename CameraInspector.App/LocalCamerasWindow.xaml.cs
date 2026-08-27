@@ -37,6 +37,14 @@ public partial class LocalCamerasWindow : Window
         UpdateActionButtons(null);
     }
 
+    /// <summary>
+    /// Actualiza el listado cuando esta misma vista está embebida dentro de una pestaña de MainWindow.
+    /// </summary>
+    public void RefreshEmbedded()
+    {
+        RefreshCameras();
+    }
+
     private void RefreshButton_Click(object sender, RoutedEventArgs e) => RefreshCameras();
 
     private void RefreshCameras()
@@ -147,7 +155,7 @@ public partial class LocalCamerasWindow : Window
                 return;
             }
 
-            // bitmap convierte BGRA32 en una imagen WPF independiente de OpenCV y LibVLC.
+            // bitmap convierte BGRA32 en una imagen WPF independiente de OpenCV.
             var bitmap = BitmapSource.Create(
                 frame.Width,
                 frame.Height,
@@ -193,7 +201,7 @@ public partial class LocalCamerasWindow : Window
         if (!_cameraService.IsCapturing || _cameraService.IsRecording)
             return;
 
-        // La grabación local se almacena en AVI/MJPEG para priorizar compatibilidad sin depender de un codec H.264.
+        // La grabación local se almacena en AVI/MJPEG para priorizar compatibilidad.
         var dialog = new SaveFileDialog
         {
             Title = "Guardar grabación de cámara local",
