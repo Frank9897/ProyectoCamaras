@@ -8,6 +8,8 @@
         MinHeight="620"
         Background="{StaticResource BgBrush}"
         Foreground="{StaticResource TextBrush}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
         WindowStartupLocation="CenterOwner">
     <Grid Margin="12">
         <Grid.RowDefinitions>
@@ -168,7 +170,8 @@
                             <Image x:Name="VideoImage"
                                    Stretch="Uniform"
                                    HorizontalAlignment="Stretch"
-                                   VerticalAlignment="Stretch"/>
+                                   VerticalAlignment="Stretch"
+                                   RenderOptions.BitmapScalingMode="LowQuality"/>
                             <TextBlock x:Name="NoVideoTextBlock"
                                        Text="SIN SEÑAL"
                                        FontFamily="Consolas"
