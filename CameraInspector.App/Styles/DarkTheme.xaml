@@ -17,7 +17,6 @@
     <SolidColorBrush x:Key="OffBrush" Color="#3F6249"/>
     <SolidColorBrush x:Key="SelectionBrush" Color="#0E5B35"/>
 
-    <!-- Reemplazamos los colores de sistema para impedir que los templates nativos vuelvan al blanco. -->
     <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#0C1710"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#A9DEB6"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#040705"/>
@@ -64,6 +63,13 @@
         <Setter Property="Foreground" Value="#021108"/>
         <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
+    <!-- Botón secundario explícito para ventanas auxiliares. -->
+    <Style x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Background" Value="{StaticResource Panel2Brush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush2}"/>
     </Style>
 
     <Style TargetType="TextBox">
@@ -144,6 +150,65 @@
         <Setter Property="FontFamily" Value="Consolas"/>
         <Setter Property="FontSize" Value="11"/>
         <Setter Property="FontWeight" Value="Bold"/>
+    </Style>
+
+    <!-- Menú contextual completamente oscuro, incluido estado deshabilitado. -->
+    <Style TargetType="ContextMenu">
+        <Setter Property="Background" Value="{StaticResource Panel2Brush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush2}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="3"/>
+    </Style>
+
+    <Style TargetType="MenuItem">
+        <Setter Property="Background" Value="{StaticResource Panel2Brush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="Padding" Value="10,7"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="MenuItem">
+                    <Border x:Name="MenuItemBorder"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="0"
+                            Padding="0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ContentPresenter Grid.Column="0"
+                                              ContentSource="Header"
+                                              Margin="10,7"
+                                              RecognizesAccessKey="True"/>
+                            <Path Grid.Column="1"
+                                  Margin="8,0,10,0"
+                                  Data="M 0 0 L 5 4 L 0 8 Z"
+                                  Fill="{TemplateBinding Foreground}"
+                                  Visibility="Collapsed"/>
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="MenuItemBorder" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                            <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="{StaticResource OffBrush}"/>
+                            <Setter TargetName="MenuItemBorder" Property="Background" Value="{StaticResource PanelBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="Separator">
+        <Setter Property="Background" Value="{StaticResource BorderBrush2}"/>
+        <Setter Property="Margin" Value="4,3"/>
+        <Setter Property="Height" Value="1"/>
     </Style>
 
     <Style TargetType="ScrollViewer">
