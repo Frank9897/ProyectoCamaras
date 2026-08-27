@@ -9,15 +9,16 @@ using Microsoft.Extensions.DependencyInjection;
 namespace CameraInspector.App;
 
 /// <summary>
-/// Extensión de MainWindow para integrar los módulos principales en una única pantalla.
-/// El módulo USB/UVC reutiliza la misma vista funcional que ya existe como ventana independiente.
+/// Integración de los módulos principales de Camera Inspector.
+/// La red IP conserva su vista existente y el módulo USB/UVC reutiliza la vista local ya validada.
 /// </summary>
 public partial class MainWindow
 {
-    /// <summary>
-    /// Guarda la ventana contenedora de LocalCamerasWindow para conservar viva la vista que fue reparentada.
-    /// </summary>
+    // _embeddedLocalCameraWindow conserva la instancia visual del módulo UVC mientras permanece dentro de MainWindow.
     private LocalCamerasWindow? _embeddedLocalCameraWindow;
+
+    // _moduleNavigationBuilt evita reconstruir el contenedor si WPF dispara Loaded más de una vez.
+    private bool _moduleNavigationBuilt;
 
     static MainWindow()
     {
@@ -26,12 +27,6 @@ public partial class MainWindow
             typeof(DataGrid),
             FrameworkElement.PreviewMouseRightButtonDownEvent,
             new MouseButtonEventHandler(OnDataGridPreviewMouseRightButtonDown));
-
-        // Cuando MainWindow termina de cargarse, convertimos su contenido actual en el módulo RED / IP.
-        EventManager.RegisterClassHandler(
-            typeof(MainWindow),
-            FrameworkElement.LoadedEvent,
-            new RoutedEventHandler(OnMainWindowLoaded));
     }
 
     private static void OnDataGridPreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
@@ -43,7 +38,7 @@ public partial class MainWindow
         if (e.OriginalSource is not DependencyObject source)
             return;
 
-        // row es la fila real de DataGrid que contiene el elemento pulsado.
+        // row representa la fila real que contiene el elemento pulsado.
         var row = FindVisualParent<DataGridRow>(source);
         if (row?.Item is null)
             return;
@@ -54,57 +49,29 @@ public partial class MainWindow
         dataGrid.Focus();
     }
 
-    private static void OnMainWindowLoaded(object sender, RoutedEventArgs e)
-    {
-        if (sender is not MainWindow window)
-            return;
-
-        // DispatcherPriority.Loaded permite que todos los controles XAML existan antes de reparentarlos.
-        window.Dispatcher.BeginInvoke(
-            DispatcherPriority.Loaded,
-            new Action(() => window.BuildModuleNavigation()));
-    }
-
+    /// <summary>
+    /// Construye una navegación real de módulos alrededor de la interfaz existente.
+    /// No reubica hijos internos del Grid original, evitando errores de reparenting de WPF.
+    /// </summary>
     private void BuildModuleNavigation()
     {
-        // root es el Grid raíz declarado en MainWindow.xaml.
-        if (Content is not Grid root)
+        if (_moduleNavigationBuilt)
             return;
 
-        // Evitamos reconstruir módulos si Loaded vuelve a dispararse.
-        if (root.Children.OfType<TabControl>().Any())
+        // originalContent conserva la pantalla RED/IP completa ya construida por XAML.
+        if (Content is not Grid originalContent)
             return;
 
-        // oldChildren representa el contenido completo de la pantalla IP ya existente.
-        var oldChildren = root.Children.Cast<UIElement>().ToList();
-        // oldRowDefinitions conserva las alturas y mínimos del layout técnico actual.
-        var oldRowDefinitions = root.RowDefinitions
-            .Select(row => new RowDefinition
-            {
-                Height = row.Height,
-                MinHeight = row.MinHeight,
-                MaxHeight = row.MaxHeight
-            })
-            .ToList();
+        _moduleNavigationBuilt = true;
 
-        // networkRoot pasa a ser el contenido de la pestaña RED / IP.
-        var networkRoot = new Grid();
-        foreach (var rowDefinition in oldRowDefinitions)
-            networkRoot.RowDefinitions.Add(rowDefinition);
+        // Quitamos temporalmente el Grid de la Window para poder alojarlo dentro del primer módulo.
+        Content = null;
 
-        // Al mover los hijos conservamos Grid.Row/Grid.Column y todos sus bindings.
-        foreach (var child in oldChildren)
-            networkRoot.Children.Add(child);
-
-        // El root queda reservado al selector superior de módulos.
-        root.Children.Clear();
-        root.RowDefinitions.Clear();
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-
-        // modules centraliza las áreas funcionales de Camera Inspector.
+        // modules es el selector visible de los grandes módulos funcionales de Camera Inspector.
         var modules = new TabControl
         {
             Background = (Brush)FindResource("BgBrush"),
+            Foreground = (Brush)FindResource("TextBrush"),
             BorderBrush = (Brush)FindResource("BorderBrush2"),
             BorderThickness = new Thickness(1),
             Padding = new Thickness(0),
@@ -112,24 +79,23 @@ public partial class MainWindow
             VerticalContentAlignment = VerticalAlignment.Stretch
         };
 
-        // redTab encapsula la funcionalidad IP existente sin modificar su ViewModel.
+        // redTab conserva íntegramente la pantalla de descubrimiento, detalle, video y diagnóstico existente.
         var redTab = new TabItem
         {
-            Header = "RED / IP",
-            Content = networkRoot
+            Header = "ESCANEO DE RED",
+            Content = originalContent
         };
 
-        // usbTab reutiliza el módulo local que ya validaste con la webcam real.
+        // usbTab reutiliza la implementación UVC ya validada con la webcam real.
         var usbTab = CreateUsbModuleTab();
 
-        // nvrTab reserva explícitamente el módulo futuro de grabadores.
+        // nvrTab queda disponible como módulo reservado; no se simula funcionalidad inexistente.
         var nvrTab = new TabItem
         {
             Header = "NVR / DVR",
-            IsEnabled = false,
             Content = CreatePendingModuleContent(
                 "MÓDULO NVR / DVR",
-                "Reservado para canales de NVR/DVR. Se habilitará cuando incorporemos descubrimiento y gestión de grabadores.")
+                "Módulo reservado. Aquí se incorporarán posteriormente descubrimiento de grabadores y canales NVR/DVR.")
         };
 
         modules.Items.Add(redTab);
@@ -137,62 +103,75 @@ public partial class MainWindow
         modules.Items.Add(nvrTab);
         modules.SelectedIndex = 0;
 
-        root.Children.Add(modules);
+        // La navegación pasa a ser el contenido único y estable de la ventana principal.
+        Content = modules;
     }
 
+    /// <summary>
+    /// Obtiene la vista del módulo USB/UVC ya existente y la aloja dentro de una pestaña.
+    /// </summary>
     private TabItem CreateUsbModuleTab()
     {
-        // service obtiene la instancia singleton de captura local registrada por DI.
+        // service reutiliza el singleton de captura local registrado en DI.
         var service = App.Services?.GetService<LocalCameraService>();
+
         if (service is null)
         {
             return new TabItem
             {
-                Header = "USB / UVC",
+                Header = "CÁMARAS USB / UVC",
                 Content = CreatePendingModuleContent(
                     "USB / UVC NO DISPONIBLE",
                     "El servicio de cámaras locales no está registrado en el contenedor de dependencias.")
             };
         }
 
-        // _embeddedLocalCameraWindow inicializa el mismo layout que utilizábamos como ventana auxiliar.
-        _embeddedLocalCameraWindow = new LocalCamerasWindow(service);
-        var embeddedContent = _embeddedLocalCameraWindow.Content as UIElement;
+        // _embeddedLocalCameraWindow crea la vista conocida que ya funciona con la webcam.
+        _embeddedLocalCameraWindow = new LocalCamerasWindow(service)
+        {
+            ShowInTaskbar = false
+        };
 
+        // embeddedContent es el Grid visual interno de LocalCamerasWindow que ahora pasa a pertenecer a la pestaña.
+        var embeddedContent = _embeddedLocalCameraWindow.Content as UIElement;
         if (embeddedContent is null)
         {
             return new TabItem
             {
-                Header = "USB / UVC",
+                Header = "CÁMARAS USB / UVC",
                 Content = CreatePendingModuleContent(
                     "USB / UVC NO DISPONIBLE",
-                    "No fue posible obtener el contenido visual del módulo local.")
+                    "No fue posible crear el contenido visual del módulo local.")
             };
         }
 
-        // Retiramos el contenido de la Window para convertirlo en contenido de la pestaña.
+        // Quitamos el contenido de la Window secundaria antes de asignarlo como hijo de TabItem.
         _embeddedLocalCameraWindow.Content = null;
-        // La ventana original no recibirá Loaded al quedar embebida, por eso inicializamos la enumeración explícitamente.
+
+        // RefreshEmbedded dispara la enumeración sin depender de que la ventana secundaria sea visible.
         _embeddedLocalCameraWindow.RefreshEmbedded();
 
         return new TabItem
         {
-            Header = "USB / UVC",
+            Header = "CÁMARAS USB / UVC",
             Content = embeddedContent
         };
     }
 
+    /// <summary>
+    /// Crea el contenido informativo de un módulo todavía no implementado.
+    /// </summary>
     private Border CreatePendingModuleContent(string title, string description)
     {
-        // title representa el nombre del módulo reservado.
-        // description explica al técnico por qué todavía no está habilitado.
+        // title es el título visible del módulo reservado.
+        // description explica qué funcionalidad se incorporará en una fase posterior.
         return new Border
         {
             Background = (Brush)FindResource("PanelBrush"),
             BorderBrush = (Brush)FindResource("BorderBrush2"),
             BorderThickness = new Thickness(1),
-            Margin = new Thickness(10),
-            Padding = new Thickness(18),
+            Margin = new Thickness(12),
+            Padding = new Thickness(22),
             Child = new StackPanel
             {
                 Children =
@@ -201,14 +180,14 @@ public partial class MainWindow
                     {
                         Text = title,
                         FontFamily = new FontFamily("Consolas"),
-                        FontSize = 14,
+                        FontSize = 16,
                         FontWeight = FontWeights.Bold,
                         Foreground = (Brush)FindResource("AccentBrush")
                     },
                     new TextBlock
                     {
                         Text = description,
-                        Margin = new Thickness(0, 10, 0, 0),
+                        Margin = new Thickness(0, 12, 0, 0),
                         TextWrapping = TextWrapping.Wrap,
                         Foreground = (Brush)FindResource("TextDimBrush")
                     }
@@ -231,5 +210,13 @@ public partial class MainWindow
         }
 
         return null;
+    }
+
+    private void MainWindow_LoadedForModules(object? sender, RoutedEventArgs e)
+    {
+        // Dispatcher permite construir los módulos después de que el XAML haya completado el namescope de MainWindow.
+        Dispatcher.BeginInvoke(
+            DispatcherPriority.Loaded,
+            new Action(BuildModuleNavigation));
     }
 }
