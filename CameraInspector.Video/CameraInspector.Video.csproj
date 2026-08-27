@@ -10,8 +10,10 @@
   <ItemGroup>
     <PackageReference Include="LibVLCSharp" Version="3.10.1" />
     <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.23.1" />
-    <!-- DirectShowLib.Net aporta las interfaces COM necesarias para enumerar webcams/UVC de Windows. -->
+    <!-- DirectShow se mantiene para enumerar e identificar las fuentes de vídeo de Windows. -->
     <PackageReference Include="DirectShowLib.Net" Version="3.0.0" />
+    <!-- OpenCV aporta captura de frames y grabación local sin depender de PowerShell ni de LibVLC para UVC. -->
+    <PackageReference Include="OpenCvSharp4.Windows" Version="4.13.0.20260627" />
   </ItemGroup>
 
   <ItemGroup>
