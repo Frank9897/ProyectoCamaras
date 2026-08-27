@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity
+    version="1.0.0.0"
+    name="CameraInspector" />
+
+  <!--
+    Camera Inspector requiere elevación para operaciones administrativas del inventario
+    y de configuración de dispositivos. La elevación NO desactiva las políticas de
+    privacidad de cámara de Windows; esas políticas siguen siendo responsabilidad del SO.
+  -->
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+</assembly>
