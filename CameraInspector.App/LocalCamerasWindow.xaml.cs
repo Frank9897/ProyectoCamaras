@@ -1,5 +1,4 @@
 using Microsoft.Win32;
-using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
@@ -16,6 +15,8 @@ public partial class LocalCamerasWindow : Window
 {
     private readonly LocalCameraService _cameraService;
     private LocalCameraDevice? _selectedCamera;
+    private WriteableBitmap? _previewBitmap;
+    private long _displayedFrames;
 
     public LocalCamerasWindow(LocalCameraService cameraService)
     {
@@ -66,7 +67,7 @@ public partial class LocalCamerasWindow : Window
                 return;
             }
 
-            // Mantenemos la selección actual si el dispositivo sigue conectado; de lo contrario usamos el primero.
+            // Conservamos el dispositivo previamente seleccionado si todavía existe; de lo contrario usamos el primero.
             var previousName = _selectedCamera?.Name;
             var selected = cameras.FirstOrDefault(item => string.Equals(item.Name, previousName, StringComparison.OrdinalIgnoreCase))
                            ?? cameras[0];
@@ -101,16 +102,16 @@ public partial class LocalCamerasWindow : Window
         SelectedCameraNameText.Text = camera.Name;
         CaptureStateTextBlock.Text = "ABRIENDO";
         NoVideoTextBlock.Visibility = Visibility.Visible;
-        NoVideoTextBlock.Text = "ABRIENDO…";
-        VideoImage.Source = null;
+        NoVideoTextBlock.Text = "NEGOCIANDO…";
+        ResetPreviewBitmap();
         UpdateActionButtons(camera);
 
         StatusTextBlock.Text =
-            BuildCameraStatus(camera, "Negociando captura con Media Foundation / DirectShow...");
+            BuildCameraStatus(camera, "Negociando captura con DirectShow / Media Foundation...");
 
         try
         {
-            // started solo será true después de que OpenCV haya obtenido un frame real.
+            // started solo significa que OpenCV recibió al menos un frame; el estado visual se confirma en FrameReady.
             var started = await _cameraService.StartAsync(camera);
             if (!started)
             {
@@ -122,8 +123,10 @@ public partial class LocalCamerasWindow : Window
                 return;
             }
 
-            CaptureStateTextBlock.Text = "STREAM ACTIVO";
-            NoVideoTextBlock.Visibility = Visibility.Collapsed;
+            // No marcamos STREAM ACTIVO aquí: el evento FrameReady lo hará después de pintar el primer frame.
+            CaptureStateTextBlock.Text = "FRAME RECIBIDO";
+            NoVideoTextBlock.Visibility = Visibility.Visible;
+            NoVideoTextBlock.Text = "PINTANDO PREVIEW…";
             StatusTextBlock.Text = BuildCameraStatus(camera, _cameraService.LastCaptureDiagnostic);
             UpdateActionButtons(camera);
         }
@@ -144,32 +147,59 @@ public partial class LocalCamerasWindow : Window
 
     private void CameraService_FrameReady(object? sender, LocalCameraFrame frame)
     {
-        // FrameReady puede ejecutarse desde el hilo de captura; WPF debe actualizarse desde Dispatcher.
-        Dispatcher.InvokeAsync(() =>
+        // FrameReady puede ejecutarse desde el hilo de captura; WPF debe actualizarse desde su Dispatcher.
+        _ = Dispatcher.InvokeAsync(() =>
         {
             if (frame.Width <= 0 || frame.Height <= 0 || frame.Pixels.Length == 0)
             {
-                VideoImage.Source = null;
+                ResetPreviewBitmap();
                 NoVideoTextBlock.Visibility = Visibility.Visible;
                 NoVideoTextBlock.Text = "SIN SEÑAL";
                 return;
             }
 
-            // bitmap convierte BGRA32 en una imagen WPF independiente de OpenCV.
-            var bitmap = BitmapSource.Create(
-                frame.Width,
-                frame.Height,
-                96,
-                96,
-                System.Windows.Media.PixelFormats.Bgra32,
-                null,
-                frame.Pixels,
-                frame.Stride);
+            // Si cambia la resolución, construimos un WriteableBitmap nuevo con BGRA32 y lo reutilizamos para los siguientes frames.
+            if (_previewBitmap is null ||
+                _previewBitmap.PixelWidth != frame.Width ||
+                _previewBitmap.PixelHeight != frame.Height)
+            {
+                _previewBitmap = new WriteableBitmap(
+                    frame.Width,
+                    frame.Height,
+                    96,
+                    96,
+                    System.Windows.Media.PixelFormats.Bgra32,
+                    null);
+                _previewBitmap.Freeze();
+                // WriteableBitmap debe permanecer mutable para recibir WritePixels; por ello recreamos una instancia no congelada.
+                _previewBitmap = new WriteableBitmap(
+                    frame.Width,
+                    frame.Height,
+                    96,
+                    96,
+                    System.Windows.Media.PixelFormats.Bgra32,
+                    null);
+                VideoImage.Source = _previewBitmap;
+            }
 
-            bitmap.Freeze();
-            VideoImage.Source = bitmap;
-            NoVideoTextBlock.Visibility = Visibility.Collapsed;
+            // WritePixels copia el buffer BGRA directamente al bitmap visible sin crear un objeto de imagen por frame.
+            _previewBitmap.WritePixels(
+                new Int32Rect(0, 0, frame.Width, frame.Height),
+                frame.Pixels,
+                frame.Stride,
+                0);
+
+            _displayedFrames++;
             CaptureStateTextBlock.Text = "STREAM ACTIVO";
+            NoVideoTextBlock.Visibility = Visibility.Collapsed;
+
+            // Mostramos en vivo la cantidad de frames realmente pintados, no solo los que el backend capturó.
+            if (_displayedFrames == 1 || _displayedFrames % 30 == 0)
+            {
+                StatusTextBlock.Text = BuildCameraStatus(
+                    _selectedCamera,
+                    $"{_cameraService.LastCaptureDiagnostic} · Frames pintados en WPF: {_displayedFrames}.");
+            }
         });
     }
 
@@ -267,7 +297,7 @@ public partial class LocalCamerasWindow : Window
 
     private void UpdateActionButtons(LocalCameraDevice? camera)
     {
-        // captureActive exige una cámara actualmente abierta; una mera enumeración no habilita captura.
+        // captureActive exige una cámara actualmente abierta; enumerar el dispositivo no habilita captura.
         var captureActive = camera is not null && _cameraService.IsCapturing;
         SnapshotButton.IsEnabled = captureActive;
         RecordButton.IsEnabled = captureActive && !_cameraService.IsRecording;
@@ -278,9 +308,17 @@ public partial class LocalCamerasWindow : Window
 
     private void ClearPreview()
     {
-        VideoImage.Source = null;
+        ResetPreviewBitmap();
         NoVideoTextBlock.Visibility = Visibility.Visible;
         NoVideoTextBlock.Text = "SIN SEÑAL";
+    }
+
+    private void ResetPreviewBitmap()
+    {
+        // Liberamos la referencia anterior al bitmap; WPF recogerá la imagen cuando ya no esté en uso.
+        _previewBitmap = null;
+        _displayedFrames = 0;
+        VideoImage.Source = null;
     }
 
     private static string BuildCameraStatus(LocalCameraDevice? camera, string message)
