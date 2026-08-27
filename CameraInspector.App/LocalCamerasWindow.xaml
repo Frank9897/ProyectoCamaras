@@ -12,7 +12,7 @@
         WindowStartupLocation="CenterOwner">
     <Grid Margin="12">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="330"/>
+            <ColumnDefinition Width="350"/>
             <ColumnDefinition Width="12"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
@@ -30,7 +30,7 @@
                                FontSize="14"
                                FontWeight="Bold"
                                Foreground="{StaticResource AccentBrush}"/>
-                    <TextBlock Text="Dispositivos de vídeo que Windows expone localmente"
+                    <TextBlock Text="Fuentes de vídeo que Windows expone localmente"
                                Margin="0,5,0,0"
                                Foreground="{StaticResource TextDimBrush}"
                                TextWrapping="Wrap"/>
@@ -38,7 +38,7 @@
 
                 <TextBlock DockPanel.Dock="Bottom"
                            Margin="0,10,0,0"
-                           Text="Un teléfono por USB solo aparece aquí si Windows lo expone como fuente de vídeo/cámara. MTP por sí solo no es una cámara de captura."
+                           Text="Un teléfono por USB solo aparecerá como cámara cuando Windows lo exponga como fuente de vídeo. MTP por sí solo no es captura de vídeo."
                            Foreground="{StaticResource TextDimBrush}"
                            TextWrapping="Wrap"
                            FontSize="10"/>
@@ -60,9 +60,26 @@
                                                FontWeight="Bold"
                                                Foreground="{StaticResource TextBrush}"
                                                TextWrapping="Wrap"/>
-                                    <TextBlock Text="{Binding Status}"
-                                               Margin="0,4,0,0"
-                                               Foreground="{StaticResource AccentBrush}"/>
+                                    <TextBlock Margin="0,4,0,0"
+                                               Foreground="{StaticResource AccentBrush}">
+                                        <Run Text="Origen: "/><Run Text="{Binding DiscoverySource}"/>
+                                    </TextBlock>
+                                    <TextBlock Margin="0,2,0,0"
+                                               Foreground="{StaticResource TextDimBrush}">
+                                        <Run Text="Estado: "/><Run Text="{Binding Status}"/>
+                                    </TextBlock>
+                                    <TextBlock Margin="0,2,0,0"
+                                               Foreground="{StaticResource TextDimBrush}">
+                                        <Run Text="Transporte: "/><Run Text="{Binding Transport}"/>
+                                    </TextBlock>
+                                    <TextBlock Margin="0,2,0,0"
+                                               Foreground="{StaticResource TextDimBrush}">
+                                        <Run Text="VID/PID: "/><Run Text="{Binding UsbVendorId}"/><Run Text=" / "/><Run Text="{Binding UsbProductId}"/>
+                                    </TextBlock>
+                                    <TextBlock Margin="0,2,0,0"
+                                               Foreground="{StaticResource TextDimBrush}">
+                                        <Run Text="Preview: "/><Run Text="{Binding PreviewSupported}"/>
+                                    </TextBlock>
                                 </StackPanel>
                             </Border>
                         </DataTemplate>
