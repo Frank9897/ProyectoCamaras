@@ -77,8 +77,8 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
 
         // Los valores editables se rellenan con el estado actual sin escribir todavía en la cámara.
         UseDhcp = value.IPv4Dhcp == true;
-        _ipv4Address = value.IPv4Address ?? string.Empty;
-        _prefixLength = (value.IPv4PrefixLength ?? 24).ToString();
+        IPv4Address = value.IPv4Address ?? string.Empty;
+        PrefixLength = (value.IPv4PrefixLength ?? 24).ToString();
     }
 
     [RelayCommand]
@@ -136,7 +136,7 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
         if (!UseDhcp)
         {
             // ipv4 verifica que no enviemos una dirección no IPv4 al dispositivo.
-            if (!IPAddress.TryParse(_ipv4Address, out var ipv4)
+            if (!IPAddress.TryParse(IPv4Address, out var ipv4)
                 || ipv4.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
             {
                 StatusText = "La IPv4 indicada no es válida.";
@@ -144,7 +144,7 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
             }
 
             // prefix limita el rango permitido por ONVIF para IPv4 CIDR.
-            if (!int.TryParse(_prefixLength, out var prefix) || prefix < 0 || prefix > 32)
+            if (!int.TryParse(PrefixLength, out var prefix) || prefix < 0 || prefix > 32)
             {
                 StatusText = "El prefijo debe estar entre 0 y 32.";
                 return;
@@ -162,8 +162,8 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
         // La confirmación muestra el antes/después para evitar una modificación accidental.
         var result = MessageBox.Show(
             $"Se modificará la red de la cámara:\n\n" +
-            $"IP: {SelectedInterface.IPv4Address ?? "(DHCP)"} → {(_useDhcp ? "DHCP" : _ipv4Address.Trim())}\n" +
-            $"Prefijo: {SelectedInterface.IPv4PrefixLength?.ToString() ?? "?"} → {(_useDhcp ? "DHCP" : _prefixLength)}\n" +
+            $"IP: {SelectedInterface.IPv4Address ?? "(DHCP)"} → {(UseDhcp ? "DHCP" : IPv4Address.Trim())}\n" +
+            $"Prefijo: {SelectedInterface.IPv4PrefixLength?.ToString() ?? "?"} → {(UseDhcp ? "DHCP" : PrefixLength)}\n" +
             $"Gateway: {Gateways.FirstOrDefault() ?? "(sin gateway)"} → {(string.IsNullOrWhiteSpace(GatewayAddress) ? "(sin gateway)" : GatewayAddress.Trim())}\n\n" +
             "La cámara puede quedar inaccesible durante unos segundos. ¿Continuar?",
             "Camera Inspector — Confirmar modificación",
@@ -184,7 +184,7 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
                 return;
 
             int? prefix = null;
-            if (!_useDhcp && int.TryParse(_prefixLength, out var prefixValue))
+            if (!UseDhcp && int.TryParse(PrefixLength, out var prefixValue))
                 prefix = prefixValue;
 
             StatusText = "Aplicando IPv4...";
@@ -193,8 +193,8 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
                 credentials.Value.Username,
                 credentials.Value.Password,
                 SelectedInterface.Token,
-                _useDhcp,
-                _useDhcp ? null : _ipv4Address.Trim(),
+                UseDhcp,
+                UseDhcp ? null : IPv4Address.Trim(),
                 prefix);
 
             if (!interfaceResult.Succeeded)
