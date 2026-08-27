@@ -44,6 +44,7 @@ public partial class LocalCamerasWindow : Window
             {
                 // LastEnumerationDiagnostic conserva la causa técnica para diferenciar ausencia de cámara de un fallo del enumerador.
                 StatusTextBlock.Text = _cameraService.LastEnumerationDiagnostic;
+                SelectedCameraNameText.Text = string.Empty;
                 return;
             }
 
@@ -65,15 +66,18 @@ public partial class LocalCamerasWindow : Window
 
         SelectedCameraNameText.Text = camera.Name;
 
+        // Mostramos el origen y los identificadores disponibles antes de intentar abrir la fuente.
+        StatusTextBlock.Text =
+            $"Origen: {camera.DiscoverySource} · Transporte: {camera.Transport} · " +
+            $"VID: {camera.UsbVendorId ?? "N/D"} · PID: {camera.UsbProductId ?? "N/D"} · " +
+            $"Preview: {(camera.PreviewSupported ? "Sí" : "No")}\n" +
+            $"Estado: {camera.Status}";
+
         if (!camera.PreviewSupported)
         {
             // Una entrada PnP puede existir sin una fuente DirectShow utilizable; no la tratamos como un error de enumeración.
-            StatusTextBlock.Text = $"Detectada por {camera.DiscoverySource}, pero Windows no expone una fuente DirectShow utilizable para previsualización.";
-            VideoSurface.MediaPlayer = null;
             return;
         }
-
-        StatusTextBlock.Text = $"Abriendo: {camera.Name}...";
 
         try
         {
@@ -81,15 +85,15 @@ public partial class LocalCamerasWindow : Window
             var started = _cameraService.Play(camera);
             if (!started)
             {
-                StatusTextBlock.Text = "La cámara fue detectada, pero no se pudo abrir la previsualización. Verifique si otro programa está utilizando el dispositivo.";
+                StatusTextBlock.Text += "\nNo fue posible abrir esta fuente. Verifique si otra aplicación está utilizando el dispositivo.";
                 return;
             }
 
-            StatusTextBlock.Text = $"Captura activa: {camera.Name}";
+            StatusTextBlock.Text += "\nCaptura activa.";
         }
         catch (Exception ex)
         {
-            StatusTextBlock.Text = $"Error al abrir la cámara: {ex.Message}";
+            StatusTextBlock.Text += $"\nError al abrir la cámara: {ex.Message}";
         }
     }
 
