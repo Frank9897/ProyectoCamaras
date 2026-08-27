@@ -9,24 +9,29 @@ using Microsoft.Extensions.DependencyInjection;
 namespace CameraInspector.App;
 
 /// <summary>
-/// Extensión parcial de MainWindow para exponer la capa de cámaras locales y estabilizar
-/// la selección del dispositivo que recibe las acciones del menú contextual.
+/// Extensión de MainWindow para integrar los módulos principales en una única pantalla.
+/// El módulo USB/UVC reutiliza la misma vista funcional que ya existe como ventana independiente.
 /// </summary>
 public partial class MainWindow
 {
+    /// <summary>
+    /// Guarda la ventana contenedora de LocalCamerasWindow para conservar viva la vista que fue reparentada.
+    /// </summary>
+    private LocalCamerasWindow? _embeddedLocalCameraWindow;
+
     static MainWindow()
     {
-        // El menú contextual aparece después del clic derecho, pero necesitamos seleccionar primero la fila bajo el cursor.
+        // El clic derecho debe seleccionar primero la fila bajo el cursor para que las acciones trabajen sobre ella.
         EventManager.RegisterClassHandler(
             typeof(DataGrid),
             FrameworkElement.PreviewMouseRightButtonDownEvent,
             new MouseButtonEventHandler(OnDataGridPreviewMouseRightButtonDown));
 
-        // Mantenemos el handler para insertar la opción de cámaras locales cuando el contexto ya existe.
+        // Cuando MainWindow termina de cargarse, convertimos su contenido actual en el módulo RED / IP.
         EventManager.RegisterClassHandler(
             typeof(MainWindow),
-            FrameworkElement.PreviewMouseRightButtonUpEvent,
-            new MouseButtonEventHandler(OnMainWindowPreviewMouseRightButtonUp));
+            FrameworkElement.LoadedEvent,
+            new RoutedEventHandler(OnMainWindowLoaded));
     }
 
     private static void OnDataGridPreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
@@ -43,66 +48,173 @@ public partial class MainWindow
         if (row?.Item is null)
             return;
 
-        // SelectedItem sincroniza la fila con MainViewModel.SelectedDevice antes de abrir el contexto.
+        // SelectedItem sincroniza la fila con MainViewModel.SelectedDevice antes de ejecutar una acción contextual.
         dataGrid.SelectedItem = row.Item;
         row.IsSelected = true;
         dataGrid.Focus();
     }
 
-    private static void OnMainWindowPreviewMouseRightButtonUp(object sender, MouseButtonEventArgs e)
+    private static void OnMainWindowLoaded(object sender, RoutedEventArgs e)
     {
         if (sender is not MainWindow window)
             return;
 
-        // Diferimos un ciclo para asegurar que el DataGrid haya procesado primero la selección de la fila.
+        // DispatcherPriority.Loaded permite que todos los controles XAML existan antes de reparentarlos.
         window.Dispatcher.BeginInvoke(
-            DispatcherPriority.ContextIdle,
-            new Action(() => AddLocalCameraMenuItem(window)));
+            DispatcherPriority.Loaded,
+            new Action(() => window.BuildModuleNavigation()));
     }
 
-    private static void AddLocalCameraMenuItem(MainWindow window)
+    private void BuildModuleNavigation()
     {
-        // Reutilizamos el helper privado existente en MainWindow.xaml.cs para no duplicar recorrido visual.
-        var dataGrid = FindVisualChild<DataGrid>(window);
-        if (dataGrid?.ContextMenu is not ContextMenu contextMenu)
+        // root es el Grid raíz declarado en MainWindow.xaml.
+        if (Content is not Grid root)
             return;
 
-        const string tag = "camera-inspector-local-cameras";
-        if (contextMenu.Items.OfType<MenuItem>().Any(item => string.Equals(item.Tag as string, tag, StringComparison.Ordinal)))
+        // Evitamos reconstruir módulos si Loaded vuelve a dispararse.
+        if (root.Children.OfType<TabControl>().Any())
             return;
 
-        var localCameraItem = new MenuItem
+        // oldChildren representa el contenido completo de la pantalla IP ya existente.
+        var oldChildren = root.Children.Cast<UIElement>().ToList();
+        // oldRowDefinitions conserva las alturas y mínimos del layout técnico actual.
+        var oldRowDefinitions = root.RowDefinitions
+            .Select(row => new RowDefinition
+            {
+                Height = row.Height,
+                MinHeight = row.MinHeight,
+                MaxHeight = row.MaxHeight
+            })
+            .ToList();
+
+        // networkRoot pasa a ser el contenido de la pestaña RED / IP.
+        var networkRoot = new Grid();
+        foreach (var rowDefinition in oldRowDefinitions)
+            networkRoot.RowDefinitions.Add(rowDefinition);
+
+        // Al mover los hijos conservamos Grid.Row/Grid.Column y todos sus bindings.
+        foreach (var child in oldChildren)
+            networkRoot.Children.Add(child);
+
+        // El root queda reservado al selector superior de módulos.
+        root.Children.Clear();
+        root.RowDefinitions.Clear();
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        // modules centraliza las áreas funcionales de Camera Inspector.
+        var modules = new TabControl
         {
-            Header = "Cámaras locales / USB",
-            Tag = tag,
-            IsEnabled = App.Services?.GetService<LocalCameraService>() is not null
+            Background = (Brush)FindResource("BgBrush"),
+            BorderBrush = (Brush)FindResource("BorderBrush2"),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(0),
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            VerticalContentAlignment = VerticalAlignment.Stretch
         };
 
-        localCameraItem.Click += (_, _) => OpenLocalCameraWindow(window);
+        // redTab encapsula la funcionalidad IP existente sin modificar su ViewModel.
+        var redTab = new TabItem
+        {
+            Header = "RED / IP",
+            Content = networkRoot
+        };
 
-        // Insertamos la opción al principio para separar claramente el flujo local del flujo IP.
-        contextMenu.Items.Insert(0, new Separator());
-        contextMenu.Items.Insert(0, localCameraItem);
+        // usbTab reutiliza el módulo local que ya validaste con la webcam real.
+        var usbTab = CreateUsbModuleTab();
+
+        // nvrTab reserva explícitamente el módulo futuro de grabadores.
+        var nvrTab = new TabItem
+        {
+            Header = "NVR / DVR",
+            IsEnabled = false,
+            Content = CreatePendingModuleContent(
+                "MÓDULO NVR / DVR",
+                "Reservado para canales de NVR/DVR. Se habilitará cuando incorporemos descubrimiento y gestión de grabadores.")
+        };
+
+        modules.Items.Add(redTab);
+        modules.Items.Add(usbTab);
+        modules.Items.Add(nvrTab);
+        modules.SelectedIndex = 0;
+
+        root.Children.Add(modules);
     }
 
-    private static void OpenLocalCameraWindow(MainWindow owner)
+    private TabItem CreateUsbModuleTab()
     {
-        // service se resuelve desde DI para conservar una única instancia del acceso local.
+        // service obtiene la instancia singleton de captura local registrada por DI.
         var service = App.Services?.GetService<LocalCameraService>();
         if (service is null)
         {
-            MessageBox.Show(
-                "El servicio de cámaras locales no está disponible.",
-                "Camera Inspector — USB",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
-            return;
+            return new TabItem
+            {
+                Header = "USB / UVC",
+                Content = CreatePendingModuleContent(
+                    "USB / UVC NO DISPONIBLE",
+                    "El servicio de cámaras locales no está registrado en el contenedor de dependencias.")
+            };
         }
 
-        new LocalCamerasWindow(service)
+        // _embeddedLocalCameraWindow inicializa el mismo layout que utilizábamos como ventana auxiliar.
+        _embeddedLocalCameraWindow = new LocalCamerasWindow(service);
+        var embeddedContent = _embeddedLocalCameraWindow.Content as UIElement;
+
+        if (embeddedContent is null)
         {
-            Owner = owner
-        }.ShowDialog();
+            return new TabItem
+            {
+                Header = "USB / UVC",
+                Content = CreatePendingModuleContent(
+                    "USB / UVC NO DISPONIBLE",
+                    "No fue posible obtener el contenido visual del módulo local.")
+            };
+        }
+
+        // Retiramos el contenido de la Window para convertirlo en contenido de la pestaña.
+        _embeddedLocalCameraWindow.Content = null;
+        // La ventana original no recibirá Loaded al quedar embebida, por eso inicializamos la enumeración explícitamente.
+        _embeddedLocalCameraWindow.RefreshEmbedded();
+
+        return new TabItem
+        {
+            Header = "USB / UVC",
+            Content = embeddedContent
+        };
+    }
+
+    private Border CreatePendingModuleContent(string title, string description)
+    {
+        // title representa el nombre del módulo reservado.
+        // description explica al técnico por qué todavía no está habilitado.
+        return new Border
+        {
+            Background = (Brush)FindResource("PanelBrush"),
+            BorderBrush = (Brush)FindResource("BorderBrush2"),
+            BorderThickness = new Thickness(1),
+            Margin = new Thickness(10),
+            Padding = new Thickness(18),
+            Child = new StackPanel
+            {
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = title,
+                        FontFamily = new FontFamily("Consolas"),
+                        FontSize = 14,
+                        FontWeight = FontWeights.Bold,
+                        Foreground = (Brush)FindResource("AccentBrush")
+                    },
+                    new TextBlock
+                    {
+                        Text = description,
+                        Margin = new Thickness(0, 10, 0, 0),
+                        TextWrapping = TextWrapping.Wrap,
+                        Foreground = (Brush)FindResource("TextDimBrush")
+                    }
+                }
+            }
+        };
     }
 
     private static T? FindVisualParent<T>(DependencyObject? element)
