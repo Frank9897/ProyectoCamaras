@@ -1,47 +1,49 @@
-using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
 using DirectShowLib;
-using LibVLCSharp.Shared;
+using OpenCvSharp;
 
 namespace CameraInspector.Video;
 
 /// <summary>
-/// Enumeración y captura de cámaras locales de Windows mediante DirectShow + LibVLC.
-/// PnP se utiliza como respaldo para diagnóstico cuando Windows conoce la cámara pero DirectShow no la expone.
+/// Captura de cámaras locales en Windows.
+/// DirectShow se utiliza para descubrir e identificar dispositivos; OpenCV captura los frames
+/// utilizando los backends nativos de Windows, priorizando Media Foundation y usando DirectShow como respaldo.
 /// </summary>
 public sealed class LocalCameraService : ILocalCameraService
 {
-    private readonly LibVLC _libVlc;
-    private Media? _currentMedia;
-    private MediaPlayer? _currentPlayer;
-    private Media? _recordingMedia;
-    private MediaPlayer? _recordingPlayer;
-    private string? _currentCameraName;
+    private readonly object _sync = new();
+    private VideoCapture? _capture;
+    private CancellationTokenSource? _captureCts;
+    private Task? _captureTask;
+    private Mat? _latestFrame;
+    private VideoWriter? _videoWriter;
+    private double _captureFps = 30;
+    private int _captureWidth;
+    private int _captureHeight;
 
-    /// <summary>Notifica a la UI qué MediaPlayer debe mostrar o retirar.</summary>
-    public event EventHandler<MediaPlayer?>? PlayerChanged;
+    /// <summary>Emite frames BGRA listos para que WPF los muestre.</summary>
+    public event EventHandler<LocalCameraFrame>? FrameReady;
 
-    /// <summary>Reproductor local actualmente activo.</summary>
-    public MediaPlayer? Player => _currentPlayer;
-
-    /// <summary>Diagnóstico de la última enumeración local ejecutada.</summary>
+    /// <summary>Diagnóstico de enumeración de cámaras locales.</summary>
     public string LastEnumerationDiagnostic { get; private set; } = "Todavía no se ejecutó una enumeración local.";
 
-    /// <summary>Indica si existe una grabación local activa.</summary>
-    public bool IsRecording => _recordingPlayer?.IsPlaying == true;
+    /// <summary>Diagnóstico de la última operación de captura.</summary>
+    public string LastCaptureDiagnostic { get; private set; } = "Todavía no se abrió una cámara local.";
 
-    /// <summary>Indica cuántas salidas de vídeo tiene la previsualización actual.</summary>
-    public uint VideoOutputCount => _currentPlayer?.VoutCount ?? 0;
+    /// <summary>Indica si existe una cámara local abierta.</summary>
+    public bool IsCapturing => _capture is not null;
 
-    public LocalCameraService()
+    /// <summary>Indica si actualmente se guardan frames en un archivo local.</summary>
+    public bool IsRecording
     {
-        // Inicializamos el motor multimedia local para captura DirectShow.
-        global::LibVLCSharp.Shared.Core.Initialize();
-        _libVlc = new LibVLC("--quiet", "--live-caching=100");
+        get
+        {
+            lock (_sync)
+                return _videoWriter is not null;
+        }
     }
 
     public IReadOnlyList<LocalCameraDevice> GetAvailableCameras()
@@ -51,33 +53,35 @@ public sealed class LocalCameraService : ILocalCameraService
 
         try
         {
-            // devices contiene las fuentes de vídeo registradas en DirectShow.
+            // DirectShow proporciona nombres, DevicePath y una enumeración estable para este proceso.
+            // El orden se usa como índice candidato de OpenCV; Windows no garantiza que ese índice sea estable entre equipos.
             var devices = DsDevice.GetDevicesOfCat(FilterCategory.VideoInputDevice);
 
-            foreach (var device in devices)
+            for (var index = 0; index < devices.Length; index++)
             {
+                var device = devices[index];
                 try
                 {
-                    // name es el nombre amigable que Windows registra para la cámara.
+                    // name es el FriendlyName registrado por Windows.
                     var name = device.Name;
-                    // devicePath identifica la instancia física cuando el driver la proporciona.
+                    // devicePath conserva la identidad técnica para diagnóstico y futuras mejoras de matching.
                     var devicePath = device.DevicePath;
-                    // monikerString queda disponible para diagnóstico técnico.
+                    // monikerString permite conservar el identificador COM de DirectShow.
                     var monikerString = device.Mon?.ToString();
 
                     if (string.IsNullOrWhiteSpace(name))
                         continue;
 
-                    // transport clasifica el origen como USB o local/virtual.
+                    // transport indica si el DevicePath contiene una referencia USB conocida.
                     var transport = string.IsNullOrWhiteSpace(devicePath)
                         ? "Local/Virtual"
                         : devicePath.Contains("usb#vid_", StringComparison.OrdinalIgnoreCase)
                             ? "USB"
                             : "Local/Virtual";
 
-                    // usbVendorId contiene el VID cuando el DevicePath lo expone.
+                    // usbVendorId identifica el fabricante USB a partir de VID_.
                     var usbVendorId = ExtractUsbId(devicePath, "vid_");
-                    // usbProductId contiene el PID cuando el DevicePath lo expone.
+                    // usbProductId identifica el modelo USB a partir de PID_.
                     var usbProductId = ExtractUsbId(devicePath, "pid_");
 
                     cameras.Add(new LocalCameraDevice
@@ -87,6 +91,7 @@ public sealed class LocalCameraService : ILocalCameraService
                         MonikerString = monikerString,
                         DiscoverySource = "DirectShow",
                         PreviewSupported = true,
+                        CaptureIndex = index,
                         Transport = transport,
                         UsbVendorId = usbVendorId,
                         UsbProductId = usbProductId,
@@ -96,41 +101,26 @@ public sealed class LocalCameraService : ILocalCameraService
                 }
                 catch (Exception ex)
                 {
-                    // Un driver defectuoso no debe impedir enumerar las demás cámaras.
+                    // Un driver defectuoso no debe impedir que se enumeren las demás fuentes.
                     diagnostics.Add($"DirectShow [{device.Name}]: {ex.Message}");
                 }
                 finally
                 {
-                    // DirectShow utiliza COM; liberamos la referencia al terminar con el dispositivo.
+                    // DirectShow usa COM; liberamos la referencia después de copiar las propiedades necesarias.
                     ReleaseComObject(device);
                 }
             }
         }
         catch (Exception ex)
         {
-            // Conservamos el error para mostrarlo al técnico en lugar de ocultarlo.
+            // Guardamos la excepción para mostrar al técnico la causa real de una lista vacía.
             diagnostics.Add($"DirectShow: {ex.Message}");
         }
 
-        // Si DirectShow no encontró nada, consultamos PnP como respaldo de diagnóstico.
-        if (cameras.Count == 0)
-        {
-            var pnpCameras = GetPnpCameraDevices(out var pnpDiagnostic);
-            foreach (var pnpCamera in pnpCameras)
-            {
-                // Evitamos duplicados por nombre cuando ambos enumeradores devuelven la misma fuente.
-                if (!cameras.Any(item => string.Equals(item.Name, pnpCamera.Name, StringComparison.OrdinalIgnoreCase)))
-                    cameras.Add(pnpCamera);
-            }
-
-            if (!string.IsNullOrWhiteSpace(pnpDiagnostic))
-                diagnostics.Add(pnpDiagnostic);
-        }
-
         LastEnumerationDiagnostic = cameras.Count > 0
-            ? $"Enumeración local completada: {cameras.Count} fuente(s)."
+            ? $"DirectShow encontró {cameras.Count} fuente(s) de vídeo local(es)."
             : diagnostics.Count == 0
-                ? "Windows no devolvió ninguna fuente de captura de vídeo local."
+                ? "Windows no devolvió fuentes de captura de vídeo locales."
                 : string.Join(" | ", diagnostics);
 
         return cameras
@@ -138,299 +128,295 @@ public sealed class LocalCameraService : ILocalCameraService
             .ToList();
     }
 
-    private static IReadOnlyList<LocalCameraDevice> GetPnpCameraDevices(out string diagnostic)
-    {
-        var result = new List<LocalCameraDevice>();
-        diagnostic = string.Empty;
-
-        try
-        {
-            // startInfo ejecuta solo una consulta fija de lectura de dispositivos PnP presentes.
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = "powershell.exe",
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            };
-
-            // ArgumentList separa los argumentos y evita errores de escapado.
-            startInfo.ArgumentList.Add("-NoProfile");
-            startInfo.ArgumentList.Add("-NonInteractive");
-            startInfo.ArgumentList.Add("-Command");
-            startInfo.ArgumentList.Add(
-                "Get-PnpDevice -PresentOnly | " +
-                "Where-Object { $_.Status -eq 'OK' -and ($_.Class -eq 'Camera' -or $_.Class -eq 'Image' -or $_.Service -eq 'usbvideo') } | " +
-                "Select-Object FriendlyName,InstanceId,Class,Status,Service | ConvertTo-Json -Compress");
-
-            using var process = Process.Start(startInfo);
-            if (process is null)
-            {
-                diagnostic = "PnP: no se pudo iniciar PowerShell.";
-                return result;
-            }
-
-            // output contiene la respuesta JSON de la consulta PnP.
-            var output = process.StandardOutput.ReadToEnd();
-            // error contiene el detalle de error emitido por PowerShell, si existe.
-            var error = process.StandardError.ReadToEnd();
-            process.WaitForExit(3000);
-
-            if (string.IsNullOrWhiteSpace(output))
-            {
-                diagnostic = string.IsNullOrWhiteSpace(error)
-                    ? "PnP: Windows no devolvió cámaras presentes."
-                    : $"PnP: {error.Trim()}";
-                return result;
-            }
-
-            if (output.TrimStart().StartsWith("[", StringComparison.Ordinal))
-            {
-                var devices = JsonSerializer.Deserialize<List<PnpCameraDto>>(output);
-                if (devices is not null)
-                    AddPnpDevices(result, devices);
-            }
-            else
-            {
-                var device = JsonSerializer.Deserialize<PnpCameraDto>(output);
-                if (device is not null)
-                    AddPnpDevices(result, new[] { device });
-            }
-        }
-        catch (Exception ex)
-        {
-            diagnostic = $"PnP: {ex.Message}";
-        }
-
-        return result;
-    }
-
-    private static void AddPnpDevices(
-        ICollection<LocalCameraDevice> destination,
-        IEnumerable<PnpCameraDto> devices)
-    {
-        foreach (var device in devices)
-        {
-            if (string.IsNullOrWhiteSpace(device.FriendlyName))
-                continue;
-
-            // instanceId identifica el dispositivo PnP aunque DirectShow no tenga una fuente utilizable.
-            var instanceId = device.InstanceId;
-            // isUsb permite informar el transporte inferido a partir del identificador PnP.
-            var isUsb = instanceId?.StartsWith("USB\\", StringComparison.OrdinalIgnoreCase) == true;
-
-            destination.Add(new LocalCameraDevice
-            {
-                Name = device.FriendlyName.Trim(),
-                DevicePath = instanceId,
-                DiscoverySource = "Windows PnP",
-                PreviewSupported = false,
-                Transport = isUsb ? "USB" : "Local/Virtual",
-                UsbVendorId = ExtractUsbId(instanceId, "vid_"),
-                UsbProductId = ExtractUsbId(instanceId, "pid_"),
-                IsVideoCaptureDevice = true,
-                Status = string.IsNullOrWhiteSpace(device.Status) ? "Disponible" : device.Status
-            });
-        }
-    }
-
-    public async Task<bool> PlayAsync(LocalCameraDevice camera, CancellationToken cancellationToken = default)
+    public Task<bool> StartAsync(LocalCameraDevice camera, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(camera);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        // Una única previsualización local evita conflictos con drivers que no permiten uso compartido.
+        // Cerramos la fuente anterior antes de abrir una nueva para evitar que el driver quede bloqueado.
         Stop();
 
-        if (!camera.PreviewSupported)
-            return false;
+        var backends = new[]
+        {
+            VideoCaptureAPIs.MSMF,
+            VideoCaptureAPIs.DSHOW,
+            VideoCaptureAPIs.ANY
+        };
 
-        // Algunas webcams aceptan solo determinadas combinaciones de resolución/FPS; probamos varias.
-        var sizes = new string?[] { "640x480", "1280x720", null };
-
-        foreach (var size in sizes)
+        foreach (var backend in backends)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            var media = new Media(_libVlc, "dshow://", FromType.FromLocation);
-            // dshow-vdev selecciona exactamente la fuente registrada por DirectShow.
-            media.AddOption($":dshow-vdev=\"{EscapeOption(camera.Name)}\"");
-            // No abrimos audio durante esta etapa para simplificar la negociación del dispositivo.
-            media.AddOption(":dshow-adev=none");
-            // Evitamos diálogos interactivos del driver.
-            media.AddOption(":no-dshow-config");
-            media.AddOption(":no-dshow-tuner");
-            // caching bajo para una previsualización con poca latencia.
-            media.AddOption(":live-caching=100");
-
-            if (!string.IsNullOrWhiteSpace(size))
-            {
-                // dshow-size fuerza una resolución inicial habitual.
-                media.AddOption($":dshow-size={size}");
-                media.AddOption(":dshow-fps=30");
-            }
-
-            var player = new MediaPlayer(_libVlc);
-            var videoOutputCreated = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-            // voutHandler detecta la creación real de una salida de vídeo, no solo el inicio solicitado por Play().
-            EventHandler<MediaPlayerVoutEventArgs>? voutHandler = (_, args) =>
-            {
-                if (args.Count > 0)
-                    videoOutputCreated.TrySetResult(true);
-            };
-
-            // errorHandler marca un fallo de reproducción y evita informar una captura que realmente no arrancó.
-            EventHandler<EventArgs>? errorHandler = (_, _) => videoOutputCreated.TrySetResult(false);
-
-            player.Vout += voutHandler;
-            player.EncounteredError += errorHandler;
+            VideoCapture? candidate = null;
 
             try
             {
-                // started solo indica que LibVLC aceptó el medio; VoutCount confirma que existe salida de vídeo.
-                var started = player.Play(media);
-                if (!started)
-                    videoOutputCreated.TrySetResult(false);
-                else if (player.VoutCount > 0)
-                    videoOutputCreated.TrySetResult(true);
+                // candidate abre el índice de captura asociado a esta fuente local.
+                candidate = new VideoCapture(camera.CaptureIndex, backend);
 
-                var hasVideoOutput = await WaitForVideoOutputAsync(
-                    videoOutputCreated.Task,
-                    cancellationToken);
-
-                if (hasVideoOutput)
+                if (!candidate.IsOpened())
                 {
-                    _currentMedia = media;
-                    _currentPlayer = player;
-                    _currentCameraName = camera.Name;
-                    PlayerChanged?.Invoke(this, _currentPlayer);
-                    return true;
+                    candidate.Dispose();
+                    continue;
                 }
+
+                // firstFrame confirma que el dispositivo entrega imágenes reales, no solo que OpenCV pudo abrirlo.
+                using var firstFrame = new Mat();
+                if (!candidate.Read(firstFrame) || firstFrame.Empty())
+                {
+                    candidate.Dispose();
+                    continue;
+                }
+
+                _capture = candidate;
+                _captureWidth = firstFrame.Width;
+                _captureHeight = firstFrame.Height;
+                _captureFps = NormalizeFps(candidate.Fps);
+
+                // _latestFrame conserva una copia independiente del frame para snapshot y grabación.
+                lock (_sync)
+                {
+                    _latestFrame?.Dispose();
+                    _latestFrame = firstFrame.Clone();
+                }
+
+                // Publicamos el primer frame inmediatamente para que la UI muestre imagen sin esperar otro ciclo.
+                PublishFrame(firstFrame);
+
+                _captureCts = new CancellationTokenSource();
+                _captureTask = Task.Run(() => CaptureLoop(_captureCts.Token), CancellationToken.None);
+
+                // GetBackendName devuelve el backend que realmente consiguió abrir la cámara.
+                LastCaptureDiagnostic =
+                    $"STREAM ACTIVO · Backend: {candidate.GetBackendName()} · " +
+                    $"Resolución: {_captureWidth}x{_captureHeight} · FPS: {_captureFps:0.##}.";
+
+                return Task.FromResult(true);
             }
-            finally
+            catch (Exception ex)
             {
-                player.Vout -= voutHandler;
-                player.EncounteredError -= errorHandler;
-
-                if (!ReferenceEquals(player, _currentPlayer))
-                {
-                    if (player.IsPlaying)
-                        player.Stop();
-
-                    player.Dispose();
-                    media.Dispose();
-                }
+                LastCaptureDiagnostic = $"No se pudo abrir '{camera.Name}' con {backend}: {ex.Message}";
+                candidate?.Dispose();
             }
         }
 
-        PlayerChanged?.Invoke(this, null);
-        return false;
+        LastCaptureDiagnostic =
+            $"No se pudo obtener ningún frame de '{camera.Name}' mediante Media Foundation/DirectShow. " +
+            "Verifique driver, privacidad de cámara y que otra aplicación no esté utilizando el dispositivo.";
+
+        return Task.FromResult(false);
     }
 
-    private static async Task<bool> WaitForVideoOutputAsync(
-        Task<bool> outputTask,
-        CancellationToken cancellationToken)
+    private async Task CaptureLoop(CancellationToken cancellationToken)
     {
-        // timeout evita que un driver que no entrega frames bloquee indefinidamente la aplicación.
-        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(4));
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+        using var frame = new Mat();
 
         try
         {
-            await outputTask.WaitAsync(linkedCts.Token);
-            return outputTask.IsCompletedSuccessfully && outputTask.Result;
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var capture = _capture;
+                if (capture is null)
+                    break;
+
+                // Read obtiene el siguiente frame entregado por el backend nativo de Windows.
+                if (!capture.Read(frame) || frame.Empty())
+                {
+                    await Task.Delay(20, cancellationToken);
+                    continue;
+                }
+
+                lock (_sync)
+                {
+                    // Reemplazamos la copia anterior para que snapshot siempre utilice el frame más reciente.
+                    _latestFrame?.Dispose();
+                    _latestFrame = frame.Clone();
+
+                    // Solo existe writer durante una grabación iniciada explícitamente por el usuario.
+                    _videoWriter?.Write(frame);
+                }
+
+                // Convertimos el frame de OpenCV a BGRA para WPF.
+                PublishFrame(frame);
+                await Task.Delay(1, cancellationToken);
+            }
         }
-        catch (OperationCanceledException) when (
-            timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
-            return false;
+            // Detención normal solicitada por Stop().
+        }
+        catch (Exception ex)
+        {
+            LastCaptureDiagnostic = $"La captura se detuvo por un error: {ex.Message}";
         }
     }
 
-    public void Stop()
+    private void PublishFrame(Mat bgrFrame)
     {
-        if (_currentPlayer is not null)
+        if (bgrFrame.Empty())
+            return;
+
+        using var bgra = new Mat();
+
+        if (bgrFrame.Channels() == 1)
+            Cv2.CvtColor(bgrFrame, bgra, ColorConversionCodes.GRAY2BGRA);
+        else if (bgrFrame.Channels() == 4)
+            bgrFrame.CopyTo(bgra);
+        else
+            Cv2.CvtColor(bgrFrame, bgra, ColorConversionCodes.BGR2BGRA);
+
+        // stride es la cantidad de bytes de una fila BGRA32 completa.
+        var stride = checked(bgra.Width * 4);
+        // byteCount es el tamaño total del buffer que recibirá WPF.
+        var byteCount = checked(stride * bgra.Height);
+        var pixels = new byte[byteCount];
+
+        // Copiamos desde memoria nativa OpenCV a memoria administrada sin exponer Mat fuera de Video.
+        Marshal.Copy(bgra.Data, pixels, 0, byteCount);
+
+        FrameReady?.Invoke(this, new LocalCameraFrame
         {
-            // IsPlaying indica si la previsualización continúa reproduciéndose.
-            if (_currentPlayer.IsPlaying)
-                _currentPlayer.Stop();
-
-            _currentPlayer.Dispose();
-            _currentPlayer = null;
-        }
-
-        _currentMedia?.Dispose();
-        _currentMedia = null;
-        _currentCameraName = null;
-
-        PlayerChanged?.Invoke(this, null);
+            Pixels = pixels,
+            Width = bgra.Width,
+            Height = bgra.Height,
+            Stride = stride,
+            CapturedAtUtc = DateTimeOffset.UtcNow
+        });
     }
 
     public bool TakeSnapshot(string filePath)
     {
-        if (string.IsNullOrWhiteSpace(filePath) || _currentPlayer is null || VideoOutputCount == 0)
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+
+        Mat? snapshot = null;
+        try
+        {
+            lock (_sync)
+            {
+                // Clonamos el frame para poder escribirlo fuera del lock y no detener la captura innecesariamente.
+                if (_latestFrame is null || _latestFrame.Empty())
+                    return false;
+
+                snapshot = _latestFrame.Clone();
+            }
+
+            // PNG conserva el frame sin pérdida y no requiere un encoder multimedia adicional.
+            return Cv2.ImWrite(filePath, snapshot);
+        }
+        catch (Exception ex)
+        {
+            LastCaptureDiagnostic = $"No se pudo guardar el snapshot: {ex.Message}";
             return false;
-
-        // directory garantiza que la carpeta elegida exista antes de pedir el snapshot a LibVLC.
-        var directory = Path.GetDirectoryName(Path.GetFullPath(filePath));
-        if (!string.IsNullOrWhiteSpace(directory))
-            Directory.CreateDirectory(directory);
-
-        // TakeSnapshot usa la primera salida de vídeo y conserva su resolución original con 0x0.
-        return _currentPlayer.TakeSnapshot(0, filePath, 0, 0);
+        }
+        finally
+        {
+            snapshot?.Dispose();
+        }
     }
 
     public bool StartRecording(string filePath)
     {
-        if (string.IsNullOrWhiteSpace(filePath) || string.IsNullOrWhiteSpace(_currentCameraName) || VideoOutputCount == 0)
-            return false;
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
 
-        StopRecording();
-
-        // recordingMedia abre una segunda fuente DirectShow para no interrumpir la previsualización.
-        _recordingMedia = new Media(_libVlc, "dshow://", FromType.FromLocation);
-        _recordingMedia.AddOption($":dshow-vdev=\"{EscapeOption(_currentCameraName)}\"");
-        _recordingMedia.AddOption(":dshow-adev=none");
-        _recordingMedia.AddOption(":dshow-size=640x480");
-        _recordingMedia.AddOption(":dshow-fps=30");
-        _recordingMedia.AddOption(":no-dshow-config");
-        _recordingMedia.AddOption(
-            $":sout=#transcode{{vcodec=h264,vb=2500,acodec=none}}:std{{access=file,mux=mp4,dst=\"{EscapeSoutPath(filePath)}\"}}");
-        _recordingMedia.AddOption(":sout-keep");
-
-        _recordingPlayer = new MediaPlayer(_libVlc);
-        var started = _recordingPlayer.Play(_recordingMedia);
-        if (!started)
+        lock (_sync)
         {
-            StopRecording();
-            return false;
-        }
+            if (_latestFrame is null || _latestFrame.Empty())
+            {
+                LastCaptureDiagnostic = "No se puede grabar porque todavía no existe un frame válido.";
+                return false;
+            }
 
-        return true;
+            try
+            {
+                StopRecordingUnsafe();
+
+                // MJPG en AVI prioriza compatibilidad local y evita requerir un codec H.264 específico del sistema.
+                var writer = new VideoWriter(
+                    filePath,
+                    VideoCaptureAPIs.ANY,
+                    FourCC.MJPG,
+                    NormalizeFps(_captureFps),
+                    new Size(_captureWidth, _captureHeight),
+                    true);
+
+                if (!writer.IsOpened())
+                {
+                    writer.Dispose();
+                    LastCaptureDiagnostic = "OpenCV no pudo inicializar el grabador MJPG/AVI.";
+                    return false;
+                }
+
+                _videoWriter = writer;
+                LastCaptureDiagnostic = $"GRABACIÓN ACTIVA · {filePath}";
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LastCaptureDiagnostic = $"No se pudo iniciar la grabación: {ex.Message}";
+                return false;
+            }
+        }
     }
 
     public void StopRecording()
     {
-        if (_recordingPlayer is not null)
+        lock (_sync)
         {
-            // IsPlaying indica si el reproductor de grabación sigue activo.
-            if (_recordingPlayer.IsPlaying)
-                _recordingPlayer.Stop();
-
-            _recordingPlayer.Dispose();
-            _recordingPlayer = null;
+            StopRecordingUnsafe();
         }
 
-        _recordingMedia?.Dispose();
-        _recordingMedia = null;
+        LastCaptureDiagnostic = "Grabación detenida.";
+    }
+
+    private void StopRecordingUnsafe()
+    {
+        // El writer solo se crea/libera bajo _sync mientras CaptureLoop escribe los frames.
+        _videoWriter?.Release();
+        _videoWriter?.Dispose();
+        _videoWriter = null;
+    }
+
+    public void Stop()
+    {
+        StopRecording();
+
+        var cts = _captureCts;
+        _captureCts = null;
+        cts?.Cancel();
+
+        var capture = _capture;
+        _capture = null;
+
+        capture?.Release();
+        capture?.Dispose();
+        cts?.Dispose();
+
+        lock (_sync)
+        {
+            _latestFrame?.Dispose();
+            _latestFrame = null;
+        }
+
+        _captureTask = null;
+        LastCaptureDiagnostic = "Captura local detenida.";
+        FrameReady?.Invoke(this, new LocalCameraFrame
+        {
+            Pixels = Array.Empty<byte>(),
+            Width = 0,
+            Height = 0,
+            Stride = 0,
+            CapturedAtUtc = DateTimeOffset.UtcNow
+        });
     }
 
     public void Dispose()
     {
-        StopRecording();
         Stop();
-        _libVlc.Dispose();
+    }
+
+    private static double NormalizeFps(double fps)
+    {
+        // Algunos drivers devuelven 0, NaN o cifras fuera de rango; 30 FPS es un valor razonable para el grabador.
+        return double.IsFinite(fps) && fps is >= 1 and <= 120 ? fps : 30;
     }
 
     private static string? ExtractUsbId(string? devicePath, string token)
@@ -438,7 +424,7 @@ public sealed class LocalCameraService : ILocalCameraService
         if (string.IsNullOrWhiteSpace(devicePath))
             return null;
 
-        // match localiza exactamente cuatro dígitos hexadecimales después de VID_ o PID_.
+        // match obtiene los cuatro caracteres hexadecimales posteriores a VID_ o PID_.
         var match = Regex.Match(
             devicePath,
             $@"{Regex.Escape(token)}([0-9a-fA-F]{{4}})",
@@ -446,14 +432,6 @@ public sealed class LocalCameraService : ILocalCameraService
 
         return match.Success ? match.Groups[1].Value.ToUpperInvariant() : null;
     }
-
-    private static string EscapeOption(string value) =>
-        value.Replace("\\", "\\\\", StringComparison.Ordinal)
-             .Replace("\"", "\\\"", StringComparison.Ordinal);
-
-    private static string EscapeSoutPath(string value) =>
-        value.Replace("\\", "/", StringComparison.Ordinal)
-             .Replace("\"", "\\\"", StringComparison.Ordinal);
 
     private static void ReleaseComObject(object instance)
     {
@@ -466,17 +444,7 @@ public sealed class LocalCameraService : ILocalCameraService
         }
         catch
         {
-            // Algunos drivers tienen una liberación COM defectuosa; no propagamos ese error a la aplicación.
+            // Algunos drivers no estándar pueden fallar durante la liberación COM; no bloqueamos la enumeración.
         }
-    }
-
-    /// <summary>DTO mínimo usado exclusivamente para interpretar Get-PnpDevice.</summary>
-    private sealed class PnpCameraDto
-    {
-        public string? FriendlyName { get; set; }
-        public string? InstanceId { get; set; }
-        public string? Class { get; set; }
-        public string? Status { get; set; }
-        public string? Service { get; set; }
     }
 }
