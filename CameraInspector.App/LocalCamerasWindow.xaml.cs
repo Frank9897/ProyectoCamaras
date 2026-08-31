@@ -278,7 +278,7 @@ public partial class LocalCamerasWindow : Window
             RecordButton.IsEnabled = false;
             StatusTextBlock.Text = BuildCameraStatus(
                 _selectedCamera,
-                "Detectando resoluciones y modos de captura que la cámara consigue abrir...");
+                "Preparando opciones de grabación sin interrumpir el preview...");
 
             var capabilities = await Task.Run(() => _cameraService.GetCapabilities(_selectedCamera));
 
@@ -286,7 +286,7 @@ public partial class LocalCamerasWindow : Window
             {
                 StatusTextBlock.Text = BuildCameraStatus(
                     _selectedCamera,
-                    "La cámara no expuso modos de captura verificables para grabación.");
+                    "No hay una configuración de grabación disponible para la captura actual.");
                 return;
             }
 
@@ -306,12 +306,20 @@ public partial class LocalCamerasWindow : Window
             if (!ShowSaveDialog(dialog))
                 return;
 
-            var started = _cameraService.StartRecording(dialog.FileName, capability);
+            StatusTextBlock.Text = BuildCameraStatus(
+                _selectedCamera,
+                $"Aplicando {capability.Width}x{capability.Height} {capability.Format} y preparando grabador...");
+
+            var started = await Task.Run(() => _cameraService.StartRecording(dialog.FileName, capability));
             StatusTextBlock.Text = BuildCameraStatus(
                 _selectedCamera,
                 started
                     ? $"● GRABANDO · {dialog.FileName} · {_cameraService.LastCaptureDiagnostic}"
                     : _cameraService.LastCaptureDiagnostic);
+        }
+        catch (OperationCanceledException)
+        {
+            StatusTextBlock.Text = BuildCameraStatus(_selectedCamera, "Grabación cancelada.");
         }
         catch (Exception ex)
         {
@@ -363,7 +371,7 @@ public partial class LocalCamerasWindow : Window
 
         var description = new TextBlock
         {
-            Text = "Estos modos fueron comprobados contra la cámara antes de mostrarte la lista. La grabación usa el FPS efectivo observado para evitar reproducción acelerada.",
+            Text = "Opciones de trabajo derivadas del modo actual. La cámara solo se reconfigurará para la opción que selecciones.",
             Margin = new Thickness(0, 10, 0, 14),
             TextWrapping = TextWrapping.Wrap,
             Foreground = (Brush)FindResource("TextDimBrush")
