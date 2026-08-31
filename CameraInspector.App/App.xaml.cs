@@ -30,7 +30,7 @@ public partial class App : Application
 
     public App()
     {
-        // Una ventana cerrada debe terminar toda la aplicación, incluso si existe alguna ventana auxiliar oculta.
+        // El cierre de la ventana principal controla explícitamente el fin del proceso completo.
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
         DispatcherUnhandledException += (_, args) =>
@@ -138,7 +138,7 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Solicita el cierre explícito de toda la aplicación. El host se detiene y dispone los servicios singleton.
+    /// Inicia el cierre completo cuando la ventana principal se cierra.
     /// </summary>
     private void BeginApplicationShutdown(int exitCode = 0)
     {
@@ -146,34 +146,28 @@ public partial class App : Application
             return;
 
         _isShuttingDown = true;
-
-        Dispatcher.BeginInvoke(new Action(() =>
-        {
-            if (!ShutdownCalled)
-                Shutdown(exitCode);
-        }));
+        Dispatcher.BeginInvoke(new Action(() => Shutdown(exitCode)));
     }
 
     protected override async void OnExit(ExitEventArgs e)
     {
-        if (_isShuttingDown == false)
-            _isShuttingDown = true;
+        _isShuttingDown = true;
 
-        // Primero cerramos ventanas restantes para liberar controles, VideoViews y recursos nativos.
+        // Cerramos cualquier ventana secundaria todavía visible para liberar controles y recursos nativos.
         for (var index = Windows.Count - 1; index >= 0; index--)
         {
             var window = Windows[index];
             try
             {
-                if (window.IsVisible)
-                    window.Close();
+                window.Close();
             }
             catch
             {
-                // El cierre final debe continuar aunque una ventana ya esté parcialmente destruida.
+                // El cierre del proceso debe continuar aunque una ventana ya esté parcialmente destruida.
             }
         }
 
+        // El Generic Host dispone los singletons y libera sockets, HttpClient y servicios de vídeo.
         if (_host is not null)
         {
             try
