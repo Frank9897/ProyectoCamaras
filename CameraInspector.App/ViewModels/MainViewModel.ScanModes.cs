@@ -1,3 +1,4 @@
+using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
 using CommunityToolkit.Mvvm.Input;
 
