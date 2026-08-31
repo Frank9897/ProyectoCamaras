@@ -116,112 +116,56 @@ public sealed class LocalCameraService : ILocalCameraService
     }
 
     /// <summary>
-    /// Sondea modos de captura comunes y devuelve solamente los que el dispositivo consigue abrir y de los que obtiene un frame.
-    /// El sondeo se realiza bajo demanda, por ejemplo al preparar una grabación, para no penalizar la enumeración inicial.
+    /// Construye opciones de grabación sin abrir/cerrar repetidamente la webcam.
+    /// Se parte del modo actualmente negociado y se agregan resoluciones de trabajo habituales.
+    /// La compatibilidad final se valida únicamente al aplicar la opción elegida.
     /// </summary>
     public IReadOnlyList<LocalCameraCapability> GetCapabilities(LocalCameraDevice camera)
     {
         ArgumentNullException.ThrowIfNull(camera);
 
-        var wasCapturing = IsCapturing;
-        LocalCameraCapability? restoreCapability = null;
-
-        if (wasCapturing)
-        {
-            restoreCapability = new LocalCameraCapability
-            {
-                Width = _captureWidth,
-                Height = _captureHeight,
-                Fps = NormalizeFps(_captureFps),
-                Backend = _captureBackendName,
-                Format = _capturePreferMjpeg ? "MJPG" : "Nativo"
-            };
-            Stop();
-        }
-
         var capabilities = new List<LocalCameraCapability>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var backend = string.IsNullOrWhiteSpace(_captureBackendName) || _captureBackendName == "DESCONOCIDO"
+            ? "DSHOW"
+            : _captureBackendName;
+        var format = _capturePreferMjpeg ? "MJPG" : "Nativo";
+        var currentFps = NormalizeFps(_effectiveCaptureFps);
 
-        var resolutions = new[]
+        var candidates = new (int Width, int Height)[]
         {
-            new Size(3840, 2160),
-            new Size(2560, 1440),
-            new Size(1920, 1080),
-            new Size(1600, 1200),
-            new Size(1280, 1024),
-            new Size(1280, 720),
-            new Size(1024, 768),
-            new Size(800, 600),
-            new Size(640, 480),
-            new Size(320, 240)
+            (_captureWidth, _captureHeight),
+            (1920, 1080),
+            (1280, 720),
+            (1280, 1024),
+            (1024, 768),
+            (800, 600),
+            (640, 480),
+            (320, 240)
         };
 
-        try
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (width, height) in candidates)
         {
-            foreach (var size in resolutions)
-            {
-                foreach (var preferMjpeg in new[] { true, false })
-                {
-                    if (TryProbeCapability(camera, VideoCaptureAPIs.DSHOW, size.Width, size.Height, preferMjpeg, out var actualWidth, out var actualHeight, out var fps))
-                    {
-                        var format = preferMjpeg ? "MJPG" : "Nativo";
-                        var key = $"{actualWidth}x{actualHeight}|{format}";
-                        if (seen.Add(key))
-                        {
-                            capabilities.Add(new LocalCameraCapability
-                            {
-                                Width = actualWidth,
-                                Height = actualHeight,
-                                Fps = NormalizeFps(fps),
-                                Backend = "DSHOW",
-                                Format = format
-                            });
-                        }
-                    }
-                }
-            }
+            if (width <= 0 || height <= 0)
+                continue;
 
-            if (capabilities.Count == 0)
+            var key = $"{width}x{height}|{backend}|{format}";
+            if (!seen.Add(key))
+                continue;
+
+            capabilities.Add(new LocalCameraCapability
             {
-                foreach (var size in resolutions)
-                {
-                    if (TryProbeCapability(camera, VideoCaptureAPIs.MSMF, size.Width, size.Height, false, out var actualWidth, out var actualHeight, out var fps))
-                    {
-                        var key = $"{actualWidth}x{actualHeight}|MSMF";
-                        if (seen.Add(key))
-                        {
-                            capabilities.Add(new LocalCameraCapability
-                            {
-                                Width = actualWidth,
-                                Height = actualHeight,
-                                Fps = NormalizeFps(fps),
-                                Backend = "MSMF",
-                                Format = "Nativo"
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        finally
-        {
-            if (wasCapturing && restoreCapability is not null)
-            {
-                try
-                {
-                    StartAsync(camera, restoreCapability).GetAwaiter().GetResult();
-                }
-                catch
-                {
-                    LastCaptureDiagnostic = "Se detectaron capacidades, pero no se pudo restaurar la vista previa anterior.";
-                }
-            }
+                Width = width,
+                Height = height,
+                Fps = currentFps,
+                Backend = backend,
+                Format = format
+            });
         }
 
         return capabilities
             .OrderByDescending(item => item.Width * (long)item.Height)
-            .ThenByDescending(item => item.Fps)
-            .ThenBy(item => item.Format, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.Width)
             .ToList();
     }
 
@@ -650,8 +594,6 @@ public sealed class LocalCameraService : ILocalCameraService
             {
                 StopRecordingUnsafe();
 
-                // Usamos el FPS efectivo observado. Esto evita que un driver que reporte 60 FPS mientras entrega ~30
-                // produzca una grabación con reproducción acelerada.
                 var recordingFps = NormalizeFps(_effectiveCaptureFps);
                 var writer = new VideoWriter(
                     filePath,
@@ -693,7 +635,6 @@ public sealed class LocalCameraService : ILocalCameraService
                _capturePreferMjpeg == string.Equals(capability.Format, "MJPG", StringComparison.OrdinalIgnoreCase);
     }
 
-    // La cámara actualmente activa se conserva para poder reconfigurarla antes de una grabación.
     private LocalCameraDevice? _selectedCameraForReconfigure;
 
     public void SetActiveCamera(LocalCameraDevice camera)
