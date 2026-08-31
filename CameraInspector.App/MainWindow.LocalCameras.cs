@@ -39,16 +39,13 @@ public partial class MainWindow
         if (sender is not DataGrid dataGrid)
             return;
 
-        // originalSource es el elemento exacto bajo el cursor durante el clic derecho.
         if (e.OriginalSource is not DependencyObject source)
             return;
 
-        // row representa la fila real que contiene el elemento pulsado.
         var row = FindVisualParent<DataGridRow>(source);
         if (row?.Item is null)
             return;
 
-        // SelectedItem sincroniza la fila con MainViewModel.SelectedDevice antes de ejecutar una acción contextual.
         dataGrid.SelectedItem = row.Item;
         row.IsSelected = true;
         dataGrid.Focus();
@@ -57,31 +54,24 @@ public partial class MainWindow
     private static void OnMainWindowLoadedForModules(object sender, RoutedEventArgs e)
     {
         if (sender is MainWindow window)
-        {
-            // BuildModuleNavigation se ejecuta una vez cuando el árbol visual y los nombres del XAML están disponibles.
             window.BuildModuleNavigation();
-        }
     }
 
     /// <summary>
     /// Construye una navegación real de módulos alrededor de la interfaz existente.
-    /// No reubica hijos internos del Grid original; simplemente aloja el Grid completo dentro del módulo RED/IP.
+    /// No reubica hijos internos del Grid original; aloja el Grid completo dentro del módulo RED/IP.
     /// </summary>
     private void BuildModuleNavigation()
     {
         if (_moduleNavigationBuilt)
             return;
 
-        // originalContent conserva la pantalla RED/IP completa creada por XAML y sus bindings existentes.
         if (Content is not Grid originalContent)
             return;
 
         _moduleNavigationBuilt = true;
-
-        // Quitamos temporalmente el Grid de la Window para convertirlo en contenido de la primera pestaña.
         Content = null;
 
-        // modules es el selector principal de las áreas funcionales de Camera Inspector.
         var modules = new TabControl
         {
             Background = (Brush)FindResource("BgBrush"),
@@ -93,17 +83,14 @@ public partial class MainWindow
             VerticalContentAlignment = VerticalAlignment.Stretch
         };
 
-        // redTab contiene toda la funcionalidad de cámaras IP, incluida la nueva consola de modos de discovery.
         var redTab = new TabItem
         {
             Header = "RED / IP",
             Content = CreateNetworkModuleContent(originalContent)
         };
 
-        // usbTab reutiliza el mismo componente UVC que ya demostró captura de vídeo real.
         var usbTab = CreateUsbModuleTab();
 
-        // nvrTab queda preparado para la fase futura sin simular capacidades todavía inexistentes.
         var nvrTab = new TabItem
         {
             Header = "NVR / DVR",
@@ -117,7 +104,6 @@ public partial class MainWindow
         modules.Items.Add(nvrTab);
         modules.SelectedIndex = 0;
 
-        // La navegación pasa a ser el contenido único de la ventana principal.
         Content = modules;
     }
 
@@ -126,18 +112,14 @@ public partial class MainWindow
     /// </summary>
     private Grid CreateNetworkModuleContent(Grid originalContent)
     {
-        // networkModule es el contenedor nuevo que mantiene intacta la vista de red y agrega la navegación superior.
         var networkModule = new Grid
         {
             Background = (Brush)FindResource("BgBrush")
         };
 
-        // La primera fila reserva una franja compacta para las tres estrategias de descubrimiento.
         networkModule.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        // La segunda fila ocupa el espacio restante y contiene la pantalla RED/IP original.
         networkModule.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-        // modePanel agrupa visualmente las opciones para que el técnico pueda distinguir una detección directa de un barrido.
         var modePanel = new Border
         {
             Background = (Brush)FindResource("PanelBrush"),
@@ -148,12 +130,10 @@ public partial class MainWindow
             Padding = new Thickness(12, 8, 12, 8)
         };
 
-        // modeLayout organiza título, descripción y botones sin ocupar una altura innecesaria.
         var modeLayout = new Grid();
         modeLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(210) });
         modeLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-        // titlePanel explica el propósito de esta sección y no mezcla el término "puerto" con "puerto de cámara".
         var titlePanel = new StackPanel
         {
             VerticalAlignment = VerticalAlignment.Center
@@ -175,14 +155,12 @@ public partial class MainWindow
         Grid.SetColumn(titlePanel, 0);
         modeLayout.Children.Add(titlePanel);
 
-        // buttonsPanel mantiene las tres acciones en una sola línea para que sean visibles al abrir la aplicación.
         var buttonsPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
         };
 
-        // directButton inicia únicamente discovery sobre la interfaz seleccionada, sin ping sweep de la subred.
         var directButton = new Button
         {
             Content = "CÁMARA DIRECTA",
@@ -195,7 +173,6 @@ public partial class MainWindow
         directButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("ScanDirectCameraCommand"));
         buttonsPanel.Children.Add(directButton);
 
-        // subnetButton ejecuta el barrido de la subred de la interfaz actualmente seleccionada.
         var subnetButton = new Button
         {
             Content = "ESCANEAR SUBRED",
@@ -208,7 +185,6 @@ public partial class MainWindow
         subnetButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("ScanNetworkSubnetCommand"));
         buttonsPanel.Children.Add(subnetButton);
 
-        // fullButton recorre todas las interfaces activas de forma secuencial y consolida los resultados.
         var fullButton = new Button
         {
             Content = "ESCANEO TOTAL",
@@ -227,16 +203,6 @@ public partial class MainWindow
         Grid.SetRow(modePanel, 0);
         networkModule.Children.Add(modePanel);
 
-        // Renombramos el botón antiguo del layout existente para que no haya dos acciones con el mismo nombre.
-        var legacyScanButton = FindButtonByContent(originalContent, "▣ ESCANEAR RED");
-        if (legacyScanButton is not null)
-        {
-            legacyScanButton.Content = "▣ ESCANEAR SUBRED";
-            legacyScanButton.ToolTip = "Escanear la subred de la interfaz seleccionada.";
-            legacyScanButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("ScanNetworkSubnetCommand"));
-        }
-
-        // originalContent conserva toda la interfaz de resultados, detalle, diagnóstico y video.
         Grid.SetRow(originalContent, 1);
         networkModule.Children.Add(originalContent);
 
@@ -244,36 +210,10 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Busca recursivamente un botón por su texto original dentro de la vista RED/IP.
-    /// </summary>
-    private static Button? FindButtonByContent(DependencyObject root, string content)
-    {
-        // childrenCount representa la cantidad de hijos visuales que debemos recorrer.
-        var childrenCount = VisualTreeHelper.GetChildrenCount(root);
-
-        for (var index = 0; index < childrenCount; index++)
-        {
-            // child es el control actual que estamos inspeccionando.
-            var child = VisualTreeHelper.GetChild(root, index);
-
-            if (child is Button button && string.Equals(button.Content?.ToString(), content, StringComparison.Ordinal))
-                return button;
-
-            // nestedButton permite continuar la búsqueda dentro de contenedores anidados.
-            var nestedButton = FindButtonByContent(child, content);
-            if (nestedButton is not null)
-                return nestedButton;
-        }
-
-        return null;
-    }
-
-    /// <summary>
     /// Crea el módulo USB/UVC usando la instancia singleton del servicio local.
     /// </summary>
     private TabItem CreateUsbModuleTab()
     {
-        // service comparte la misma instancia de captura que usa la ventana local validada.
         var service = App.Services?.GetService<LocalCameraService>();
 
         if (service is null)
@@ -287,13 +227,11 @@ public partial class MainWindow
             };
         }
 
-        // _embeddedLocalCameraWindow construye la vista visual existente sin duplicar su lógica de captura.
         _embeddedLocalCameraWindow = new LocalCamerasWindow(service)
         {
             ShowInTaskbar = false
         };
 
-        // embeddedContent es el árbol visual de la ventana local que ahora será alojado dentro de la pestaña.
         var embeddedContent = _embeddedLocalCameraWindow.Content as UIElement;
         if (embeddedContent is null)
         {
@@ -306,10 +244,7 @@ public partial class MainWindow
             };
         }
 
-        // Quitamos el contenido de la Window secundaria antes de asignarlo al TabItem.
         _embeddedLocalCameraWindow.Content = null;
-
-        // RefreshEmbedded fuerza la enumeración porque la ventana secundaria ya no recibirá su propio evento Loaded.
         _embeddedLocalCameraWindow.RefreshEmbedded();
 
         return new TabItem
@@ -324,8 +259,6 @@ public partial class MainWindow
     /// </summary>
     private Border CreatePendingModuleContent(string title, string description)
     {
-        // title es el título del módulo que se muestra al técnico.
-        // description explica el alcance futuro sin presentar funciones aún no implementadas.
         return new Border
         {
             Background = (Brush)FindResource("PanelBrush"),
@@ -360,7 +293,6 @@ public partial class MainWindow
     private static T? FindVisualParent<T>(DependencyObject? element)
         where T : DependencyObject
     {
-        // current asciende por el árbol visual hasta encontrar el contenedor solicitado.
         var current = element;
         while (current is not null)
         {
