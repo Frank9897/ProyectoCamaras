@@ -14,19 +14,12 @@ namespace CameraInspector.App;
 /// </summary>
 public partial class LocalCamerasWindow : Window
 {
-    // _cameraService enumera, captura frames, genera snapshots y controla grabaciones locales.
     private readonly LocalCameraService _cameraService;
-    // _selectedCamera conserva el dispositivo actualmente seleccionado en la interfaz.
     private LocalCameraDevice? _selectedCamera;
-    // _previewBitmap es un único bitmap reutilizado durante toda la captura mientras no cambie la resolución.
     private WriteableBitmap? _previewBitmap;
-    // _pendingFrame conserva solamente el último frame recibido que todavía no se ha pintado.
     private LocalCameraFrame? _pendingFrame;
-    // _frameDispatchPending evita llenar Dispatcher con decenas de operaciones si la UI se retrasa.
     private bool _frameDispatchPending;
-    // _frameSync protege el buffer pendiente entre el hilo de captura y el hilo de interfaz.
     private readonly object _frameSync = new();
-    // _displayedFrames cuenta los frames que realmente llegaron a WriteableBitmap.
     private long _displayedFrames;
 
     public LocalCamerasWindow(LocalCameraService cameraService)
@@ -42,6 +35,7 @@ public partial class LocalCamerasWindow : Window
         Closed += (_, _) =>
         {
             _cameraService.FrameReady -= CameraService_FrameReady;
+            _cameraService.StopRecording();
             _cameraService.Stop();
             ClearPendingFrame();
         };
@@ -63,7 +57,6 @@ public partial class LocalCamerasWindow : Window
     {
         try
         {
-            // cameras contiene las fuentes locales que Windows expone mediante DirectShow.
             var cameras = _cameraService.GetAvailableCameras();
             CameraList.ItemsSource = cameras;
 
@@ -78,7 +71,6 @@ public partial class LocalCamerasWindow : Window
                 return;
             }
 
-            // Conservamos el dispositivo previamente seleccionado si todavía existe; de lo contrario usamos el primero.
             var previousName = _selectedCamera?.Name;
             var selected = cameras.FirstOrDefault(item => string.Equals(item.Name, previousName, StringComparison.OrdinalIgnoreCase))
                            ?? cameras[0];
@@ -98,7 +90,6 @@ public partial class LocalCamerasWindow : Window
 
     private async void CameraList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        // camera representa la cámara local elegida por el técnico.
         if (CameraList.SelectedItem is not LocalCameraDevice camera)
         {
             _selectedCamera = null;
@@ -109,6 +100,7 @@ public partial class LocalCamerasWindow : Window
             return;
         }
 
+        _cameraService.StopRecording();
         _selectedCamera = camera;
         SelectedCameraNameText.Text = camera.Name;
         CaptureStateTextBlock.Text = "ABRIENDO";
@@ -123,7 +115,6 @@ public partial class LocalCamerasWindow : Window
 
         try
         {
-            // started solo significa que OpenCV recibió al menos un frame; el estado visual se confirma al pintarlo.
             var started = await _cameraService.StartAsync(camera);
             if (!started)
             {
@@ -135,7 +126,6 @@ public partial class LocalCamerasWindow : Window
                 return;
             }
 
-            // No marcamos STREAM ACTIVO aquí: RenderPendingFrame lo hará después de pintar un frame válido.
             CaptureStateTextBlock.Text = "RECIBIENDO";
             NoVideoTextBlock.Visibility = Visibility.Visible;
             NoVideoTextBlock.Text = "PINTANDO PREVIEW…";
@@ -163,10 +153,8 @@ public partial class LocalCamerasWindow : Window
 
         lock (_frameSync)
         {
-            // Solo conservamos el último frame; cualquier frame intermedio se descarta si la UI está ocupada.
             _pendingFrame = frame;
 
-            // Un solo callback pendiente basta para drenar el último frame disponible.
             if (!_frameDispatchPending)
             {
                 _frameDispatchPending = true;
@@ -177,7 +165,6 @@ public partial class LocalCamerasWindow : Window
         if (!scheduleRender)
             return;
 
-        // BeginInvoke nunca bloquea el hilo de captura esperando a que WPF termine de pintar.
         Dispatcher.BeginInvoke(
             new Action(RenderPendingFrame),
             System.Windows.Threading.DispatcherPriority.Render);
@@ -189,7 +176,6 @@ public partial class LocalCamerasWindow : Window
 
         lock (_frameSync)
         {
-            // Recuperamos el frame más reciente y liberamos el flag para permitir que lleguen nuevos frames.
             frame = _pendingFrame;
             _pendingFrame = null;
             _frameDispatchPending = false;
@@ -207,12 +193,10 @@ public partial class LocalCamerasWindow : Window
             return;
         }
 
-        // El mismo WriteableBitmap recibe los frames consecutivos, evitando crear objetos WPF a cada captura.
         if (_previewBitmap is null ||
             _previewBitmap.PixelWidth != frame.Width ||
             _previewBitmap.PixelHeight != frame.Height)
         {
-            // _previewBitmap se crea mutable porque WritePixels necesita modificar su buffer posteriormente.
             _previewBitmap = new WriteableBitmap(
                 frame.Width,
                 frame.Height,
@@ -223,7 +207,6 @@ public partial class LocalCamerasWindow : Window
             VideoImage.Source = _previewBitmap;
         }
 
-        // WritePixels copia únicamente el último frame al buffer ya existente.
         _previewBitmap.WritePixels(
             new Int32Rect(0, 0, frame.Width, frame.Height),
             frame.Pixels,
@@ -234,7 +217,6 @@ public partial class LocalCamerasWindow : Window
         CaptureStateTextBlock.Text = "STREAM ACTIVO";
         NoVideoTextBlock.Visibility = Visibility.Collapsed;
 
-        // Solo actualizamos texto cada 30 frames para no provocar repintados de texto innecesarios.
         if (_displayedFrames == 1 || _displayedFrames % 30 == 0)
         {
             StatusTextBlock.Text = BuildCameraStatus(
@@ -242,7 +224,6 @@ public partial class LocalCamerasWindow : Window
                 $"{_cameraService.LastCaptureDiagnostic} · Frames pintados en WPF: {_displayedFrames}.");
         }
 
-        // Si llegó otro frame mientras renderizábamos, dejamos un único callback adicional pendiente.
         lock (_frameSync)
         {
             if (_pendingFrame is not null && !_frameDispatchPending)
@@ -260,22 +241,35 @@ public partial class LocalCamerasWindow : Window
         if (!_cameraService.IsCapturing)
             return;
 
-        // dialog permite guardar el último frame completo como PNG sin manejar rutas manualmente.
         var dialog = new SaveFileDialog
         {
             Title = "Guardar snapshot de cámara local",
             Filter = "Imagen PNG (*.png)|*.png",
             FileName = $"CameraInspector_{DateTime.Now:yyyyMMdd_HHmmss}.png",
-            AddExtension = true
+            AddExtension = true,
+            OverwritePrompt = true
         };
 
-        if (dialog.ShowDialog(this) != true)
+        if (!ShowSaveDialog(dialog))
             return;
 
-        var saved = _cameraService.TakeSnapshot(dialog.FileName);
-        StatusTextBlock.Text = BuildCameraStatus(
-            _selectedCamera,
-            saved ? $"Snapshot guardado: {dialog.FileName}" : _cameraService.LastCaptureDiagnostic);
+        try
+        {
+            var saved = _cameraService.TakeSnapshot(dialog.FileName);
+            StatusTextBlock.Text = BuildCameraStatus(
+                _selectedCamera,
+                saved ? $"Snapshot guardado: {dialog.FileName}" : _cameraService.LastCaptureDiagnostic);
+        }
+        catch (Exception ex)
+        {
+            StatusTextBlock.Text = BuildCameraStatus(_selectedCamera, $"Error al guardar snapshot: {ex.Message}");
+            MessageBox.Show(
+                this is { IsVisible: true } ? this : Application.Current.MainWindow,
+                $"No se pudo guardar el snapshot:\n\n{ex.Message}",
+                "Camera Inspector — Snapshot",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
     }
 
     private void RecordButton_Click(object sender, RoutedEventArgs e)
@@ -283,23 +277,50 @@ public partial class LocalCamerasWindow : Window
         if (!_cameraService.IsCapturing || _cameraService.IsRecording)
             return;
 
-        // La grabación local se almacena en AVI/MJPEG para priorizar compatibilidad.
         var dialog = new SaveFileDialog
         {
             Title = "Guardar grabación de cámara local",
             Filter = "Video AVI MJPG (*.avi)|*.avi",
             FileName = $"CameraInspector_{DateTime.Now:yyyyMMdd_HHmmss}.avi",
-            AddExtension = true
+            AddExtension = true,
+            OverwritePrompt = true
         };
 
-        if (dialog.ShowDialog(this) != true)
+        if (!ShowSaveDialog(dialog))
             return;
 
-        var started = _cameraService.StartRecording(dialog.FileName);
-        StatusTextBlock.Text = BuildCameraStatus(
-            _selectedCamera,
-            started ? $"● GRABANDO · {dialog.FileName}" : _cameraService.LastCaptureDiagnostic);
-        UpdateActionButtons(_selectedCamera);
+        try
+        {
+            var started = _cameraService.StartRecording(dialog.FileName);
+            StatusTextBlock.Text = BuildCameraStatus(
+                _selectedCamera,
+                started ? $"● GRABANDO · {dialog.FileName}" : _cameraService.LastCaptureDiagnostic);
+            UpdateActionButtons(_selectedCamera);
+        }
+        catch (Exception ex)
+        {
+            StatusTextBlock.Text = BuildCameraStatus(_selectedCamera, $"Error al iniciar grabación: {ex.Message}");
+            MessageBox.Show(
+                this is { IsVisible: true } ? this : Application.Current.MainWindow,
+                $"No se pudo iniciar la grabación:\n\n{ex.Message}",
+                "Camera Inspector — Grabación",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    private bool ShowSaveDialog(SaveFileDialog dialog)
+    {
+        // Una LocalCamerasWindow embebida no tiene HWND propio visible y no puede ser owner de CommonDialog.
+        // En ese caso usamos MainWindow; cuando la vista es una ventana real y visible, usamos this.
+        if (IsVisible && IsLoaded)
+            return dialog.ShowDialog(this) == true;
+
+        if (Application.Current.MainWindow is { IsLoaded: true, IsVisible: true } owner)
+            return dialog.ShowDialog(owner) == true;
+
+        // Último fallback para contextos de arranque/cierre donde no existe una Window válida como owner.
+        return dialog.ShowDialog() == true;
     }
 
     private void StopRecordButton_Click(object sender, RoutedEventArgs e)
@@ -311,6 +332,7 @@ public partial class LocalCamerasWindow : Window
 
     private void StopButton_Click(object sender, RoutedEventArgs e)
     {
+        _cameraService.StopRecording();
         _cameraService.Stop();
         ClearPreview();
         CaptureStateTextBlock.Text = "DETENIDO";
@@ -323,7 +345,6 @@ public partial class LocalCamerasWindow : Window
         if (_selectedCamera is null)
             return;
 
-        // info contiene únicamente metadatos del dispositivo; nunca incluye credenciales.
         var info = new StringBuilder()
             .AppendLine($"Nombre: {_selectedCamera.Name}")
             .AppendLine($"Origen: {_selectedCamera.DiscoverySource}")
@@ -339,8 +360,10 @@ public partial class LocalCamerasWindow : Window
             .AppendLine(_cameraService.LastCaptureDiagnostic)
             .ToString();
 
+        var owner = this is { IsVisible: true } ? this : Application.Current.MainWindow;
+
         MessageBox.Show(
-            this,
+            owner,
             info,
             "Camera Inspector — Información de cámara local",
             MessageBoxButton.OK,
@@ -349,7 +372,6 @@ public partial class LocalCamerasWindow : Window
 
     private void UpdateActionButtons(LocalCameraDevice? camera)
     {
-        // captureActive exige una cámara actualmente abierta; enumerar el dispositivo no habilita captura.
         var captureActive = camera is not null && _cameraService.IsCapturing;
         SnapshotButton.IsEnabled = captureActive;
         RecordButton.IsEnabled = captureActive && !_cameraService.IsRecording;
@@ -370,7 +392,6 @@ public partial class LocalCamerasWindow : Window
     {
         lock (_frameSync)
         {
-            // Reemplazar por null descarta cualquier frame que aún no haya llegado al renderizador.
             _pendingFrame = null;
             _frameDispatchPending = false;
         }
@@ -378,7 +399,6 @@ public partial class LocalCamerasWindow : Window
 
     private void ResetPreviewBitmap()
     {
-        // Liberamos la referencia al bitmap anterior al cambiar de cámara o detener la vista.
         _previewBitmap = null;
         _displayedFrames = 0;
         VideoImage.Source = null;
