@@ -2,6 +2,7 @@ using Microsoft.Win32;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using CameraInspector.Core.Models;
 using CameraInspector.Video;
@@ -43,13 +44,7 @@ public partial class LocalCamerasWindow : Window
         UpdateActionButtons(null);
     }
 
-    /// <summary>
-    /// Actualiza el listado cuando esta misma vista está embebida dentro de una pestaña de MainWindow.
-    /// </summary>
-    public void RefreshEmbedded()
-    {
-        RefreshCameras();
-    }
+    public void RefreshEmbedded() => RefreshCameras();
 
     private void RefreshButton_Click(object sender, RoutedEventArgs e) => RefreshCameras();
 
@@ -72,8 +67,8 @@ public partial class LocalCamerasWindow : Window
             }
 
             var previousName = _selectedCamera?.Name;
-            var selected = cameras.FirstOrDefault(item => string.Equals(item.Name, previousName, StringComparison.OrdinalIgnoreCase))
-                           ?? cameras[0];
+            var selected = cameras.FirstOrDefault(item =>
+                string.Equals(item.Name, previousName, StringComparison.OrdinalIgnoreCase)) ?? cameras[0];
             CameraList.SelectedItem = selected;
 
             StatusTextBlock.Text =
@@ -101,6 +96,7 @@ public partial class LocalCamerasWindow : Window
         }
 
         _cameraService.StopRecording();
+        _cameraService.SetActiveCamera(camera);
         _selectedCamera = camera;
         SelectedCameraNameText.Text = camera.Name;
         CaptureStateTextBlock.Text = "ABRIENDO";
@@ -202,7 +198,7 @@ public partial class LocalCamerasWindow : Window
                 frame.Height,
                 96,
                 96,
-                System.Windows.Media.PixelFormats.Bgra32,
+                PixelFormats.Bgra32,
                 null);
             VideoImage.Source = _previewBitmap;
         }
@@ -244,7 +240,7 @@ public partial class LocalCamerasWindow : Window
         var dialog = new SaveFileDialog
         {
             Title = "Guardar snapshot de cámara local",
-            Filter = "Imagen PNG (*.png)|*.png",
+            Filter = "Imagen PNG (*.png)|*.png|Imagen JPEG (*.jpg)|*.jpg",
             FileName = $"CameraInspector_{DateTime.Now:yyyyMMdd_HHmmss}.png",
             AddExtension = true,
             OverwritePrompt = true
@@ -272,34 +268,54 @@ public partial class LocalCamerasWindow : Window
         }
     }
 
-    private void RecordButton_Click(object sender, RoutedEventArgs e)
+    private async void RecordButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!_cameraService.IsCapturing || _cameraService.IsRecording)
-            return;
-
-        var dialog = new SaveFileDialog
-        {
-            Title = "Guardar grabación de cámara local",
-            Filter = "Video AVI MJPG (*.avi)|*.avi",
-            FileName = $"CameraInspector_{DateTime.Now:yyyyMMdd_HHmmss}.avi",
-            AddExtension = true,
-            OverwritePrompt = true
-        };
-
-        if (!ShowSaveDialog(dialog))
+        if (_selectedCamera is null || !_cameraService.IsCapturing || _cameraService.IsRecording)
             return;
 
         try
         {
-            var started = _cameraService.StartRecording(dialog.FileName);
+            RecordButton.IsEnabled = false;
             StatusTextBlock.Text = BuildCameraStatus(
                 _selectedCamera,
-                started ? $"● GRABANDO · {dialog.FileName}" : _cameraService.LastCaptureDiagnostic);
-            UpdateActionButtons(_selectedCamera);
+                "Detectando resoluciones y modos de captura que la cámara consigue abrir...");
+
+            var capabilities = await Task.Run(() => _cameraService.GetCapabilities(_selectedCamera));
+
+            if (capabilities.Count == 0)
+            {
+                StatusTextBlock.Text = BuildCameraStatus(
+                    _selectedCamera,
+                    "La cámara no expuso modos de captura verificables para grabación.");
+                return;
+            }
+
+            var capability = ShowRecordingOptions(capabilities);
+            if (capability is null)
+                return;
+
+            var dialog = new SaveFileDialog
+            {
+                Title = "Guardar grabación de cámara local",
+                Filter = "Video AVI MJPG (*.avi)|*.avi",
+                FileName = $"CameraInspector_{DateTime.Now:yyyyMMdd_HHmmss}_{capability.Width}x{capability.Height}.avi",
+                AddExtension = true,
+                OverwritePrompt = true
+            };
+
+            if (!ShowSaveDialog(dialog))
+                return;
+
+            var started = _cameraService.StartRecording(dialog.FileName, capability);
+            StatusTextBlock.Text = BuildCameraStatus(
+                _selectedCamera,
+                started
+                    ? $"● GRABANDO · {dialog.FileName} · {_cameraService.LastCaptureDiagnostic}"
+                    : _cameraService.LastCaptureDiagnostic);
         }
         catch (Exception ex)
         {
-            StatusTextBlock.Text = BuildCameraStatus(_selectedCamera, $"Error al iniciar grabación: {ex.Message}");
+            StatusTextBlock.Text = BuildCameraStatus(_selectedCamera, $"Error al preparar la grabación: {ex.Message}");
             MessageBox.Show(
                 this is { IsVisible: true } ? this : Application.Current.MainWindow,
                 $"No se pudo iniciar la grabación:\n\n{ex.Message}",
@@ -307,19 +323,113 @@ public partial class LocalCamerasWindow : Window
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
+        finally
+        {
+            UpdateActionButtons(_selectedCamera);
+        }
+    }
+
+    private LocalCameraCapability? ShowRecordingOptions(IReadOnlyList<LocalCameraCapability> capabilities)
+    {
+        var owner = IsVisible && IsLoaded ? this : Application.Current.MainWindow;
+        var window = new Window
+        {
+            Title = "Camera Inspector — Calidad de grabación",
+            Width = 560,
+            Height = 330,
+            MinWidth = 500,
+            MinHeight = 300,
+            ResizeMode = ResizeMode.NoResize,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = (Brush)FindResource("BgBrush"),
+            Foreground = (Brush)FindResource("TextBrush"),
+            Owner = owner
+        };
+
+        var root = new Grid { Margin = new Thickness(18) };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        root.Children.Add(new TextBlock
+        {
+            Text = "CALIDAD DE GRABACIÓN",
+            FontFamily = new FontFamily("Consolas"),
+            FontSize = 16,
+            FontWeight = FontWeights.Bold,
+            Foreground = (Brush)FindResource("AccentBrush")
+        });
+
+        var description = new TextBlock
+        {
+            Text = "Estos modos fueron comprobados contra la cámara antes de mostrarte la lista. La grabación usa el FPS efectivo observado para evitar reproducción acelerada.",
+            Margin = new Thickness(0, 10, 0, 14),
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = (Brush)FindResource("TextDimBrush")
+        };
+        Grid.SetRow(description, 1);
+        root.Children.Add(description);
+
+        var combo = new ComboBox
+        {
+            ItemsSource = capabilities,
+            SelectedIndex = 0,
+            Height = 34,
+            Padding = new Thickness(8, 5, 8, 5)
+        };
+        Grid.SetRow(combo, 2);
+        root.Children.Add(combo);
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom
+        };
+
+        LocalCameraCapability? result = null;
+        var cancelButton = new Button
+        {
+            Content = "CANCELAR",
+            Width = 105,
+            Height = 34,
+            Margin = new Thickness(0, 0, 8, 0),
+            Style = (Style)FindResource("SecondaryButton")
+        };
+        cancelButton.Click += (_, _) => window.DialogResult = false;
+
+        var acceptButton = new Button
+        {
+            Content = "CONTINUAR",
+            Width = 115,
+            Height = 34,
+            Style = (Style)FindResource("PrimaryButton")
+        };
+        acceptButton.Click += (_, _) =>
+        {
+            result = combo.SelectedItem as LocalCameraCapability;
+            window.DialogResult = result is not null;
+        };
+
+        buttons.Children.Add(cancelButton);
+        buttons.Children.Add(acceptButton);
+        Grid.SetRow(buttons, 3);
+        root.Children.Add(buttons);
+        window.Content = root;
+
+        window.ShowDialog();
+        return result;
     }
 
     private bool ShowSaveDialog(SaveFileDialog dialog)
     {
-        // Una LocalCamerasWindow embebida no tiene HWND propio visible y no puede ser owner de CommonDialog.
-        // En ese caso usamos MainWindow; cuando la vista es una ventana real y visible, usamos this.
         if (IsVisible && IsLoaded)
             return dialog.ShowDialog(this) == true;
 
         if (Application.Current.MainWindow is { IsLoaded: true, IsVisible: true } owner)
             return dialog.ShowDialog(owner) == true;
 
-        // Último fallback para contextos de arranque/cierre donde no existe una Window válida como owner.
         return dialog.ShowDialog() == true;
     }
 
@@ -361,7 +471,6 @@ public partial class LocalCamerasWindow : Window
             .ToString();
 
         var owner = this is { IsVisible: true } ? this : Application.Current.MainWindow;
-
         MessageBox.Show(
             owner,
             info,
