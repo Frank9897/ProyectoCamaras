@@ -12,6 +12,13 @@
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <FileVersion>1.0.0.0</FileVersion>
     <InformationalVersion>1.0.0</InformationalVersion>
+    <!-- Publicación portable Windows x64. LibVLC requiere sus archivos nativos y plugins. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <PublishTrimmed>false</PublishTrimmed>
     <!-- El icono se agregara cuando incorporemos el recurso definitivo de la aplicacion. -->
     <!-- El manifiesto fuerza elevacion mediante UAC para operaciones administrativas. -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
