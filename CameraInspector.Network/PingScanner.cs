@@ -6,8 +6,8 @@ using CameraInspector.Core.Interfaces;
 namespace CameraInspector.Network;
 
 /// <summary>
-/// Ping sweep con concurrencia acotada por SemaphoreSlim: importante para no saturar
-/// la NIC del técnico ni disparar alertas de escaneo en switches administrados.
+/// Ping sweep con paralelismo acotado y ejecución por lotes.
+/// Evita crear una Task independiente para cada IP y reduce el consumo de memoria en redes grandes.
 /// </summary>
 public sealed class PingScanner : IPingScanner
 {
@@ -17,32 +17,71 @@ public sealed class PingScanner : IPingScanner
         int maxParallelism = 64,
         CancellationToken cancellationToken = default)
     {
-        var found = new ConcurrentBag<IPAddress>();
-        using var semaphore = new SemaphoreSlim(maxParallelism);
+        ArgumentNullException.ThrowIfNull(candidateAddresses);
 
-        var tasks = candidateAddresses.Select(async ip =>
+        var found = new ConcurrentBag<IPAddress>();
+        var addresses = candidateAddresses as IReadOnlyCollection<IPAddress>
+            ?? candidateAddresses.ToArray();
+
+        if (addresses.Count == 0)
+            return Array.Empty<IPAddress>();
+
+        timeoutMs = Math.Clamp(timeoutMs, 100, 2000);
+        maxParallelism = Math.Clamp(maxParallelism, 1, 64);
+
+        var options = new ParallelOptions
         {
-            await semaphore.WaitAsync(cancellationToken);
+            CancellationToken = cancellationToken,
+            MaxDegreeOfParallelism = maxParallelism
+        };
+
+        await Parallel.ForEachAsync(addresses, options, async (ip, token) =>
+        {
             try
             {
                 using var ping = new Ping();
                 var reply = await ping.SendPingAsync(ip, timeoutMs);
                 if (reply.Status == IPStatus.Success)
-                {
                     found.Add(ip);
-                }
             }
             catch (PingException)
             {
-                // IP inalcanzable o adaptador sin ruta: se ignora, no es un error de la app.
+                // IP inalcanzable o adaptador sin ruta: se ignora.
             }
-            finally
+            catch (InvalidOperationException)
             {
-                semaphore.Release();
+                // El adaptador puede desaparecer durante un escaneo; una dirección no debe abortar todo el pipeline.
             }
         });
 
-        await Task.WhenAll(tasks);
-        return found.ToList();
+        return found
+            .Distinct()
+            .OrderBy(ip => ip.GetAddressBytes(), ByteArrayComparer.Instance)
+            .ToList();
+    }
+
+    private sealed class ByteArrayComparer : IComparer<byte[]>
+    {
+        public static readonly ByteArrayComparer Instance = new();
+
+        public int Compare(byte[]? x, byte[]? y)
+        {
+            if (ReferenceEquals(x, y))
+                return 0;
+            if (x is null)
+                return -1;
+            if (y is null)
+                return 1;
+
+            var length = Math.Min(x.Length, y.Length);
+            for (var i = 0; i < length; i++)
+            {
+                var comparison = x[i].CompareTo(y[i]);
+                if (comparison != 0)
+                    return comparison;
+            }
+
+            return x.Length.CompareTo(y.Length);
+        }
     }
 }
