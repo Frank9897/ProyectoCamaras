@@ -1,0 +1,46 @@
+name: Build Camera Inspector Portable
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  publish-win-x64:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore
+        run: dotnet restore CameraInspector.sln
+
+      - name: Build tests
+        run: dotnet test CameraInspector.Tests/CameraInspector.Tests.csproj --configuration Release --no-restore
+
+      - name: Publish portable EXE
+        run: >-
+          dotnet publish CameraInspector.App/CameraInspector.App.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --no-restore
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:PublishTrimmed=false
+          -p:DebugType=none
+          -p:DebugSymbols=false
+          --output publish/win-x64
+
+      - name: Upload portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: CameraInspector-win-x64
+          path: publish/win-x64/CameraInspector.exe
+          if-no-files-found: error
