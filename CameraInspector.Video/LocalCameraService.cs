@@ -15,47 +15,31 @@ namespace CameraInspector.Video;
 /// </summary>
 public sealed class LocalCameraService : ILocalCameraService
 {
-    // _sync protege el último frame y el grabador cuando el hilo de captura y la UI acceden simultáneamente.
     private readonly object _sync = new();
-    // _capture mantiene abierto el dispositivo de vídeo seleccionado.
     private VideoCapture? _capture;
-    // _captureCts permite detener limpiamente el bucle de captura.
     private CancellationTokenSource? _captureCts;
-    // _captureTask representa el trabajo de lectura de frames en segundo plano.
     private Task? _captureTask;
-    // _latestFrame conserva una copia reciente para snapshot y para la grabación.
     private Mat? _latestFrame;
-    // _videoWriter solo existe mientras el usuario mantiene activa una grabación.
     private VideoWriter? _videoWriter;
-    // _captureFps guarda la frecuencia que el driver expone para el stream.
+
     private double _captureFps = 30;
-    // _captureWidth contiene el ancho nativo del stream.
+    private double _effectiveCaptureFps = 30;
     private int _captureWidth;
-    // _captureHeight contiene el alto nativo del stream.
     private int _captureHeight;
-    // _framesCaptured acumula la cantidad de frames realmente recibidos del dispositivo.
+    private string _captureBackendName = "DESCONOCIDO";
+    private bool _capturePreferMjpeg;
     private long _framesCaptured;
-    // _lastFrameAtUtc identifica cuándo llegó el último frame válido.
     private DateTimeOffset _lastFrameAtUtc = DateTimeOffset.MinValue;
 
-    // PreviewTargetFps limita las actualizaciones visuales; la cámara puede seguir capturando a su FPS nativo.
     private const int PreviewTargetFps = 20;
-    // PreviewMaxWidth evita convertir imágenes gigantes cuando solo necesitamos una vista previa técnica.
     private const int PreviewMaxWidth = 960;
 
-    /// <summary>Emite frames BGRA destinados a la vista previa WPF.</summary>
     public event EventHandler<LocalCameraFrame>? FrameReady;
 
-    /// <summary>Diagnóstico de enumeración de cámaras locales.</summary>
     public string LastEnumerationDiagnostic { get; private set; } = "Todavía no se ejecutó una enumeración local.";
-
-    /// <summary>Diagnóstico de la última operación de captura.</summary>
     public string LastCaptureDiagnostic { get; private set; } = "Todavía no se abrió una cámara local.";
-
-    /// <summary>Indica si existe una cámara local abierta.</summary>
     public bool IsCapturing => _capture is not null;
 
-    /// <summary>Indica si actualmente se guardan frames en un archivo local.</summary>
     public bool IsRecording
     {
         get
@@ -72,7 +56,6 @@ public sealed class LocalCameraService : ILocalCameraService
 
         try
         {
-            // DirectShow proporciona nombres, DevicePath y una enumeración útil para mapear el dispositivo al índice de OpenCV.
             var devices = DsDevice.GetDevicesOfCat(FilterCategory.VideoInputDevice);
 
             for (var index = 0; index < devices.Length; index++)
@@ -80,27 +63,18 @@ public sealed class LocalCameraService : ILocalCameraService
                 var device = devices[index];
                 try
                 {
-                    // name es el nombre amigable que Windows muestra al usuario.
                     var name = device.Name;
-                    // devicePath conserva la identidad técnica para diagnóstico y matching futuro.
                     var devicePath = device.DevicePath;
-                    // monikerString conserva el identificador COM de DirectShow.
                     var monikerString = device.Mon?.ToString();
 
                     if (string.IsNullOrWhiteSpace(name))
                         continue;
 
-                    // transport clasifica el dispositivo como USB o Local/Virtual según su DevicePath.
                     var transport = string.IsNullOrWhiteSpace(devicePath)
                         ? "Local/Virtual"
                         : devicePath.Contains("usb#vid_", StringComparison.OrdinalIgnoreCase)
                             ? "USB"
                             : "Local/Virtual";
-
-                    // usbVendorId identifica el fabricante USB a partir de VID_.
-                    var usbVendorId = ExtractUsbId(devicePath, "vid_");
-                    // usbProductId identifica el producto USB a partir de PID_.
-                    var usbProductId = ExtractUsbId(devicePath, "pid_");
 
                     cameras.Add(new LocalCameraDevice
                     {
@@ -111,27 +85,24 @@ public sealed class LocalCameraService : ILocalCameraService
                         PreviewSupported = true,
                         CaptureIndex = index,
                         Transport = transport,
-                        UsbVendorId = usbVendorId,
-                        UsbProductId = usbProductId,
+                        UsbVendorId = ExtractUsbId(devicePath, "vid_"),
+                        UsbProductId = ExtractUsbId(devicePath, "pid_"),
                         IsVideoCaptureDevice = true,
                         Status = "Disponible"
                     });
                 }
                 catch (Exception ex)
                 {
-                    // Un controlador defectuoso no debe impedir enumerar los dispositivos restantes.
                     diagnostics.Add($"DirectShow [{device.Name}]: {ex.Message}");
                 }
                 finally
                 {
-                    // Liberamos el objeto COM una vez copiadas todas las propiedades necesarias.
                     ReleaseComObject(device);
                 }
             }
         }
         catch (Exception ex)
         {
-            // Guardamos la excepción para explicar al técnico por qué la lista puede estar vacía.
             diagnostics.Add($"DirectShow: {ex.Message}");
         }
 
@@ -141,8 +112,116 @@ public sealed class LocalCameraService : ILocalCameraService
                 ? "Windows no devolvió fuentes de captura de vídeo locales."
                 : string.Join(" | ", diagnostics);
 
-        return cameras
-            .OrderBy(camera => camera.Name, StringComparer.OrdinalIgnoreCase)
+        return cameras.OrderBy(camera => camera.Name, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>
+    /// Sondea modos de captura comunes y devuelve solamente los que el dispositivo consigue abrir y de los que obtiene un frame.
+    /// El sondeo se realiza bajo demanda, por ejemplo al preparar una grabación, para no penalizar la enumeración inicial.
+    /// </summary>
+    public IReadOnlyList<LocalCameraCapability> GetCapabilities(LocalCameraDevice camera)
+    {
+        ArgumentNullException.ThrowIfNull(camera);
+
+        var wasCapturing = IsCapturing;
+        LocalCameraCapability? restoreCapability = null;
+
+        if (wasCapturing)
+        {
+            restoreCapability = new LocalCameraCapability
+            {
+                Width = _captureWidth,
+                Height = _captureHeight,
+                Fps = NormalizeFps(_captureFps),
+                Backend = _captureBackendName,
+                Format = _capturePreferMjpeg ? "MJPG" : "Nativo"
+            };
+            Stop();
+        }
+
+        var capabilities = new List<LocalCameraCapability>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var resolutions = new[]
+        {
+            new Size(3840, 2160),
+            new Size(2560, 1440),
+            new Size(1920, 1080),
+            new Size(1600, 1200),
+            new Size(1280, 1024),
+            new Size(1280, 720),
+            new Size(1024, 768),
+            new Size(800, 600),
+            new Size(640, 480),
+            new Size(320, 240)
+        };
+
+        try
+        {
+            foreach (var size in resolutions)
+            {
+                foreach (var preferMjpeg in new[] { true, false })
+                {
+                    if (TryProbeCapability(camera, VideoCaptureAPIs.DSHOW, size.Width, size.Height, preferMjpeg, out var actualWidth, out var actualHeight, out var fps))
+                    {
+                        var format = preferMjpeg ? "MJPG" : "Nativo";
+                        var key = $"{actualWidth}x{actualHeight}|{format}";
+                        if (seen.Add(key))
+                        {
+                            capabilities.Add(new LocalCameraCapability
+                            {
+                                Width = actualWidth,
+                                Height = actualHeight,
+                                Fps = NormalizeFps(fps),
+                                Backend = "DSHOW",
+                                Format = format
+                            });
+                        }
+                    }
+                }
+            }
+
+            if (capabilities.Count == 0)
+            {
+                foreach (var size in resolutions)
+                {
+                    if (TryProbeCapability(camera, VideoCaptureAPIs.MSMF, size.Width, size.Height, false, out var actualWidth, out var actualHeight, out var fps))
+                    {
+                        var key = $"{actualWidth}x{actualHeight}|MSMF";
+                        if (seen.Add(key))
+                        {
+                            capabilities.Add(new LocalCameraCapability
+                            {
+                                Width = actualWidth,
+                                Height = actualHeight,
+                                Fps = NormalizeFps(fps),
+                                Backend = "MSMF",
+                                Format = "Nativo"
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        finally
+        {
+            if (wasCapturing && restoreCapability is not null)
+            {
+                try
+                {
+                    StartAsync(camera, restoreCapability).GetAwaiter().GetResult();
+                }
+                catch
+                {
+                    LastCaptureDiagnostic = "Se detectaron capacidades, pero no se pudo restaurar la vista previa anterior.";
+                }
+            }
+        }
+
+        return capabilities
+            .OrderByDescending(item => item.Width * (long)item.Height)
+            .ThenByDescending(item => item.Fps)
+            .ThenBy(item => item.Format, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
@@ -150,17 +229,17 @@ public sealed class LocalCameraService : ILocalCameraService
     {
         ArgumentNullException.ThrowIfNull(camera);
         cancellationToken.ThrowIfCancellationRequested();
-
-        // Cerramos cualquier captura anterior antes de abrir otra para que el driver no quede ocupado.
         Stop();
 
-        // UVC suele comportarse mejor con DirectShow y MJPG en webcams que exponen varios modos comprimidos.
         var attempts = new[]
         {
+            new CaptureAttempt(VideoCaptureAPIs.DSHOW, 1920, 1080, true),
             new CaptureAttempt(VideoCaptureAPIs.DSHOW, 1280, 720, true),
             new CaptureAttempt(VideoCaptureAPIs.DSHOW, 640, 480, true),
+            new CaptureAttempt(VideoCaptureAPIs.DSHOW, 1920, 1080, false),
             new CaptureAttempt(VideoCaptureAPIs.DSHOW, 1280, 720, false),
             new CaptureAttempt(VideoCaptureAPIs.DSHOW, 640, 480, false),
+            new CaptureAttempt(VideoCaptureAPIs.MSMF, 1920, 1080, false),
             new CaptureAttempt(VideoCaptureAPIs.MSMF, 1280, 720, false),
             new CaptureAttempt(VideoCaptureAPIs.MSMF, 640, 480, false),
             new CaptureAttempt(VideoCaptureAPIs.ANY, 0, 0, false)
@@ -171,91 +250,24 @@ public sealed class LocalCameraService : ILocalCameraService
         foreach (var attempt in attempts)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            VideoCapture? candidate = null;
 
             try
             {
-                // candidate abre el índice de captura asociado a esta fuente local.
-                candidate = new VideoCapture(camera.CaptureIndex, attempt.Backend);
-                if (!candidate.IsOpened())
+                if (TryOpenCapture(camera, attempt.Backend, attempt.Width, attempt.Height, attempt.PreferMjpeg, cancellationToken, out var candidate, out var firstFrame))
                 {
-                    diagnostics.Add($"{attempt.Description}: no abrió el dispositivo.");
-                    candidate.Dispose();
-                    continue;
+                    ActivateCapture(candidate!, firstFrame!, attempt.PreferMjpeg);
+                    return Task.FromResult(true);
                 }
 
-                // FOURCC.MJPG pide al driver un modo MJPEG cuando la webcam lo soporta.
-                if (attempt.PreferMjpeg)
-                    candidate.Set(VideoCaptureProperties.FourCC, FourCC.MJPG);
-
-                // FrameWidth y FrameHeight solicitan la resolución deseada, pero el driver puede elegir otra compatible.
-                if (attempt.Width > 0)
-                    candidate.Set(VideoCaptureProperties.FrameWidth, attempt.Width);
-                if (attempt.Height > 0)
-                    candidate.Set(VideoCaptureProperties.FrameHeight, attempt.Height);
-                candidate.Set(VideoCaptureProperties.Fps, 30);
-
-                // Algunos drivers necesitan unos milisegundos para comenzar a entregar buffers después de abrirse.
-                Thread.Sleep(150);
-
-                using var firstFrame = new Mat();
-                var firstFrameReceived = false;
-
-                // Probamos varios Read para evitar descartar un modo que tarda unos ciclos en entregar el primer buffer.
-                for (var i = 0; i < 8 && !firstFrameReceived; i++)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (candidate.Read(firstFrame) && !firstFrame.Empty())
-                        firstFrameReceived = true;
-                    else
-                        Thread.Sleep(40);
-                }
-
-                if (!firstFrameReceived)
-                {
-                    diagnostics.Add($"{attempt.Description}: abierto pero no entregó frames.");
-                    candidate.Release();
-                    candidate.Dispose();
-                    continue;
-                }
-
-                _capture = candidate;
-                _captureWidth = firstFrame.Width;
-                _captureHeight = firstFrame.Height;
-                _captureFps = NormalizeFps(candidate.Fps);
-                _framesCaptured = 1;
-                _lastFrameAtUtc = DateTimeOffset.UtcNow;
-
-                lock (_sync)
-                {
-                    // _latestFrame es una única copia de trabajo, no una cola acumulativa.
-                    _latestFrame?.Dispose();
-                    _latestFrame = firstFrame.Clone();
-                }
-
-                // Publicamos el primer frame inmediatamente para que la UI muestre imagen sin esperar otro ciclo.
-                PublishFrame(firstFrame);
-
-                _captureCts = new CancellationTokenSource();
-                _captureTask = Task.Run(() => CaptureLoop(_captureCts.Token), CancellationToken.None);
-
-                LastCaptureDiagnostic =
-                    $"STREAM ACTIVO · Backend: {candidate.GetBackendName()} · " +
-                    $"Resolución: {_captureWidth}x{_captureHeight} · FPS: {_captureFps:0.##} · " +
-                    $"Preview: máximo {PreviewTargetFps} FPS / {PreviewMaxWidth}px.";
-
-                return Task.FromResult(true);
+                diagnostics.Add($"{attempt.Description}: no entregó frames.");
             }
             catch (OperationCanceledException)
             {
-                candidate?.Dispose();
                 throw;
             }
             catch (Exception ex)
             {
                 diagnostics.Add($"{attempt.Description}: {ex.Message}");
-                candidate?.Release();
-                candidate?.Dispose();
             }
         }
 
@@ -266,15 +278,135 @@ public sealed class LocalCameraService : ILocalCameraService
         return Task.FromResult(false);
     }
 
+    public Task<bool> StartAsync(LocalCameraDevice camera, LocalCameraCapability capability, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(camera);
+        ArgumentNullException.ThrowIfNull(capability);
+        cancellationToken.ThrowIfCancellationRequested();
+        Stop();
+
+        var backend = ParseBackend(capability.Backend);
+        var preferMjpeg = string.Equals(capability.Format, "MJPG", StringComparison.OrdinalIgnoreCase);
+
+        try
+        {
+            if (!TryOpenCapture(camera, backend, capability.Width, capability.Height, preferMjpeg, cancellationToken, out var candidate, out var firstFrame))
+            {
+                LastCaptureDiagnostic =
+                    $"No se pudo abrir {capability.Width}x{capability.Height} {capability.Format} " +
+                    $"con {capability.Backend}.";
+                return Task.FromResult(false);
+            }
+
+            ActivateCapture(candidate!, firstFrame!, preferMjpeg);
+            return Task.FromResult(true);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            LastCaptureDiagnostic = $"No se pudo abrir el modo seleccionado: {ex.Message}";
+            return Task.FromResult(false);
+        }
+    }
+
+    private bool TryOpenCapture(
+        LocalCameraDevice camera,
+        VideoCaptureAPIs backend,
+        int width,
+        int height,
+        bool preferMjpeg,
+        CancellationToken cancellationToken,
+        out VideoCapture? candidate,
+        out Mat? firstFrame)
+    {
+        candidate = null;
+        firstFrame = null;
+
+        candidate = new VideoCapture(camera.CaptureIndex, backend);
+        if (!candidate.IsOpened())
+        {
+            candidate.Dispose();
+            candidate = null;
+            return false;
+        }
+
+        if (preferMjpeg)
+            candidate.Set(VideoCaptureProperties.FourCC, FourCC.MJPG);
+        if (width > 0)
+            candidate.Set(VideoCaptureProperties.FrameWidth, width);
+        if (height > 0)
+            candidate.Set(VideoCaptureProperties.FrameHeight, height);
+
+        candidate.Set(VideoCaptureProperties.Fps, 30);
+        Thread.Sleep(120);
+
+        firstFrame = new Mat();
+        var received = false;
+
+        for (var i = 0; i < 8 && !received; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (candidate.Read(firstFrame) && !firstFrame.Empty())
+                received = true;
+            else
+                Thread.Sleep(40);
+        }
+
+        if (!received)
+        {
+            firstFrame.Dispose();
+            firstFrame = null;
+            candidate.Release();
+            candidate.Dispose();
+            candidate = null;
+            return false;
+        }
+
+        return true;
+    }
+
+    private void ActivateCapture(VideoCapture candidate, Mat firstFrame, bool preferMjpeg)
+    {
+        _capture = candidate;
+        _captureWidth = firstFrame.Width;
+        _captureHeight = firstFrame.Height;
+        _captureFps = NormalizeFps(candidate.Fps);
+        _effectiveCaptureFps = _captureFps;
+        _captureBackendName = candidate.GetBackendName();
+        _capturePreferMjpeg = preferMjpeg;
+        _framesCaptured = 1;
+        _lastFrameAtUtc = DateTimeOffset.UtcNow;
+
+        lock (_sync)
+        {
+            _latestFrame?.Dispose();
+            _latestFrame = firstFrame.Clone();
+        }
+
+        PublishFrame(firstFrame);
+        firstFrame.Dispose();
+
+        _captureCts = new CancellationTokenSource();
+        _captureTask = Task.Run(() => CaptureLoop(_captureCts.Token), CancellationToken.None);
+
+        LastCaptureDiagnostic =
+            $"STREAM ACTIVO · Backend: {_captureBackendName} · " +
+            $"Resolución: {_captureWidth}x{_captureHeight} · FPS declarado: {_captureFps:0.##} · " +
+            $"FPS efectivo: {_effectiveCaptureFps:0.##} · Preview: máximo {PreviewTargetFps} FPS / {PreviewMaxWidth}px.";
+    }
+
     private async Task CaptureLoop(CancellationToken cancellationToken)
     {
         using var frame = new Mat();
-        // previewClock mide el tiempo sin depender de la velocidad real que reporte el driver.
         var previewClock = Stopwatch.StartNew();
-        // lastPreviewMilliseconds guarda cuándo publicamos la última imagen a WPF.
+        var fpsClock = Stopwatch.StartNew();
         var lastPreviewMilliseconds = -1_000L;
-        // previewIntervalMilliseconds determina el intervalo entre actualizaciones visuales.
         var previewIntervalMilliseconds = Math.Max(1, 1000 / PreviewTargetFps);
+        var framesAtLastFpsSample = 1L;
+        var lastFpsSampleMilliseconds = 0L;
 
         try
         {
@@ -284,7 +416,6 @@ public sealed class LocalCameraService : ILocalCameraService
                 if (capture is null)
                     break;
 
-                // Read solicita el siguiente buffer de vídeo al backend de Windows.
                 if (!capture.Read(frame) || frame.Empty())
                 {
                     LastCaptureDiagnostic =
@@ -296,32 +427,45 @@ public sealed class LocalCameraService : ILocalCameraService
 
                 lock (_sync)
                 {
-                    // Reemplazamos la única copia de snapshot; no acumulamos frames en memoria.
                     _latestFrame?.Dispose();
                     _latestFrame = frame.Clone();
-
-                    // La grabación utiliza el frame nativo completo, no el frame reducido del preview.
                     _videoWriter?.Write(frame);
                 }
 
                 _framesCaptured++;
                 _lastFrameAtUtc = DateTimeOffset.UtcNow;
 
-                // nowMilliseconds permite descartar trabajo visual innecesario sin frenar la captura.
+                var fpsNow = fpsClock.ElapsedMilliseconds;
+                if (_framesCaptured - framesAtLastFpsSample >= 30)
+                {
+                    var elapsedMilliseconds = fpsNow - lastFpsSampleMilliseconds;
+                    if (elapsedMilliseconds >= 250)
+                    {
+                        var observedFps = (_framesCaptured - framesAtLastFpsSample) / (elapsedMilliseconds / 1000d);
+                        if (double.IsFinite(observedFps) && observedFps is >= 5 and <= 120)
+                        {
+                            _effectiveCaptureFps = _effectiveCaptureFps * 0.35 + observedFps * 0.65;
+                            LastCaptureDiagnostic =
+                                $"STREAM ACTIVO · Backend: {_captureBackendName} · " +
+                                $"Resolución: {_captureWidth}x{_captureHeight} · FPS efectivo: {_effectiveCaptureFps:0.##} · " +
+                                $"Preview: máximo {PreviewTargetFps} FPS / {PreviewMaxWidth}px.";
+                        }
+
+                        framesAtLastFpsSample = _framesCaptured;
+                        lastFpsSampleMilliseconds = fpsNow;
+                    }
+                }
+
                 var nowMilliseconds = previewClock.ElapsedMilliseconds;
                 if (nowMilliseconds - lastPreviewMilliseconds >= previewIntervalMilliseconds)
                 {
                     lastPreviewMilliseconds = nowMilliseconds;
-                    // PublishFrame reduce la resolución solo para el preview y entrega como máximo PreviewTargetFps.
                     PublishFrame(frame);
                 }
-
-                // Read normalmente bloquea esperando el siguiente frame; no necesitamos un retardo artificial adicional.
             }
         }
         catch (OperationCanceledException)
         {
-            // La cancelación forma parte del cierre normal de una captura.
         }
         catch (Exception ex)
         {
@@ -330,6 +474,7 @@ public sealed class LocalCameraService : ILocalCameraService
         finally
         {
             previewClock.Stop();
+            fpsClock.Stop();
         }
     }
 
@@ -338,7 +483,6 @@ public sealed class LocalCameraService : ILocalCameraService
         if (bgrFrame.Empty())
             return;
 
-        // previewFrame es una copia reducida solo cuando la cámara entrega una resolución superior al límite visual.
         using var previewFrame = PreparePreviewFrame(bgrFrame);
         using var bgra = new Mat();
 
@@ -349,11 +493,8 @@ public sealed class LocalCameraService : ILocalCameraService
         else
             Cv2.CvtColor(previewFrame, bgra, ColorConversionCodes.BGR2BGRA);
 
-        // stride indica los bytes de una fila BGRA32 completa.
         var stride = checked(bgra.Width * 4);
-        // byteCount indica cuántos bytes se copiarán al buffer administrado.
         var byteCount = checked(stride * bgra.Height);
-        // pixels contiene únicamente la imagen que la UI necesita mostrar.
         var pixels = new byte[byteCount];
 
         Marshal.Copy(bgra.Data, pixels, 0, byteCount);
@@ -370,24 +511,70 @@ public sealed class LocalCameraService : ILocalCameraService
 
     private static Mat PreparePreviewFrame(Mat source)
     {
-        // sourceWidth es el ancho nativo que entregó la webcam.
         var sourceWidth = source.Width;
-        // sourceHeight es el alto nativo que entregó la webcam.
         var sourceHeight = source.Height;
 
         if (sourceWidth <= PreviewMaxWidth)
             return source.Clone();
 
-        // scale mantiene la proporción original al reducir la imagen para la interfaz.
         var scale = PreviewMaxWidth / (double)sourceWidth;
-        // previewHeight calcula la altura proporcional al nuevo ancho.
         var previewHeight = Math.Max(1, (int)Math.Round(sourceHeight * scale));
-        // resized es el frame optimizado que se convertirá a BGRA.
         var resized = new Mat();
-
-        // INTER_AREA está pensado para reducción y evita procesar más píxeles de los necesarios en WPF.
         Cv2.Resize(source, resized, new Size(PreviewMaxWidth, previewHeight), 0, 0, InterpolationFlags.Area);
         return resized;
+    }
+
+    private bool TryProbeCapability(
+        LocalCameraDevice camera,
+        VideoCaptureAPIs backend,
+        int width,
+        int height,
+        bool preferMjpeg,
+        out int actualWidth,
+        out int actualHeight,
+        out double fps)
+    {
+        actualWidth = 0;
+        actualHeight = 0;
+        fps = 0;
+
+        VideoCapture? capture = null;
+        try
+        {
+            capture = new VideoCapture(camera.CaptureIndex, backend);
+            if (!capture.IsOpened())
+                return false;
+
+            if (preferMjpeg)
+                capture.Set(VideoCaptureProperties.FourCC, FourCC.MJPG);
+            capture.Set(VideoCaptureProperties.FrameWidth, width);
+            capture.Set(VideoCaptureProperties.FrameHeight, height);
+            capture.Set(VideoCaptureProperties.Fps, 30);
+            Thread.Sleep(80);
+
+            using var frame = new Mat();
+            for (var i = 0; i < 4; i++)
+            {
+                if (!capture.Read(frame) || frame.Empty())
+                    continue;
+
+                actualWidth = frame.Width;
+                actualHeight = frame.Height;
+                fps = NormalizeFps(capture.Fps);
+                return actualWidth > 0 && actualHeight > 0;
+            }
+
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            capture?.Release();
+            capture?.Dispose();
+        }
     }
 
     public bool TakeSnapshot(string filePath)
@@ -399,15 +586,20 @@ public sealed class LocalCameraService : ILocalCameraService
         {
             lock (_sync)
             {
-                // Clonamos el último frame completo para no escribir mientras otro hilo lo reemplaza.
                 if (_latestFrame is null || _latestFrame.Empty())
                     return false;
-
                 snapshot = _latestFrame.Clone();
             }
 
-            // El snapshot conserva la resolución nativa del dispositivo, no la resolución reducida del preview.
-            return Cv2.ImWrite(filePath, snapshot);
+            var extension = Path.GetExtension(filePath);
+            var parameters = extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                             extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)
+                ? new[] { (int)ImwriteFlags.JpegQuality, 95 }
+                : Array.Empty<int>();
+
+            return parameters.Length == 0
+                ? Cv2.ImWrite(filePath, snapshot)
+                : Cv2.ImWrite(filePath, snapshot, parameters);
         }
         catch (Exception ex)
         {
@@ -420,9 +612,31 @@ public sealed class LocalCameraService : ILocalCameraService
         }
     }
 
-    public bool StartRecording(string filePath)
+    public bool StartRecording(string filePath, LocalCameraCapability? capability = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+
+        if (!_captureIsCompatible(capability))
+        {
+            if (_capture is null || _selectedCameraForReconfigure is null)
+            {
+                LastCaptureDiagnostic = "No se puede cambiar la resolución de grabación sin una cámara activa.";
+                return false;
+            }
+
+            try
+            {
+                var camera = _selectedCameraForReconfigure;
+                var restarted = StartAsync(camera, capability!).GetAwaiter().GetResult();
+                if (!restarted)
+                    return false;
+            }
+            catch (Exception ex)
+            {
+                LastCaptureDiagnostic = $"No se pudo aplicar la resolución seleccionada: {ex.Message}";
+                return false;
+            }
+        }
 
         lock (_sync)
         {
@@ -436,12 +650,14 @@ public sealed class LocalCameraService : ILocalCameraService
             {
                 StopRecordingUnsafe();
 
-                // MJPG/AVI prioriza compatibilidad local y evita depender de un codec H.264 específico del sistema.
+                // Usamos el FPS efectivo observado. Esto evita que un driver que reporte 60 FPS mientras entrega ~30
+                // produzca una grabación con reproducción acelerada.
+                var recordingFps = NormalizeFps(_effectiveCaptureFps);
                 var writer = new VideoWriter(
                     filePath,
                     VideoCaptureAPIs.ANY,
                     FourCC.MJPG,
-                    NormalizeFps(_captureFps),
+                    recordingFps,
                     new Size(_captureWidth, _captureHeight),
                     true);
 
@@ -453,7 +669,8 @@ public sealed class LocalCameraService : ILocalCameraService
                 }
 
                 _videoWriter = writer;
-                LastCaptureDiagnostic = $"GRABACIÓN ACTIVA · {filePath}";
+                LastCaptureDiagnostic =
+                    $"GRABACIÓN ACTIVA · {filePath} · {_captureWidth}x{_captureHeight} · {recordingFps:0.##} FPS.";
                 return true;
             }
             catch (Exception ex)
@@ -462,6 +679,26 @@ public sealed class LocalCameraService : ILocalCameraService
                 return false;
             }
         }
+    }
+
+    private bool _captureIsCompatible(LocalCameraCapability? capability)
+    {
+        if (capability is null)
+            return true;
+
+        return _capture is not null &&
+               _captureWidth == capability.Width &&
+               _captureHeight == capability.Height &&
+               string.Equals(_captureBackendName, capability.Backend, StringComparison.OrdinalIgnoreCase) &&
+               _capturePreferMjpeg == string.Equals(capability.Format, "MJPG", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // La cámara actualmente activa se conserva para poder reconfigurarla antes de una grabación.
+    private LocalCameraDevice? _selectedCameraForReconfigure;
+
+    public void SetActiveCamera(LocalCameraDevice camera)
+    {
+        _selectedCameraForReconfigure = camera;
     }
 
     public void StopRecording()
@@ -476,7 +713,6 @@ public sealed class LocalCameraService : ILocalCameraService
 
     private void StopRecordingUnsafe()
     {
-        // El writer solo se crea/libera bajo _sync mientras CaptureLoop escribe los frames.
         _videoWriter?.Release();
         _videoWriter?.Dispose();
         _videoWriter = null;
@@ -504,9 +740,14 @@ public sealed class LocalCameraService : ILocalCameraService
         }
 
         _framesCaptured = 0;
+        _effectiveCaptureFps = 30;
         _lastFrameAtUtc = DateTimeOffset.MinValue;
         _captureTask = null;
+        _captureWidth = 0;
+        _captureHeight = 0;
+        _captureBackendName = "DESCONOCIDO";
         LastCaptureDiagnostic = "Captura local detenida.";
+
         FrameReady?.Invoke(this, new LocalCameraFrame
         {
             Pixels = Array.Empty<byte>(),
@@ -522,9 +763,17 @@ public sealed class LocalCameraService : ILocalCameraService
         Stop();
     }
 
+    private static VideoCaptureAPIs ParseBackend(string backend)
+    {
+        if (backend.Contains("MSMF", StringComparison.OrdinalIgnoreCase))
+            return VideoCaptureAPIs.MSMF;
+        if (backend.Contains("DSHOW", StringComparison.OrdinalIgnoreCase) || backend.Contains("DirectShow", StringComparison.OrdinalIgnoreCase))
+            return VideoCaptureAPIs.DSHOW;
+        return VideoCaptureAPIs.ANY;
+    }
+
     private static double NormalizeFps(double fps)
     {
-        // Algunos drivers devuelven 0, NaN o valores fuera de rango; 30 FPS es un respaldo razonable.
         return double.IsFinite(fps) && fps is >= 1 and <= 120 ? fps : 30;
     }
 
@@ -533,7 +782,6 @@ public sealed class LocalCameraService : ILocalCameraService
         if (string.IsNullOrWhiteSpace(devicePath))
             return null;
 
-        // match obtiene los cuatro caracteres hexadecimales posteriores a VID_ o PID_.
         var match = Regex.Match(
             devicePath,
             $@"{Regex.Escape(token)}([0-9a-fA-F]{{4}})",
@@ -553,20 +801,15 @@ public sealed class LocalCameraService : ILocalCameraService
         }
         catch
         {
-            // Un driver no estándar puede fallar al liberar COM; la enumeración no debe detenerse por ello.
         }
     }
 
-    /// <summary>
-    /// Describe un intento concreto de apertura para que el diagnóstico indique backend, resolución y formato solicitado.
-    /// </summary>
     private readonly record struct CaptureAttempt(
         VideoCaptureAPIs Backend,
         int Width,
         int Height,
         bool PreferMjpeg)
     {
-        // Description es un resumen legible del intento que aparece en el diagnóstico de fallos.
         public string Description =>
             $"{Backend} {(Width > 0 && Height > 0 ? $"{Width}x{Height}" : "predeterminada")} " +
             $"{(PreferMjpeg ? "MJPG" : "nativa")}";
