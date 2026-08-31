@@ -23,12 +23,16 @@ namespace CameraInspector.App;
 public partial class App : Application
 {
     private IHost? _host;
+    private bool _isShuttingDown;
 
     /// <summary>Proveedor de servicios activo para ventanas auxiliares.</summary>
     public static IServiceProvider? Services { get; private set; }
 
     public App()
     {
+        // Una ventana cerrada debe terminar toda la aplicación, incluso si existe alguna ventana auxiliar oculta.
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
         DispatcherUnhandledException += (_, args) =>
         {
             MessageBox.Show($"Error no controlado:\n\n{args.Exception}",
@@ -53,42 +57,31 @@ public partial class App : Application
 
         try
         {
-            // _host contiene el contenedor DI y gestiona el ciclo de vida de los servicios.
             _host = Host.CreateDefaultBuilder()
                 .ConfigureServices((_, services) =>
                 {
-                    // ---- Persistencia (SQLite) ----
                     services.AddDbContextFactory<CameraInspectorDbContext>(options =>
                         options.UseSqlite($"Data Source={CameraInspectorDbContext.GetDefaultDbPath()}"));
 
                     services.AddSingleton<ICameraInventoryStore, CameraInventoryStore>();
                     services.AddSingleton<IDiagnosticHistoryStore, DiagnosticHistoryStore>();
                     services.AddSingleton<ICameraCredentialStore, CameraCredentialStore>();
-
-                    // ---- HTTP compartido ----
                     services.AddSingleton(new HttpClient { Timeout = TimeSpan.FromSeconds(3) });
-
-                    // ---- Seguridad ----
                     services.AddSingleton<ICredentialStore, WindowsCredentialStore>();
 
-                    // ---- Capa 3: Descubrimiento ----
                     services.AddSingleton<INetworkInterfaceService, NetworkInterfaceService>();
                     services.AddSingleton<ISubnetCalculator, SubnetCalculator>();
                     services.AddSingleton<IPingScanner, PingScanner>();
                     services.AddSingleton<IArpResolver, ArpResolver>();
                     services.AddSingleton<IOnvifDiscoveryService, WsDiscoveryOnvifService>();
-                    // El discovery propietario de VIVOTEK complementa ONVIF y permite localizar
-                    // cámaras conectadas directamente aunque no respondan a ICMP o WS-Discovery.
                     services.AddSingleton<IVivotekDiscoveryService, VivotekDiscoveryService>();
                     services.AddSingleton<INetworkScanner, NetworkScanOrchestrator>();
 
-                    // ---- Capa 4: Resolución de fabricante ----
                     services.AddSingleton<IManufacturerDetector, Network.Detection.OuiMacDetector>();
                     services.AddSingleton<IManufacturerDetector, Network.Detection.HttpBannerDetector>();
                     services.AddSingleton<IManufacturerDetector, Network.Detection.OnvifProbeDetector>();
                     services.AddSingleton<IManufacturerResolver, Network.Detection.ManufacturerResolver>();
 
-                    // ---- Capa 5: ONVIF Device + Media + PTZ + Imaging + Events ----
                     services.AddSingleton<IOnvifDeviceService, Network.OnvifMedia.OnvifDeviceService>();
                     services.AddSingleton<Network.OnvifMedia.OnvifMediaService>();
                     services.AddSingleton<IOnvifMediaService>(sp =>
@@ -99,25 +92,18 @@ public partial class App : Application
                     services.AddSingleton<IOnvifImagingService, Network.OnvifMedia.OnvifImagingService>();
                     services.AddSingleton<IOnvifEventService, Network.OnvifMedia.OnvifEventService>();
 
-                    // ---- Providers propietarios ----
-                    // Los providers se evalúan por evidencia antes de realizar operaciones autenticadas.
                     services.AddSingleton<ICameraProvider, HikvisionProvider>();
                     services.AddSingleton<ICameraProvider, VivotekProvider>();
                     services.AddSingleton<CameraProviderResolver>();
                     services.AddSingleton<ICameraProviderResolver>(sp =>
                         sp.GetRequiredService<CameraProviderResolver>());
 
-                    // Estas operaciones propietarias solo se ejecutan tras una acción explícita del técnico.
                     services.AddSingleton<IVivotekSnapshotService, VivotekSnapshotService>();
                     services.AddSingleton<IVivotekPtzService, VivotekPtzService>();
                     services.AddSingleton<IVivotekParameterService, VivotekParameterService>();
 
-                    // ---- Capa 6: Diagnóstico ----
                     services.AddSingleton<ICameraDiagnosticService, Network.Diagnostics.CameraDiagnosticService>();
-
-                    // ---- Capa 7: Video ----
                     services.AddSingleton<IVideoPlayerService, LibVlcVideoPlayerService>();
-                    // ---- Capa 7B: Video local/UVC ----
                     services.AddSingleton<LocalCameraService>();
                     services.AddSingleton<ILocalCameraService>(sp =>
                         sp.GetRequiredService<LocalCameraService>());
@@ -138,6 +124,7 @@ public partial class App : Application
             }
 
             var mainWindow = _host.Services.GetRequiredService<MainWindow>();
+            mainWindow.Closed += (_, _) => BeginApplicationShutdown();
             mainWindow.Show();
         }
         catch (Exception ex)
@@ -146,16 +133,58 @@ public partial class App : Application
                 "Camera Inspector — Error de arranque",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
-            Shutdown(-1);
+            BeginApplicationShutdown(-1);
         }
+    }
+
+    /// <summary>
+    /// Solicita el cierre explícito de toda la aplicación. El host se detiene y dispone los servicios singleton.
+    /// </summary>
+    private void BeginApplicationShutdown(int exitCode = 0)
+    {
+        if (_isShuttingDown)
+            return;
+
+        _isShuttingDown = true;
+
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (!ShutdownCalled)
+                Shutdown(exitCode);
+        }));
     }
 
     protected override async void OnExit(ExitEventArgs e)
     {
+        if (_isShuttingDown == false)
+            _isShuttingDown = true;
+
+        // Primero cerramos ventanas restantes para liberar controles, VideoViews y recursos nativos.
+        for (var index = Windows.Count - 1; index >= 0; index--)
+        {
+            var window = Windows[index];
+            try
+            {
+                if (window.IsVisible)
+                    window.Close();
+            }
+            catch
+            {
+                // El cierre final debe continuar aunque una ventana ya esté parcialmente destruida.
+            }
+        }
+
         if (_host is not null)
         {
-            await _host.StopAsync();
-            _host.Dispose();
+            try
+            {
+                await _host.StopAsync();
+            }
+            finally
+            {
+                _host.Dispose();
+                _host = null;
+            }
         }
 
         Services = null;
