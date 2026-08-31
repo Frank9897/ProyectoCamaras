@@ -9,15 +9,14 @@ namespace CameraInspector.Core.Interfaces;
 public sealed record ScanProgress(int Scanned, int Total, DiscoveredDevice? NewlyFound);
 
 /// <summary>
-/// Orquesta el flujo completo de la Capa 3 (Descubrimiento):
-/// interfaz de red -> subred -> ping sweep -> resolución ARP -> lista de DiscoveredDevice.
-/// La identificación de fabricante (Capa 4) y la consulta de capacidades (Capa 5) NO ocurren acá;
-/// este servicio solo entrega "qué hay" con lo mínimo (IP, MAC), no "qué es".
+/// Orquesta el flujo completo de descubrimiento y permite elegir si la búsqueda es directa,
+/// limitada a una subred o distribuida entre todas las interfaces activas.
 /// </summary>
 public interface INetworkScanner
 {
     IAsyncEnumerable<ScanProgress> ScanAsync(
         NetworkInterfaceInfo networkInterface,
         IProgress<ScanProgress>? progress = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        DiscoveryScanMode mode = DiscoveryScanMode.NetworkSubnet);
 }
