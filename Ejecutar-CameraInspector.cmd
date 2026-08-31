@@ -3,7 +3,8 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 REM ============================================================
 REM Camera Inspector - Compilacion, publicacion y ejecucion
-REM Produce un EXE self-contained para Windows x64.
+REM Produce un EXE self-contained para Windows x64 y extrae
+REM contenido nativo/LibVLC necesario para el runtime.
 REM ============================================================
 
 set "ROOT=%~dp0"
@@ -31,9 +32,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
+if exist "%PUBLISH_DIR%" (
+    echo Limpiando publicacion anterior...
+    rmdir /s /q "%PUBLISH_DIR%" >> "%BUILD_LOG%" 2>&1
+)
+
 echo [2/3] Publicando Camera Inspector portable...
-echo Comando: dotnet publish "%APP_PROJECT%" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -o "%PUBLISH_DIR%" >> "%BUILD_LOG%"
-dotnet publish "%APP_PROJECT%" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -o "%PUBLISH_DIR%" >> "%BUILD_LOG%" 2>&1
+echo Comando: dotnet publish "%APP_PROJECT%" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:IncludeAllContentForSelfExtract=true -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false -o "%PUBLISH_DIR%" >> "%BUILD_LOG%"
+dotnet publish "%APP_PROJECT%" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:IncludeAllContentForSelfExtract=true -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false -o "%PUBLISH_DIR%" >> "%BUILD_LOG%" 2>&1
 if errorlevel 1 (
     echo ERROR: Fallo la publicacion.
     echo Revisa CameraInspector_build.log en la raiz.
