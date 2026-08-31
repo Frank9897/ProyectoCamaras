@@ -1,4 +1,5 @@
 using System.Net.Http;
+using System.Text;
 using System.Windows;
 using CameraInspector.App.Security;
 using CameraInspector.App.ViewModels;
@@ -28,15 +29,18 @@ public partial class App : Application
     /// <summary>Proveedor de servicios activo para ventanas auxiliares.</summary>
     public static IServiceProvider? Services { get; private set; }
 
+    private static string ErrorLogPath => Path.Combine(AppContext.BaseDirectory, "CameraInspector_error.txt");
+
     public App()
     {
-        // El cierre de la ventana principal controla explícitamente el fin del proceso completo.
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
         DispatcherUnhandledException += (_, args) =>
         {
-            MessageBox.Show($"Error no controlado:\n\n{args.Exception}",
-                "Camera Inspector — Error de arranque",
+            WriteErrorLog("EXCEPCIÓN NO CONTROLADA EN UI", args.Exception);
+            MessageBox.Show(
+                $"Ocurrió un error no controlado.\n\nSe guardó el detalle en:\n{ErrorLogPath}\n\n{args.Exception.Message}",
+                "Camera Inspector — Error",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             args.Handled = true;
@@ -44,10 +48,7 @@ public partial class App : Application
 
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
         {
-            MessageBox.Show($"Error fatal:\n\n{args.ExceptionObject}",
-                "Camera Inspector — Error fatal",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            WriteErrorLog("EXCEPCIÓN FATAL", args.ExceptionObject);
         };
     }
 
@@ -129,7 +130,9 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"No se pudo iniciar la aplicación:\n\n{ex}",
+            WriteErrorLog("ERROR DE ARRANQUE", ex);
+            MessageBox.Show(
+                $"No se pudo iniciar la aplicación.\n\nSe guardó el detalle en:\n{ErrorLogPath}\n\n{ex.Message}",
                 "Camera Inspector — Error de arranque",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
@@ -137,9 +140,39 @@ public partial class App : Application
         }
     }
 
-    /// <summary>
-    /// Inicia el cierre completo cuando la ventana principal se cierra.
-    /// </summary>
+    private static void WriteErrorLog(string title, object? error)
+    {
+        try
+        {
+            var sb = new StringBuilder()
+                .AppendLine("============================================================")
+                .AppendLine($"Camera Inspector — {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}")
+                .AppendLine(title)
+                .AppendLine("============================================================")
+                .AppendLine($"OS: {Environment.OSVersion}")
+                .AppendLine($"64-bit OS: {Environment.Is64BitOperatingSystem}")
+                .AppendLine($"64-bit proceso: {Environment.Is64BitProcess}")
+                .AppendLine($"BaseDirectory: {AppContext.BaseDirectory}")
+                .AppendLine();
+
+            switch (error)
+            {
+                case Exception exception:
+                    sb.AppendLine(exception.ToString());
+                    break;
+                default:
+                    sb.AppendLine(error?.ToString() ?? "Error desconocido.");
+                    break;
+            }
+
+            File.AppendAllText(ErrorLogPath, sb.ToString() + Environment.NewLine, Encoding.UTF8);
+        }
+        catch
+        {
+            // El registro de error nunca debe provocar un segundo fallo.
+        }
+    }
+
     private void BeginApplicationShutdown(int exitCode = 0)
     {
         if (_isShuttingDown)
@@ -153,7 +186,6 @@ public partial class App : Application
     {
         _isShuttingDown = true;
 
-        // Cerramos cualquier ventana secundaria todavía visible para liberar controles y recursos nativos.
         for (var index = Windows.Count - 1; index >= 0; index--)
         {
             var window = Windows[index];
@@ -163,11 +195,9 @@ public partial class App : Application
             }
             catch
             {
-                // El cierre del proceso debe continuar aunque una ventana ya esté parcialmente destruida.
             }
         }
 
-        // El Generic Host dispone los singletons y libera sockets, HttpClient y servicios de vídeo.
         if (_host is not null)
         {
             try
