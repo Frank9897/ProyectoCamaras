@@ -33,6 +33,7 @@ jobs:
           --no-restore
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:IncludeAllContentForSelfExtract=true
           -p:PublishTrimmed=false
           -p:DebugType=none
           -p:DebugSymbols=false
