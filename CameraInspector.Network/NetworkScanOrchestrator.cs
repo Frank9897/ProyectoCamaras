@@ -38,14 +38,28 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default,
         DiscoveryScanMode mode = DiscoveryScanMode.NetworkSubnet)
     {
-        // candidates contiene las IP de la subred solamente cuando el modo necesita barrido de hosts.
-        // En DirectCamera queda vacío para evitar que una cámara conectada directamente provoque un sweep masivo.
-        var candidates = mode == DiscoveryScanMode.DirectCamera
-            ? new List<IPAddress>()
-            : _subnetCalculator.GetHostAddresses(networkInterface).ToList();
+        // subnetSweepSkipped indica que la máscara produce una red demasiado grande para un barrido seguro.
+        // En ese caso solo omitimos Ping/ARP masivo y dejamos que discovery multicast/propietario continúe.
+        var subnetSweepSkipped = false;
+        List<IPAddress> candidates;
 
-        // pingTask queda vacío en modo directo; en los otros modos recorre la subred calculada.
-        var pingTask = mode == DiscoveryScanMode.DirectCamera
+        try
+        {
+            // candidates contiene las IP de la subred solamente cuando el rango es seguro para un ping sweep.
+            // En DirectCamera se utiliza una lista vacía explícitamente para no recorrer la red completa.
+            candidates = mode == DiscoveryScanMode.DirectCamera
+                ? new List<IPAddress>()
+                : _subnetCalculator.GetHostAddresses(networkInterface).ToList();
+        }
+        catch (InvalidOperationException)
+        {
+            // La subred puede ser /16, /12 o similar. No hacemos sweep, pero no bloqueamos WS-Discovery ni VIVOTEK.
+            candidates = new List<IPAddress>();
+            subnetSweepSkipped = true;
+        }
+
+        // pingTask queda vacío en modo directo o cuando la subred no es segura para barrer.
+        var pingTask = candidates.Count == 0
             ? Task.FromResult<IReadOnlyList<IPAddress>>(Array.Empty<IPAddress>())
             : _pingScanner.ScanAsync(candidates, cancellationToken: cancellationToken);
 
@@ -58,7 +72,7 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         // Ejecutamos los métodos de descubrimiento en paralelo para reducir el tiempo total.
         await Task.WhenAll(pingTask, onvifTask, vivotekTask);
 
-        // responsive contiene las IP que respondieron a ICMP cuando el modo permite ping sweep.
+        // responsive contiene las IP que respondieron a ICMP cuando existe un sweep de hosts.
         var responsive = await pingTask;
         // onvifResults contiene cámaras ONVIF descubiertas por multicast.
         var onvifResults = await onvifTask;
@@ -88,7 +102,7 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         await Task.Delay(150, cancellationToken);
         var arpTable = _arpResolver.GetArpTable();
 
-        // totalFound mide la evidencia real cuando no existe un sweep de hosts.
+        // total representa el progreso de hosts cuando hay sweep y la evidencia descubierta cuando no lo hay.
         var discoveredCount = responsive.Count + onvifByIp.Count + vivotekResults.Count;
         var total = Math.Max(candidates.Count, discoveredCount);
 
@@ -203,7 +217,7 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
             yield return update;
         }
 
-        // Cuando ningún protocolo encontró un equipo, emitimos el cierre del escaneo.
+        // Cuando no hubo respuestas pero el sweep fue omitido, cerramos igual el escaneo sin marcarlo como error.
         if (scanned == 0)
             yield return new ScanProgress(total, total, null);
     }
