@@ -11,8 +11,14 @@ public interface ILocalCameraService : IDisposable
     /// <summary>Enumera los dispositivos de captura de vídeo disponibles en el equipo.</summary>
     IReadOnlyList<LocalCameraDevice> GetAvailableCameras();
 
+    /// <summary>Enumera modos de captura que la cámara consigue abrir correctamente.</summary>
+    IReadOnlyList<LocalCameraCapability> GetCapabilities(LocalCameraDevice camera);
+
     /// <summary>Inicia la captura local y entrega frames BGRA mediante FrameReady.</summary>
     Task<bool> StartAsync(LocalCameraDevice camera, CancellationToken cancellationToken = default);
+
+    /// <summary>Inicia la captura local en un modo concreto validado para la cámara.</summary>
+    Task<bool> StartAsync(LocalCameraDevice camera, LocalCameraCapability capability, CancellationToken cancellationToken = default);
 
     /// <summary>Evento emitido cada vez que existe un frame válido de la cámara local.</summary>
     event EventHandler<LocalCameraFrame>? FrameReady;
@@ -23,8 +29,8 @@ public interface ILocalCameraService : IDisposable
     /// <summary>Captura el último frame disponible y lo guarda en la ruta indicada.</summary>
     bool TakeSnapshot(string filePath);
 
-    /// <summary>Inicia una grabación local independiente de la vista previa.</summary>
-    bool StartRecording(string filePath);
+    /// <summary>Inicia una grabación local independiente de la vista previa con la calidad seleccionada.</summary>
+    bool StartRecording(string filePath, LocalCameraCapability? capability = null);
 
     /// <summary>Detiene la grabación local activa y libera sus recursos.</summary>
     void StopRecording();
