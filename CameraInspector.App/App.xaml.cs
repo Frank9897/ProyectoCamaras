@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Windows;
@@ -26,7 +27,6 @@ public partial class App : Application
     private IHost? _host;
     private bool _isShuttingDown;
 
-    /// <summary>Proveedor de servicios activo para ventanas auxiliares.</summary>
     public static IServiceProvider? Services { get; private set; }
 
     private static string ErrorLogPath => Path.Combine(AppContext.BaseDirectory, "CameraInspector_error.txt");
@@ -169,7 +169,6 @@ public partial class App : Application
         }
         catch
         {
-            // El registro de error nunca debe provocar un segundo fallo.
         }
     }
 
