@@ -38,9 +38,6 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default,
         DiscoveryScanMode mode = DiscoveryScanMode.NetworkSubnet)
     {
-        // subnetSweepSkipped indica que la máscara produce una red demasiado grande para un barrido seguro.
-        // En ese caso solo omitimos Ping/ARP masivo y dejamos que discovery multicast/propietario continúe.
-        var subnetSweepSkipped = false;
         List<IPAddress> candidates;
 
         try
@@ -55,7 +52,6 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         {
             // La subred puede ser /16, /12 o similar. No hacemos sweep, pero no bloqueamos WS-Discovery ni VIVOTEK.
             candidates = new List<IPAddress>();
-            subnetSweepSkipped = true;
         }
 
         // pingTask queda vacío en modo directo o cuando la subred no es segura para barrer.
@@ -217,7 +213,7 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
             yield return update;
         }
 
-        // Cuando no hubo respuestas pero el sweep fue omitido, cerramos igual el escaneo sin marcarlo como error.
+        // Cuando no hubo respuestas, emitimos el cierre del escaneo para que la UI no quede en estado intermedio.
         if (scanned == 0)
             yield return new ScanProgress(total, total, null);
     }
