@@ -93,11 +93,11 @@ public partial class MainWindow
             VerticalContentAlignment = VerticalAlignment.Stretch
         };
 
-        // redTab conserva sin modificaciones la interfaz que ya utilizamos para descubrir y gestionar cámaras IP.
+        // redTab contiene toda la funcionalidad de cámaras IP, incluida la nueva consola de modos de discovery.
         var redTab = new TabItem
         {
-            Header = "ESCANEO DE RED",
-            Content = originalContent
+            Header = "RED / IP",
+            Content = CreateNetworkModuleContent(originalContent)
         };
 
         // usbTab reutiliza el mismo componente UVC que ya demostró captura de vídeo real.
@@ -119,6 +119,153 @@ public partial class MainWindow
 
         // La navegación pasa a ser el contenido único de la ventana principal.
         Content = modules;
+    }
+
+    /// <summary>
+    /// Envuelve la pantalla de RED/IP existente con una consola de modos de descubrimiento.
+    /// </summary>
+    private Grid CreateNetworkModuleContent(Grid originalContent)
+    {
+        // networkModule es el contenedor nuevo que mantiene intacta la vista de red y agrega la navegación superior.
+        var networkModule = new Grid
+        {
+            Background = (Brush)FindResource("BgBrush")
+        };
+
+        // La primera fila reserva una franja compacta para las tres estrategias de descubrimiento.
+        networkModule.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        // La segunda fila ocupa el espacio restante y contiene la pantalla RED/IP original.
+        networkModule.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        // modePanel agrupa visualmente las opciones para que el técnico pueda distinguir una detección directa de un barrido.
+        var modePanel = new Border
+        {
+            Background = (Brush)FindResource("PanelBrush"),
+            BorderBrush = (Brush)FindResource("BorderBrush2"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(5),
+            Margin = new Thickness(0, 0, 0, 8),
+            Padding = new Thickness(12, 8, 12, 8)
+        };
+
+        // modeLayout organiza título, descripción y botones sin ocupar una altura innecesaria.
+        var modeLayout = new Grid();
+        modeLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(210) });
+        modeLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        // titlePanel explica el propósito de esta sección y no mezcla el término "puerto" con "puerto de cámara".
+        var titlePanel = new StackPanel
+        {
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        titlePanel.Children.Add(new TextBlock
+        {
+            Text = "MODO DE DESCUBRIMIENTO",
+            FontFamily = new FontFamily("Consolas"),
+            FontSize = 12,
+            FontWeight = FontWeights.Bold,
+            Foreground = (Brush)FindResource("AccentBrush")
+        });
+        titlePanel.Children.Add(new TextBlock
+        {
+            Text = "Elegí cuánto querés buscar.",
+            Margin = new Thickness(0, 3, 0, 0),
+            Foreground = (Brush)FindResource("TextDimBrush")
+        });
+        Grid.SetColumn(titlePanel, 0);
+        modeLayout.Children.Add(titlePanel);
+
+        // buttonsPanel mantiene las tres acciones en una sola línea para que sean visibles al abrir la aplicación.
+        var buttonsPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+
+        // directButton inicia únicamente discovery sobre la interfaz seleccionada, sin ping sweep de la subred.
+        var directButton = new Button
+        {
+            Content = "CÁMARA DIRECTA",
+            Width = 145,
+            Height = 38,
+            Margin = new Thickness(6, 0, 0, 0),
+            Style = (Style)FindResource("PrimaryButton"),
+            ToolTip = "Detectar una cámara conectada directamente al puerto Ethernet seleccionado."
+        };
+        directButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("ScanDirectCameraCommand"));
+        buttonsPanel.Children.Add(directButton);
+
+        // subnetButton ejecuta el barrido de la subred de la interfaz actualmente seleccionada.
+        var subnetButton = new Button
+        {
+            Content = "ESCANEAR SUBRED",
+            Width = 150,
+            Height = 38,
+            Margin = new Thickness(6, 0, 0, 0),
+            Style = (Style)FindResource("SecondaryButton"),
+            ToolTip = "Escanear la subred asociada a la interfaz seleccionada."
+        };
+        subnetButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("ScanNetworkSubnetCommand"));
+        buttonsPanel.Children.Add(subnetButton);
+
+        // fullButton recorre todas las interfaces activas de forma secuencial y consolida los resultados.
+        var fullButton = new Button
+        {
+            Content = "ESCANEO TOTAL",
+            Width = 130,
+            Height = 38,
+            Margin = new Thickness(6, 0, 0, 0),
+            Style = (Style)FindResource("SecondaryButton"),
+            ToolTip = "Recorrer todas las interfaces de red activas y consolidar cámaras sin duplicados."
+        };
+        fullButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("ScanFullNetworkCommand"));
+        buttonsPanel.Children.Add(fullButton);
+
+        Grid.SetColumn(buttonsPanel, 1);
+        modeLayout.Children.Add(buttonsPanel);
+        modePanel.Child = modeLayout;
+        Grid.SetRow(modePanel, 0);
+        networkModule.Children.Add(modePanel);
+
+        // Renombramos el botón antiguo del layout existente para que no haya dos acciones con el mismo nombre.
+        var legacyScanButton = FindButtonByContent(originalContent, "▣ ESCANEAR RED");
+        if (legacyScanButton is not null)
+        {
+            legacyScanButton.Content = "▣ ESCANEAR SUBRED";
+            legacyScanButton.ToolTip = "Escanear la subred de la interfaz seleccionada.";
+            legacyScanButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("ScanNetworkSubnetCommand"));
+        }
+
+        // originalContent conserva toda la interfaz de resultados, detalle, diagnóstico y video.
+        Grid.SetRow(originalContent, 1);
+        networkModule.Children.Add(originalContent);
+
+        return networkModule;
+    }
+
+    /// <summary>
+    /// Busca recursivamente un botón por su texto original dentro de la vista RED/IP.
+    /// </summary>
+    private static Button? FindButtonByContent(DependencyObject root, string content)
+    {
+        // childrenCount representa la cantidad de hijos visuales que debemos recorrer.
+        var childrenCount = VisualTreeHelper.GetChildrenCount(root);
+
+        for (var index = 0; index < childrenCount; index++)
+        {
+            // child es el control actual que estamos inspeccionando.
+            var child = VisualTreeHelper.GetChild(root, index);
+
+            if (child is Button button && string.Equals(button.Content?.ToString(), content, StringComparison.Ordinal))
+                return button;
+
+            // nestedButton permite continuar la búsqueda dentro de contenedores anidados.
+            var nestedButton = FindButtonByContent(child, content);
+            if (nestedButton is not null)
+                return nestedButton;
+        }
+
+        return null;
     }
 
     /// <summary>
