@@ -70,10 +70,12 @@ public partial class App : Application
                     services.AddSingleton<IVivotekDiscoveryService, VivotekDiscoveryService>();
                     services.AddSingleton<CameraPortScanner>();
                     services.AddSingleton<SsdpDiscoveryService>();
+                    services.AddSingleton<LegacyVendorDiscoveryService>();
                     services.AddSingleton<INetworkScanner, NetworkScanOrchestrator>();
 
                     services.AddSingleton<IManufacturerDetector, Network.Detection.OuiMacDetector>();
                     services.AddSingleton<IManufacturerDetector, Network.Detection.HttpBannerDetector>();
+                    services.AddSingleton<IManufacturerDetector, Network.Detection.LegacyCameraHttpDetector>();
                     services.AddSingleton<IManufacturerDetector, Network.Detection.OnvifProbeDetector>();
                     services.AddSingleton<IManufacturerResolver, Network.Detection.ManufacturerResolver>();
 
