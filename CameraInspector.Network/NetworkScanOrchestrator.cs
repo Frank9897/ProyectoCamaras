@@ -6,8 +6,9 @@ namespace CameraInspector.Network;
 
 /// <summary>
 /// Orquestador principal del descubrimiento de dispositivos.
-/// Combina ping/ARP, WS-Discovery, VIVOTEK, SSDP/UPnP y un sondeo TCP acotado
-/// de puertos típicos de cámaras. El alcance puede ser directo, una subred o todas las interfaces.
+/// Combina ping/ARP, WS-Discovery, VIVOTEK, SSDP/UPnP, protocolos propietarios
+/// y un sondeo TCP acotado de puertos típicos de cámaras. El alcance puede ser
+/// directo, una subred o todas las interfaces.
 /// </summary>
 public sealed class NetworkScanOrchestrator : INetworkScanner
 {
@@ -18,6 +19,7 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
     private readonly IVivotekDiscoveryService _vivotekDiscoveryService;
     private readonly CameraPortScanner _cameraPortScanner;
     private readonly SsdpDiscoveryService _ssdpDiscoveryService;
+    private readonly LegacyVendorDiscoveryService _legacyVendorDiscoveryService;
 
     public NetworkScanOrchestrator(
         ISubnetCalculator subnetCalculator,
@@ -26,7 +28,8 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         IOnvifDiscoveryService onvifDiscoveryService,
         IVivotekDiscoveryService vivotekDiscoveryService,
         CameraPortScanner cameraPortScanner,
-        SsdpDiscoveryService ssdpDiscoveryService)
+        SsdpDiscoveryService ssdpDiscoveryService,
+        LegacyVendorDiscoveryService legacyVendorDiscoveryService)
     {
         _subnetCalculator = subnetCalculator;
         _pingScanner = pingScanner;
@@ -35,6 +38,7 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         _vivotekDiscoveryService = vivotekDiscoveryService;
         _cameraPortScanner = cameraPortScanner;
         _ssdpDiscoveryService = ssdpDiscoveryService;
+        _legacyVendorDiscoveryService = legacyVendorDiscoveryService;
     }
 
     public async IAsyncEnumerable<ScanProgress> ScanAsync(
@@ -47,8 +51,6 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
 
         try
         {
-            // En modo directo sí permitimos un barrido pequeño cuando la interfaz tiene una red acotada.
-            // Esto cubre cámaras antiguas con IP fija que no anuncian ONVIF/SSDP.
             var directSmallSubnet = mode == DiscoveryScanMode.DirectCamera &&
                                     networkInterface.CidrPrefixLength >= 23;
 
@@ -65,24 +67,46 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
             ? Task.FromResult<IReadOnlyList<IPAddress>>(Array.Empty<IPAddress>())
             : _pingScanner.ScanAsync(candidates, cancellationToken: cancellationToken);
 
-        // Cada mecanismo falla de forma independiente; una cámara antigua sin ONVIF no debe impedir
-        // que TCP/SSDP/VIVOTEK aporten evidencia.
-        var onvifTask = _onvifDiscoveryService.DiscoverAsync(networkInterface, cancellationToken);
-        var vivotekTask = _vivotekDiscoveryService.DiscoverAsync(networkInterface, cancellationToken);
-        var ssdpTask = _ssdpDiscoveryService.DiscoverAsync(networkInterface, cancellationToken);
+        // Todos los protocolos se consideran opcionales: un fallo en uno no bloquea los demás.
+        var onvifTask = SafeDiscoverAsync(
+            () => _onvifDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
+        var vivotekTask = SafeDiscoverAsync(
+            () => _vivotekDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
+        var ssdpTask = SafeDiscoverAsync(
+            () => _ssdpDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
+        var legacyVendorTask = SafeDiscoverAsync(
+            () => _legacyVendorDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
 
-        await Task.WhenAll(pingTask, onvifTask, vivotekTask, ssdpTask);
+        await Task.WhenAll(pingTask, onvifTask, vivotekTask, ssdpTask, legacyVendorTask);
 
         var responsive = await pingTask;
         var onvifResults = await onvifTask;
         var vivotekResults = await vivotekTask;
         var ssdpResults = await ssdpTask;
+        var legacyVendorResults = await legacyVendorTask;
 
         await Task.Delay(150, cancellationToken);
         var arpTable = _arpResolver.GetArpTable();
 
+        // El scanner TCP aprovecha tanto los hosts de la subred como vecinos L2 ya presentes en ARP.
         var portCandidates = candidates
             .Concat(arpTable.Keys)
+            .Concat(onvifResults
+                .Select(GetIpFromOnvif)
+                .Where(ip => ip is not null)
+                .Cast<IPAddress>())
+            .Concat(vivotekResults
+                .Select(item => IPAddress.TryParse(item.IpAddress, out var ip) ? ip : null)
+                .Where(ip => ip is not null)
+                .Cast<IPAddress>())
+            .Concat(ssdpResults
+                .Select(item => IPAddress.TryParse(item.IpAddress, out var ip) ? ip : null)
+                .Where(ip => ip is not null)
+                .Cast<IPAddress>())
+            .Concat(legacyVendorResults
+                .Select(item => IPAddress.TryParse(item.IpAddress, out var ip) ? ip : null)
+                .Where(ip => ip is not null)
+                .Cast<IPAddress>())
             .Where(address => address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
             .Distinct()
             .ToList();
@@ -108,7 +132,8 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
             .GroupBy(item => item.Address, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.First().Result, StringComparer.OrdinalIgnoreCase);
 
-        var discoveredCount = responsive.Count + onvifByIp.Count + vivotekResults.Count + ssdpResults.Count + portResults.Count;
+        var discoveredCount = responsive.Count + onvifByIp.Count + vivotekResults.Count + ssdpResults.Count +
+                              legacyVendorResults.Count + portResults.Count;
         var total = Math.Max(candidates.Count, discoveredCount);
         var processedIps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var scanned = 0;
@@ -128,22 +153,10 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
                 Status = DeviceStatus.Unknown
             };
 
-            if (onvifByIp.TryGetValue(ipText, out var onvifResult))
-            {
-                device.OnvifSupported = true;
-                device.OnvifDeviceServiceXAddr = onvifResult.DeviceServiceXAddr;
-                device.OnvifProfile = "detectado por WS-Discovery";
-            }
-
-            if (vivotekResults.FirstOrDefault(item => string.Equals(item.IpAddress, ipText, StringComparison.OrdinalIgnoreCase)) is { } vivotekMatch)
-            {
-                device.Manufacturer = "VIVOTEK";
-                device.AssignedProviderName = "VIVOTEK";
-                device.Model = vivotekMatch.Model;
-                device.MacAddress ??= vivotekMatch.MacAddress;
-            }
-
+            ApplyOnvifEvidence(device, onvifByIp, ipText);
+            ApplyVivotekEvidence(device, vivotekResults, ipText);
             ApplyPortEvidence(device, portResults.FirstOrDefault(item => item.IpAddress.Equals(ip)));
+
             var update = new ScanProgress(++scanned, total, device);
             progress?.Report(update);
             yield return update;
@@ -167,55 +180,79 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
                 OnvifDeviceServiceXAddr = pair.Value.DeviceServiceXAddr
             };
 
-            if (vivotekResults.Any(item => string.Equals(item.IpAddress, pair.Key, StringComparison.OrdinalIgnoreCase)))
-            {
-                device.Manufacturer = "VIVOTEK";
-                device.AssignedProviderName = "VIVOTEK";
-            }
+            ApplyVivotekEvidence(device, vivotekResults, pair.Key);
+            ApplyPortEvidence(device, parsedIp is not null
+                ? portResults.FirstOrDefault(item => item.IpAddress.Equals(parsedIp))
+                : null);
 
-            ApplyPortEvidence(device, portResults.FirstOrDefault(item => item.IpAddress.Equals(parsedIp)));
             var update = new ScanProgress(++scanned, total, device);
             progress?.Report(update);
             yield return update;
         }
 
-        foreach (var deviceFromSsdp in ssdpResults)
+        foreach (var sourceDevice in ssdpResults)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!processedIps.Add(deviceFromSsdp.IpAddress))
+            if (!processedIps.Add(sourceDevice.IpAddress))
                 continue;
 
-            IPAddress.TryParse(deviceFromSsdp.IpAddress, out var parsedIp);
-            if (parsedIp is not null && arpTable.TryGetValue(parsedIp, out var knownMac))
-                deviceFromSsdp.MacAddress = knownMac;
+            if (IPAddress.TryParse(sourceDevice.IpAddress, out var parsedIp) &&
+                arpTable.TryGetValue(parsedIp, out var knownMac))
+            {
+                sourceDevice.MacAddress = knownMac;
+            }
 
-            ApplyPortEvidence(deviceFromSsdp, parsedIp is not null
+            ApplyPortEvidence(sourceDevice, parsedIp is not null
                 ? portResults.FirstOrDefault(item => item.IpAddress.Equals(parsedIp))
                 : null);
 
-            var update = new ScanProgress(++scanned, total, deviceFromSsdp);
+            var update = new ScanProgress(++scanned, total, sourceDevice);
             progress?.Report(update);
             yield return update;
         }
 
-        foreach (var vivotekDevice in vivotekResults)
+        foreach (var sourceDevice in legacyVendorResults)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!processedIps.Add(vivotekDevice.IpAddress))
+            if (!processedIps.Add(sourceDevice.IpAddress))
                 continue;
 
-            IPAddress.TryParse(vivotekDevice.IpAddress, out var parsedIp);
-            if (parsedIp is not null && arpTable.TryGetValue(parsedIp, out var knownMac))
-                vivotekDevice.MacAddress = knownMac;
+            if (IPAddress.TryParse(sourceDevice.IpAddress, out var parsedIp) &&
+                arpTable.TryGetValue(parsedIp, out var knownMac))
+            {
+                sourceDevice.MacAddress = knownMac;
+            }
 
-            vivotekDevice.Manufacturer = "VIVOTEK";
-            vivotekDevice.AssignedProviderName = "VIVOTEK";
-            vivotekDevice.Status = DeviceStatus.Online;
-            ApplyPortEvidence(vivotekDevice, parsedIp is not null
+            ApplyPortEvidence(sourceDevice, parsedIp is not null
                 ? portResults.FirstOrDefault(item => item.IpAddress.Equals(parsedIp))
                 : null);
 
-            var update = new ScanProgress(++scanned, total, vivotekDevice);
+            sourceDevice.Status = DeviceStatus.Online;
+            var update = new ScanProgress(++scanned, total, sourceDevice);
+            progress?.Report(update);
+            yield return update;
+        }
+
+        foreach (var sourceDevice in vivotekResults)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!processedIps.Add(sourceDevice.IpAddress))
+                continue;
+
+            if (IPAddress.TryParse(sourceDevice.IpAddress, out var parsedIp) &&
+                arpTable.TryGetValue(parsedIp, out var knownMac))
+            {
+                sourceDevice.MacAddress = knownMac;
+            }
+
+            sourceDevice.Manufacturer = "VIVOTEK";
+            sourceDevice.AssignedProviderName = "VIVOTEK";
+            sourceDevice.Status = DeviceStatus.Online;
+            ApplyPortEvidence(sourceDevice, parsedIp is not null
+                ? portResults.FirstOrDefault(item => item.IpAddress.Equals(parsedIp))
+                : null);
+
+            var update = new ScanProgress(++scanned, total, sourceDevice);
             progress?.Report(update);
             yield return update;
         }
@@ -245,6 +282,60 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
             yield return new ScanProgress(total, total, null);
     }
 
+    private static async Task<IReadOnlyList<T>> SafeDiscoverAsync<T>(
+        Func<Task<IReadOnlyList<T>>> operation,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await operation();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return Array.Empty<T>();
+        }
+    }
+
+    private static IPAddress? GetIpFromOnvif(OnvifDiscoveryResult result)
+    {
+        if (!Uri.TryCreate(result.DeviceServiceXAddr, UriKind.Absolute, out var uri))
+            return null;
+        return IPAddress.TryParse(uri.Host, out var ip) ? ip : null;
+    }
+
+    private static void ApplyOnvifEvidence(
+        DiscoveredDevice device,
+        IReadOnlyDictionary<string, OnvifDiscoveryResult> onvifByIp,
+        string ipText)
+    {
+        if (!onvifByIp.TryGetValue(ipText, out var result))
+            return;
+
+        device.OnvifSupported = true;
+        device.OnvifDeviceServiceXAddr = result.DeviceServiceXAddr;
+        device.OnvifProfile = "detectado por WS-Discovery";
+    }
+
+    private static void ApplyVivotekEvidence(
+        DiscoveredDevice device,
+        IReadOnlyList<DiscoveredDevice> vivotekResults,
+        string ipText)
+    {
+        var match = vivotekResults.FirstOrDefault(item =>
+            string.Equals(item.IpAddress, ipText, StringComparison.OrdinalIgnoreCase));
+        if (match is null)
+            return;
+
+        device.Manufacturer = "VIVOTEK";
+        device.AssignedProviderName = "VIVOTEK";
+        device.Model ??= match.Model;
+        device.MacAddress ??= match.MacAddress;
+    }
+
     private static void ApplyPortEvidence(DiscoveredDevice device, CameraPortScanResult? portResult)
     {
         if (portResult is null)
@@ -256,6 +347,8 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
 
         if (portResult.Ports.Contains(80))
             device.HttpPort ??= 80;
+        else if (portResult.Ports.Contains(81))
+            device.HttpPort ??= 81;
         else if (portResult.Ports.Contains(8080))
             device.HttpPort ??= 8080;
         else if (portResult.Ports.Contains(8081))
@@ -264,6 +357,8 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
             device.HttpPort ??= 8888;
 
         if (portResult.Ports.Contains(443))
+            device.HttpsSupported = true;
+        else if (portResult.Ports.Contains(8443))
             device.HttpsSupported = true;
 
         if (portResult.Ports.Contains(554))
