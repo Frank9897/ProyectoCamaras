@@ -39,7 +39,6 @@ public sealed class MdnsDiscoveryService
         }
         catch (SocketException)
         {
-            // El bind sigue fijando la interfaz aunque el driver no permita este option.
         }
 
         var result = new Dictionary<string, MdnsServiceRecord>(StringComparer.OrdinalIgnoreCase);
@@ -53,7 +52,6 @@ public sealed class MdnsDiscoveryService
             }
             catch (SocketException)
             {
-                // Una consulta concreta puede fallar sin invalidar las demás.
             }
         }
 
@@ -155,20 +153,21 @@ public sealed class MdnsDiscoveryService
             records.Add(record);
         }
 
-        var addresses = records.Where(r => r.Type == 1 && r.RData.Length == 4)
+        var addresses = records.Where(r => r.Type == 1 && r.RDataLength == 4)
             .GroupBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => new IPAddress(g.Last().RData), StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(g => g.Key, g => new IPAddress(data.Skip(g.Last().RDataOffsetInPacket).Take(4).ToArray()), StringComparer.OrdinalIgnoreCase);
 
         foreach (var ptr in records.Where(r => r.Type == 12))
         {
-            if (!TryReadName(data, ptr.RDataOffsetInPacket, out var instance)) continue;
+            var ptrOffset = ptr.RDataOffsetInPacket;
+            if (!TryReadName(data, ref ptrOffset, out var instance)) continue;
             var srv = records.FirstOrDefault(r => r.Type == 33 && r.Name.Equals(instance, StringComparison.OrdinalIgnoreCase));
-            var target = srv is null ? null : ReadSrvTarget(data, srv.RDataOffsetInPacket, out var srvPort);
+            var target = srv.Type == 33 ? ReadSrvTarget(data, srv.RDataOffsetInPacket, out var srvPort) : null;
+            if (srv.Type != 33) srvPort = null;
             var ip = target is not null && addresses.TryGetValue(target, out var parsed) ? parsed : null;
             var serviceType = ServiceTypes.FirstOrDefault(type => ptr.Name.Equals(type, StringComparison.OrdinalIgnoreCase));
             if (serviceType is null) continue;
-            var txt = records.FirstOrDefault(r => r.Type == 16 && r.Name.Equals(instance, StringComparison.OrdinalIgnoreCase));
-            yield return new MdnsServiceRecord(serviceType, instance, target, ip, srvPort, ParseTxt(data, txt?.RDataOffsetInPacket));
+            yield return new MdnsServiceRecord(serviceType, instance, target, ip, srvPort, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
         }
     }
 
@@ -192,34 +191,13 @@ public sealed class MdnsDiscoveryService
         port = null;
         if (offset < 0 || offset + 6 > data.Length) return null;
         port = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(offset + 4, 2));
-        return TryReadName(data, ref offset, out var target, 6) ? target : null;
+        var nameOffset = offset + 6;
+        return TryReadName(data, ref nameOffset, out var target) ? target : null;
     }
 
-    private static Dictionary<string, string> ParseTxt(byte[] data, int? offset)
-    {
-        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (offset is null || offset < 0 || offset >= data.Length) return values;
-        var end = data.Length;
-        // TXT length is encoded in the record header; exact bounds are maintained by scanning valid chunks.
-        var cursor = offset.Value;
-        while (cursor < end)
-        {
-            var length = data[cursor++];
-            if (length == 0 || cursor + length > end) break;
-            var text = Encoding.UTF8.GetString(data, cursor, length);
-            cursor += length;
-            var separator = text.IndexOf('=');
-            if (separator > 0) values[text[..separator]] = text[(separator + 1)..];
-        }
-        return values;
-    }
-
-    private static bool TryReadName(byte[] data, ref int offset, out string name, int extraOffset = 0)
+    private static bool TryReadName(byte[] data, ref int offset, out string name)
     {
         name = string.Empty;
-        var start = offset + extraOffset;
-        if (start < 0 || start >= data.Length) return false;
-        offset = start;
         var labels = new List<string>();
         var cursor = offset;
         var jumped = false;
