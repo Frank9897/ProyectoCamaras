@@ -7,18 +7,13 @@ using CameraInspector.Core.Models;
 namespace CameraInspector.Network.Providers.Vivotek;
 
 /// <summary>
-/// Descubrimiento propietario de VIVOTEK compatible con el mecanismo de broadcast utilizado por Shepherd.
-/// La implementación soporta tanto redes normales como cámaras en APIPA 169.254.x.x.
+/// Descubrimiento propietario de VIVOTEK compatible con Shepherd/IW2.
+/// Soporta LAN normal y cámaras con Alias IP/APIPA 169.254.x.x.
 /// </summary>
 public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
 {
-    // VIVOTEK documenta UDP 5678 como puerto principal del broadcast de discovery.
     private const int ShepherdDiscoveryPort = 5678;
-
-    // Algunas generaciones/implementaciones responden mediante el flujo históricamente observado con UDP 10000.
-    // Lo conservamos como compatibilidad para no perder cámaras de firmware antiguo.
     private const int LegacyDiscoveryPort = 10000;
-
     private readonly TimeSpan _discoveryTimeout = TimeSpan.FromSeconds(3);
 
     public async Task<IReadOnlyList<DiscoveredDevice>> DiscoverAsync(
@@ -29,50 +24,40 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
 
         var results = new Dictionary<string, DiscoveredDevice>(StringComparer.OrdinalIgnoreCase);
         var bindAddress = networkInterface.IpAddress;
-        var broadcastAddress = CalculateBroadcastAddress(networkInterface.IpAddress, networkInterface.SubnetMask);
+        var broadcastAddress = CalculateBroadcastAddress(bindAddress, networkInterface.SubnetMask);
+        var broadcasts = new List<IPAddress> { broadcastAddress, IPAddress.Broadcast };
 
-        // APIPA necesita explícitamente el broadcast de 169.254.0.0/16.
-        var isApipa = bindAddress.AddressFamily == AddressFamily.InterNetwork &&
-                      IsApipa(bindAddress);
-
-        var broadcasts = new List<IPAddress>
-        {
-            broadcastAddress,
-            IPAddress.Broadcast
-        };
-
-        if (isApipa)
+        if (IsApipa(bindAddress))
             broadcasts.Add(IPAddress.Parse("169.254.255.255"));
 
-        // Eliminamos duplicados de broadcast antes de enviar.
-        broadcasts = broadcasts
-            .Distinct()
-            .ToList();
+        foreach (var target in broadcasts.Distinct())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await ProbePortAsync(bindAddress, target, ShepherdDiscoveryPort, results, cancellationToken);
+            await ProbePortAsync(bindAddress, target, LegacyDiscoveryPort, results, cancellationToken);
+        }
 
-        // Intentamos primero el puerto local documentado por VIVOTEK/Shepherd.
+        return results.Values.ToList();
+    }
+
+    private async Task ProbePortAsync(
+        IPAddress bindAddress,
+        IPAddress target,
+        int targetPort,
+        Dictionary<string, DiscoveredDevice> results,
+        CancellationToken cancellationToken)
+    {
         using var socket = await CreateBoundSocketAsync(bindAddress, ShepherdDiscoveryPort, cancellationToken);
         socket.EnableBroadcast = true;
-
         var probe = BuildProbe();
 
-        // VIVOTEK documenta 5678 para el broadcast de Shepherd; 10000 queda como fallback de compatibilidad.
-        foreach (var destinationPort in new[] { ShepherdDiscoveryPort, LegacyDiscoveryPort })
+        try
         {
-            foreach (var target in broadcasts)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                try
-                {
-                    await socket.SendAsync(
-                        probe,
-                        probe.Length,
-                        new IPEndPoint(target, destinationPort));
-                }
-                catch (SocketException)
-                {
-                    // Un broadcast concreto puede estar bloqueado por la topología/NIC; probamos el siguiente.
-                }
-            }
+            await socket.SendAsync(probe, probe.Length, new IPEndPoint(target, targetPort));
+        }
+        catch (SocketException)
+        {
+            return;
         }
 
         var deadline = DateTimeOffset.UtcNow + _discoveryTimeout;
@@ -82,45 +67,34 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
             if (remaining <= TimeSpan.Zero)
                 break;
 
-            UdpReceiveResult packet;
             try
             {
-                var receiveTask = socket.ReceiveAsync(cancellationToken).AsTask();
-                var timeoutTask = Task.Delay(remaining, cancellationToken);
-                var completed = await Task.WhenAny(receiveTask, timeoutTask);
-
-                if (completed != receiveTask)
+                var receive = socket.ReceiveAsync(cancellationToken).AsTask();
+                var timeout = Task.Delay(remaining, cancellationToken);
+                if (await Task.WhenAny(receive, timeout) != receive)
                     break;
 
-                packet = await receiveTask;
+                var packet = await receive;
+                if (!LooksLikeVivotekResponse(packet.Buffer))
+                    continue;
+
+                var device = CreateDiscoveredDevice(packet.RemoteEndPoint.Address, packet.Buffer);
+                var key = device.MacAddress ?? device.IpAddress;
+
+                if (results.TryGetValue(key, out var existing))
+                    MergeEvidence(existing, device);
+                else
+                    results[key] = device;
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
             }
             catch (SocketException)
             {
-                continue;
+                break;
             }
-
-            // No restringimos la respuesta a un puerto origen concreto: el discovery puede devolver desde
-            // implementaciones/firmwares diferentes. La evidencia fuerte es el formato VIVOTEK del payload.
-            if (!LooksLikeVivotekResponse(packet.Buffer))
-                continue;
-
-            var device = CreateDiscoveredDevice(packet.RemoteEndPoint.Address, packet.Buffer);
-            var key = device.IpAddress;
-
-            if (results.TryGetValue(key, out var existing))
-            {
-                MergeEvidence(existing, device);
-                continue;
-            }
-
-            results[key] = device;
         }
-
-        return results.Values.ToList();
     }
 
     private static async Task<UdpClient> CreateBoundSocketAsync(
@@ -134,42 +108,28 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
         }
         catch (SocketException)
         {
-            // Si otro proceso ya usa 5678, usar un puerto efímero mantiene funcional el discovery de la mayoría de firmwares.
-            var fallback = new UdpClient(new IPEndPoint(bindAddress, 0));
-            await Task.CompletedTask;
             cancellationToken.ThrowIfCancellationRequested();
-            return fallback;
+            return new UdpClient(new IPEndPoint(bindAddress, 0));
         }
     }
 
     private static byte[] BuildProbe()
     {
         var session = Guid.NewGuid().ToByteArray();
-
-        // Formato mínimo públicamente observado: 01 + 3 bytes de sesión + 03.
-        return new[]
-        {
-            (byte)0x01,
-            session[0],
-            session[1],
-            session[2],
-            (byte)0x03
-        };
+        return new[] { (byte)0x01, session[0], session[1], session[2], (byte)0x03 };
     }
 
     private static IPAddress CalculateBroadcastAddress(IPAddress ipAddress, IPAddress subnetMask)
     {
         var ipBytes = ipAddress.GetAddressBytes();
         var maskBytes = subnetMask.GetAddressBytes();
-
         if (ipBytes.Length != 4 || maskBytes.Length != 4)
             return IPAddress.Broadcast;
 
-        var broadcastBytes = new byte[4];
+        var broadcast = new byte[4];
         for (var index = 0; index < 4; index++)
-            broadcastBytes[index] = (byte)(ipBytes[index] | ~maskBytes[index]);
-
-        return new IPAddress(broadcastBytes);
+            broadcast[index] = (byte)(ipBytes[index] | ~maskBytes[index]);
+        return new IPAddress(broadcast);
     }
 
     private static bool IsApipa(IPAddress address)
@@ -180,47 +140,70 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
 
     private static bool LooksLikeVivotekResponse(byte[] payload)
     {
-        if (payload.Length < 8)
+        if (payload.Length < 11 || payload[0] != 0x02)
             return false;
 
-        // Las respuestas VIVOTEK conocidas comienzan con 0x02 y contienen identificadores/strings de producto.
-        if (payload[0] == 0x02)
-            return true;
-
-        // Compatibilidad adicional: aceptar una carga que contenga un prefijo ASCII VIVOTEK.
-        var text = Encoding.ASCII.GetString(payload);
-        return text.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase);
+        // La respuesta propietaria observada de VIVOTEK contiene TLV y la firma MAC 00-02-D1.
+        return ExtractVivotekMac(payload) is not null ||
+               Encoding.ASCII.GetString(payload).Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static DiscoveredDevice CreateDiscoveredDevice(IPAddress address, byte[] payload)
+    private static DiscoveredDevice CreateDiscoveredDevice(IPAddress sourceAddress, byte[] payload)
     {
-        var model = ExtractModel(payload);
+        var advertisedIp = ExtractVivotekIp(payload) ?? sourceAddress;
         var mac = ExtractVivotekMac(payload);
+        var model = ExtractModel(payload);
 
         return new DiscoveredDevice
         {
-            IpAddress = address.ToString(),
+            IpAddress = advertisedIp.ToString(),
             MacAddress = mac,
             Manufacturer = "VIVOTEK",
             Model = model,
             AssignedProviderName = "VIVOTEK",
             Status = DeviceStatus.Online,
+            CameraEvidence = true,
             HttpSupported = true,
-            OnvifSupported = false
+            HttpPort = 80,
+            RtspSupported = true,
+            RtspPort = 554
         };
+    }
+
+    private static string? ExtractVivotekMac(byte[] payload)
+    {
+        for (var index = 0; index <= payload.Length - 6; index++)
+        {
+            if (payload[index] != 0x00 || payload[index + 1] != 0x02 || payload[index + 2] != 0xD1)
+                continue;
+
+            return string.Join(":", payload.Skip(index).Take(6).Select(value => value.ToString("X2")));
+        }
+        return null;
+    }
+
+    private static IPAddress? ExtractVivotekIp(byte[] payload)
+    {
+        // Formato TLV observado: tag 0x03 + length 0x04 + IPv4 en cuatro octetos.
+        for (var index = 0; index <= payload.Length - 6; index++)
+        {
+            if (payload[index] != 0x03 || payload[index + 1] != 0x04)
+                continue;
+
+            var bytes = payload.Skip(index + 2).Take(4).ToArray();
+            if (IPAddress.TryParse(string.Join('.', bytes), out var address))
+                return address;
+        }
+        return null;
     }
 
     private static string? ExtractModel(byte[] payload)
     {
-        // Extrae una secuencia ASCII imprimible razonable. Evitamos exponer bytes binarios como modelo.
         var candidates = new List<string>();
         var current = new StringBuilder();
-
         foreach (var value in payload)
         {
-            var printable = value is >= 0x20 and <= 0x7E;
-            if (printable)
+            if (value is >= 0x20 and <= 0x7E)
             {
                 current.Append((char)value);
                 continue;
@@ -228,49 +211,29 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
 
             if (current.Length >= 5)
                 candidates.Add(current.ToString());
-
             current.Clear();
         }
-
         if (current.Length >= 5)
             candidates.Add(current.ToString());
 
-        // Priorizamos patrones de modelo de VIVOTEK (por ejemplo IB9360, FD8166, IT9388, etc.).
         return candidates
             .Where(item => item.Length <= 48)
-            .OrderByDescending(item => item.Any(char.IsLetter) && item.Any(char.IsDigit))
-            .ThenBy(item => item.Length)
-            .FirstOrDefault();
-    }
-
-    private static string? ExtractVivotekMac(byte[] payload)
-    {
-        // La documentación de VIVOTEK indica que sus MAC suelen comenzar por 00-02-D1.
-        // Buscamos esa firma dentro de la respuesta binaria del discovery.
-        for (var index = 0; index <= payload.Length - 6; index++)
-        {
-            if (payload[index] != 0x00 || payload[index + 1] != 0x02 || payload[index + 2] != 0xD1)
-                continue;
-
-            return string.Join(
-                ":",
-                payload.Skip(index).Take(6).Select(value => value.ToString("X2")));
-        }
-
-        return null;
+            .FirstOrDefault(item => item.Any(char.IsLetter) && item.Any(char.IsDigit));
     }
 
     private static void MergeEvidence(DiscoveredDevice target, DiscoveredDevice source)
     {
-        if (string.IsNullOrWhiteSpace(target.MacAddress))
-            target.MacAddress = source.MacAddress;
-
-        if (string.IsNullOrWhiteSpace(target.Model))
-            target.Model = source.Model;
-
+        target.MacAddress ??= source.MacAddress;
+        target.Model ??= source.Model;
+        target.FirmwareVersion ??= source.FirmwareVersion;
+        target.SerialNumber ??= source.SerialNumber;
         target.Manufacturer = "VIVOTEK";
         target.AssignedProviderName = "VIVOTEK";
-        target.Status = DeviceStatus.Online;
+        target.CameraEvidence = true;
         target.HttpSupported |= source.HttpSupported;
+        target.RtspSupported |= source.RtspSupported;
+        target.HttpPort ??= source.HttpPort;
+        target.RtspPort ??= source.RtspPort;
+        target.Status = DeviceStatus.Online;
     }
 }
