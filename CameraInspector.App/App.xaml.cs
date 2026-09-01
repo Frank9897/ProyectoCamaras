@@ -18,17 +18,11 @@ using Microsoft.Extensions.Hosting;
 
 namespace CameraInspector.App;
 
-/// <summary>
-/// Punto de arranque de la aplicación.
-/// El Generic Host centraliza DI, persistencia y ciclo de vida de los servicios.
-/// </summary>
 public partial class App : Application
 {
     private IHost? _host;
     private bool _isShuttingDown;
-
     public static IServiceProvider? Services { get; private set; }
-
     private static string ErrorLogPath => Path.Combine(AppContext.BaseDirectory, "CameraInspector_error.txt");
 
     public App()
@@ -47,9 +41,7 @@ public partial class App : Application
         };
 
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
-        {
             WriteErrorLog("EXCEPCIÓN FATAL", args.ExceptionObject);
-        };
     }
 
     protected override async void OnStartup(StartupEventArgs e)
@@ -76,6 +68,8 @@ public partial class App : Application
                     services.AddSingleton<IArpResolver, ArpResolver>();
                     services.AddSingleton<IOnvifDiscoveryService, WsDiscoveryOnvifService>();
                     services.AddSingleton<IVivotekDiscoveryService, VivotekDiscoveryService>();
+                    services.AddSingleton<CameraPortScanner>();
+                    services.AddSingleton<SsdpDiscoveryService>();
                     services.AddSingleton<INetworkScanner, NetworkScanOrchestrator>();
 
                     services.AddSingleton<IManufacturerDetector, Network.Detection.OuiMacDetector>();
@@ -85,10 +79,8 @@ public partial class App : Application
 
                     services.AddSingleton<IOnvifDeviceService, Network.OnvifMedia.OnvifDeviceService>();
                     services.AddSingleton<Network.OnvifMedia.OnvifMediaService>();
-                    services.AddSingleton<IOnvifMediaService>(sp =>
-                        sp.GetRequiredService<Network.OnvifMedia.OnvifMediaService>());
-                    services.AddSingleton<IStreamUriResolver>(sp =>
-                        sp.GetRequiredService<Network.OnvifMedia.OnvifMediaService>());
+                    services.AddSingleton<IOnvifMediaService>(sp => sp.GetRequiredService<Network.OnvifMedia.OnvifMediaService>());
+                    services.AddSingleton<IStreamUriResolver>(sp => sp.GetRequiredService<Network.OnvifMedia.OnvifMediaService>());
                     services.AddSingleton<IOnvifPtzService, Network.OnvifMedia.OnvifPtzService>();
                     services.AddSingleton<IOnvifImagingService, Network.OnvifMedia.OnvifImagingService>();
                     services.AddSingleton<IOnvifEventService, Network.OnvifMedia.OnvifEventService>();
@@ -96,8 +88,7 @@ public partial class App : Application
                     services.AddSingleton<ICameraProvider, HikvisionProvider>();
                     services.AddSingleton<ICameraProvider, VivotekProvider>();
                     services.AddSingleton<CameraProviderResolver>();
-                    services.AddSingleton<ICameraProviderResolver>(sp =>
-                        sp.GetRequiredService<CameraProviderResolver>());
+                    services.AddSingleton<ICameraProviderResolver>(sp => sp.GetRequiredService<CameraProviderResolver>());
 
                     services.AddSingleton<IVivotekSnapshotService, VivotekSnapshotService>();
                     services.AddSingleton<IVivotekPtzService, VivotekPtzService>();
@@ -106,8 +97,7 @@ public partial class App : Application
                     services.AddSingleton<ICameraDiagnosticService, Network.Diagnostics.CameraDiagnosticService>();
                     services.AddSingleton<IVideoPlayerService, LibVlcVideoPlayerService>();
                     services.AddSingleton<LocalCameraService>();
-                    services.AddSingleton<ILocalCameraService>(sp =>
-                        sp.GetRequiredService<LocalCameraService>());
+                    services.AddSingleton<ILocalCameraService>(sp => sp.GetRequiredService<LocalCameraService>());
 
                     services.AddSingleton<MainViewModel>();
                     services.AddSingleton<MainWindow>();
@@ -155,16 +145,7 @@ public partial class App : Application
                 .AppendLine($"BaseDirectory: {AppContext.BaseDirectory}")
                 .AppendLine();
 
-            switch (error)
-            {
-                case Exception exception:
-                    sb.AppendLine(exception.ToString());
-                    break;
-                default:
-                    sb.AppendLine(error?.ToString() ?? "Error desconocido.");
-                    break;
-            }
-
+            sb.AppendLine(error is Exception exception ? exception.ToString() : error?.ToString() ?? "Error desconocido.");
             File.AppendAllText(ErrorLogPath, sb.ToString() + Environment.NewLine, Encoding.UTF8);
         }
         catch
@@ -187,10 +168,9 @@ public partial class App : Application
 
         for (var index = Windows.Count - 1; index >= 0; index--)
         {
-            var window = Windows[index];
             try
             {
-                window.Close();
+                Windows[index].Close();
             }
             catch
             {
