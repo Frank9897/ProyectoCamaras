@@ -5,21 +5,20 @@ using System.Net.Sockets;
 namespace CameraInspector.Network;
 
 /// <summary>
-/// Sondeo TCP acotado de puertos típicos de cámaras/servidores de vídeo.
-/// No sustituye a ONVIF: sirve para encontrar dispositivos que bloquean ICMP
-/// o que no implementan WS-Discovery, como algunos modelos VIVOTEK antiguos.
+/// Sondeo TCP acotado de puertos frecuentes en cámaras, NVR y servidores de video.
+/// No sustituye a los protocolos de descubrimiento; aporta evidencia cuando ICMP/ONVIF no responden.
 /// </summary>
 public sealed class CameraPortScanner
 {
-    // Puertos comunes de administración/streaming. Se mantienen deliberadamente acotados.
     private static readonly int[] CameraPorts =
     {
-        80, 443, 554, 8080, 8000, 8081, 8554, 8888
+        80, 81, 82, 88, 443, 5000, 554, 8000,
+        8080, 8081, 8443, 8554, 37777, 37778, 8888, 9000
     };
 
     public async Task<IReadOnlyList<CameraPortScanResult>> ScanAsync(
         IEnumerable<IPAddress> candidates,
-        int timeoutMs = 350,
+        int timeoutMs = 300,
         int maxParallelism = 64,
         CancellationToken cancellationToken = default)
     {
@@ -29,7 +28,7 @@ public sealed class CameraPortScanner
             candidates.Distinct(),
             new ParallelOptions
             {
-                MaxDegreeOfParallelism = Math.Clamp(maxParallelism, 1, 128),
+                MaxDegreeOfParallelism = Math.Clamp(maxParallelism, 1, 96),
                 CancellationToken = cancellationToken
             },
             async (ip, token) =>
@@ -38,9 +37,7 @@ public sealed class CameraPortScanner
                 {
                     token.ThrowIfCancellationRequested();
                     if (await IsOpenAsync(ip, port, timeoutMs, token))
-                    {
                         found.Add(new CameraPortScanResult(ip, port));
-                    }
                 }
             });
 
@@ -62,7 +59,7 @@ public sealed class CameraPortScanner
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(Math.Clamp(timeoutMs, 100, 2000));
+            timeout.CancelAfter(Math.Clamp(timeoutMs, 100, 1500));
             await client.ConnectAsync(address, port, timeout.Token);
             return client.Connected;
         }
@@ -88,7 +85,7 @@ public sealed record CameraPortScanResult(IPAddress IpAddress, IReadOnlyList<int
     {
     }
 
-    public bool Http => Ports.Contains(80) || Ports.Contains(8080) || Ports.Contains(8081) || Ports.Contains(8888);
-    public bool Https => Ports.Contains(443);
-    public bool Rtsp => Ports.Contains(554) || Ports.Contains(8554);
+    public bool Http => Ports.Any(port => port is 80 or 81 or 82 or 88 or 8080 or 8081 or 8888);
+    public bool Https => Ports.Any(port => port is 443 or 8443);
+    public bool Rtsp => Ports.Any(port => port is 554 or 8554);
 }
