@@ -28,34 +28,24 @@ public partial class App : Application
     public App()
     {
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
-
         DispatcherUnhandledException += (_, args) =>
         {
             WriteErrorLog("EXCEPCIÓN NO CONTROLADA EN UI", args.Exception);
-            MessageBox.Show(
-                $"Ocurrió un error no controlado.\n\nSe guardó el detalle en:\n{ErrorLogPath}\n\n{args.Exception.Message}",
-                "Camera Inspector — Error",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            MessageBox.Show($"Ocurrió un error no controlado.\n\nSe guardó el detalle en:\n{ErrorLogPath}\n\n{args.Exception.Message}", "Camera Inspector — Error", MessageBoxButton.OK, MessageBoxImage.Error);
             args.Handled = true;
         };
-
-        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
-            WriteErrorLog("EXCEPCIÓN FATAL", args.ExceptionObject);
+        AppDomain.CurrentDomain.UnhandledException += (_, args) => WriteErrorLog("EXCEPCIÓN FATAL", args.ExceptionObject);
     }
 
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-
         try
         {
             _host = Host.CreateDefaultBuilder()
                 .ConfigureServices((_, services) =>
                 {
-                    services.AddDbContextFactory<CameraInspectorDbContext>(options =>
-                        options.UseSqlite($"Data Source={CameraInspectorDbContext.GetDefaultDbPath()}"));
-
+                    services.AddDbContextFactory<CameraInspectorDbContext>(options => options.UseSqlite($"Data Source={CameraInspectorDbContext.GetDefaultDbPath()}"));
                     services.AddSingleton<ICameraInventoryStore, CameraInventoryStore>();
                     services.AddSingleton<IDiagnosticHistoryStore, DiagnosticHistoryStore>();
                     services.AddSingleton<ICameraCredentialStore, CameraCredentialStore>();
@@ -76,6 +66,7 @@ public partial class App : Application
                     services.AddSingleton<IManufacturerDetector, Network.Detection.OuiMacDetector>();
                     services.AddSingleton<IManufacturerDetector, Network.Detection.HttpBannerDetector>();
                     services.AddSingleton<IManufacturerDetector, Network.Detection.LegacyCameraHttpDetector>();
+                    services.AddSingleton<IManufacturerDetector, Network.Detection.RtspFingerprintDetector>();
                     services.AddSingleton<IManufacturerDetector, Network.Detection.OnvifProbeDetector>();
                     services.AddSingleton<IManufacturerResolver, Network.Detection.ManufacturerResolver>();
 
@@ -100,7 +91,6 @@ public partial class App : Application
                     services.AddSingleton<IVideoPlayerService, LibVlcVideoPlayerService>();
                     services.AddSingleton<LocalCameraService>();
                     services.AddSingleton<ILocalCameraService>(sp => sp.GetRequiredService<LocalCameraService>());
-
                     services.AddSingleton<MainViewModel>();
                     services.AddSingleton<MainWindow>();
                 })
@@ -108,7 +98,6 @@ public partial class App : Application
 
             await _host.StartAsync();
             Services = _host.Services;
-
             await using (var scope = _host.Services.CreateAsyncScope())
             {
                 var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<CameraInspectorDbContext>>();
@@ -123,11 +112,7 @@ public partial class App : Application
         catch (Exception ex)
         {
             WriteErrorLog("ERROR DE ARRANQUE", ex);
-            MessageBox.Show(
-                $"No se pudo iniciar la aplicación.\n\nSe guardó el detalle en:\n{ErrorLogPath}\n\n{ex.Message}",
-                "Camera Inspector — Error de arranque",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            MessageBox.Show($"No se pudo iniciar la aplicación.\n\nSe guardó el detalle en:\n{ErrorLogPath}\n\n{ex.Message}", "Camera Inspector — Error de arranque", MessageBoxButton.OK, MessageBoxImage.Error);
             BeginApplicationShutdown(-1);
         }
     }
@@ -146,20 +131,15 @@ public partial class App : Application
                 .AppendLine($"64-bit proceso: {Environment.Is64BitProcess}")
                 .AppendLine($"BaseDirectory: {AppContext.BaseDirectory}")
                 .AppendLine();
-
             sb.AppendLine(error is Exception exception ? exception.ToString() : error?.ToString() ?? "Error desconocido.");
             File.AppendAllText(ErrorLogPath, sb.ToString() + Environment.NewLine, Encoding.UTF8);
         }
-        catch
-        {
-        }
+        catch { }
     }
 
     private void BeginApplicationShutdown(int exitCode = 0)
     {
-        if (_isShuttingDown)
-            return;
-
+        if (_isShuttingDown) return;
         _isShuttingDown = true;
         Dispatcher.BeginInvoke(new Action(() => Shutdown(exitCode)));
     }
@@ -167,31 +147,15 @@ public partial class App : Application
     protected override async void OnExit(ExitEventArgs e)
     {
         _isShuttingDown = true;
-
         for (var index = Windows.Count - 1; index >= 0; index--)
         {
-            try
-            {
-                Windows[index].Close();
-            }
-            catch
-            {
-            }
+            try { Windows[index].Close(); } catch { }
         }
-
         if (_host is not null)
         {
-            try
-            {
-                await _host.StopAsync();
-            }
-            finally
-            {
-                _host.Dispose();
-                _host = null;
-            }
+            try { await _host.StopAsync(); }
+            finally { _host.Dispose(); _host = null; }
         }
-
         Services = null;
         base.OnExit(e);
     }
