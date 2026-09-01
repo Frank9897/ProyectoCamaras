@@ -61,6 +61,7 @@ public partial class App : Application
                     services.AddSingleton<CameraPortScanner>();
                     services.AddSingleton<SsdpDiscoveryService>();
                     services.AddSingleton<LegacyVendorDiscoveryService>();
+                    services.AddSingleton<MdnsDiscoveryService>();
                     services.AddSingleton<INetworkScanner, NetworkScanOrchestrator>();
 
                     services.AddSingleton<IManufacturerDetector, Network.Detection.OuiMacDetector>();
