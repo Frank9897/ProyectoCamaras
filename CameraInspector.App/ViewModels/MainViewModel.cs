@@ -7,11 +7,6 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace CameraInspector.App.ViewModels;
 
-/// <summary>
-/// ViewModel de la pantalla principal.
-/// Coordina descubrimiento, identificación ONVIF, inventario, credenciales seguras,
-/// streams, diagnóstico, historial y reproducción.
-/// </summary>
 public sealed partial class MainViewModel : ObservableObject
 {
     private readonly INetworkInterfaceService _interfaceService;
@@ -26,35 +21,15 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly ICameraCredentialStore _cameraCredentialStore;
     private readonly IVideoPlayerService _videoPlayerService;
 
-    /// <summary>
-    /// Lista visible para el técnico. Solo contiene dispositivos con evidencia de cámara.
-    /// Los hosts de infraestructura permanecen fuera de esta colección para no ensuciar la UI.
-    /// </summary>
     public ObservableCollection<DeviceViewModel> Devices { get; } = new();
-
-    /// <summary>
-    /// Dispositivos descubiertos internamente durante el escaneo.
-    /// Esta colección permite conservar evidencia aunque el equipo no sea una cámara.
-    /// </summary>
     private readonly List<DeviceViewModel> _allDiscoveredDevices = new();
-
-    /// <summary>Resultados de la última batería de diagnóstico ejecutada.</summary>
     public ObservableCollection<DiagnosticResult> DiagnosticResults { get; } = new();
-
-    /// <summary>Últimos registros históricos de la cámara seleccionada.</summary>
     public ObservableCollection<DiagnosticHistoryItem> DiagnosticHistory { get; } = new();
 
-    [ObservableProperty]
-    private string _statusText = "Listo para escanear.";
-
-    [ObservableProperty]
-    private bool _isScanning;
-
-    [ObservableProperty]
-    private bool _isDiagnosing;
-
-    [ObservableProperty]
-    private NetworkInterfaceInfo? _selectedInterface;
+    [ObservableProperty] private string _statusText = "Listo para escanear.";
+    [ObservableProperty] private bool _isScanning;
+    [ObservableProperty] private bool _isDiagnosing;
+    [ObservableProperty] private NetworkInterfaceInfo? _selectedInterface;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(GetMainStreamUriCommand))]
@@ -64,23 +39,12 @@ public sealed partial class MainViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(DeleteCredentialsCommand))]
     private DeviceViewModel? _selectedDevice;
 
-    [ObservableProperty]
-    private CameraStreamInfo? _resolvedMainStream;
-
-    [ObservableProperty]
-    private CameraStreamInfo? _resolvedSubStream;
-
-    [ObservableProperty]
-    private bool _hasSavedCredentials;
-
-    [ObservableProperty]
-    private string? _savedCredentialUsername;
-
-    [ObservableProperty]
-    private DateTimeOffset? _savedCredentialLastVerifiedAt;
-
-    [ObservableProperty]
-    private bool _useSavedCredentials = true;
+    [ObservableProperty] private CameraStreamInfo? _resolvedMainStream;
+    [ObservableProperty] private CameraStreamInfo? _resolvedSubStream;
+    [ObservableProperty] private bool _hasSavedCredentials;
+    [ObservableProperty] private string? _savedCredentialUsername;
+    [ObservableProperty] private DateTimeOffset? _savedCredentialLastVerifiedAt;
+    [ObservableProperty] private bool _useSavedCredentials = true;
 
     public ObservableCollection<NetworkInterfaceInfo> AvailableInterfaces { get; } = new();
 
@@ -97,65 +61,42 @@ public sealed partial class MainViewModel : ObservableObject
         ICameraCredentialStore cameraCredentialStore,
         IVideoPlayerService videoPlayerService)
     {
-        // _interfaceService enumera las interfaces de red disponibles para el escaneo.
         _interfaceService = interfaceService;
-        // _scanner ejecuta Ping, ARP y WS-Discovery.
         _scanner = scanner;
-        // _manufacturerResolver combina evidencias de OUI, HTTP y ONVIF.
         _manufacturerResolver = manufacturerResolver;
-        // _onvifDeviceService consulta identidad y capacidades ONVIF.
         _onvifDeviceService = onvifDeviceService;
-        // _streamUriResolver resuelve los streams ONVIF.
         _streamUriResolver = streamUriResolver;
-        // _diagnosticService ejecuta la batería de diagnóstico.
         _diagnosticService = diagnosticService;
-        // _inventoryStore mantiene el inventario persistente de cámaras.
         _inventoryStore = inventoryStore;
-        // _diagnosticHistoryStore guarda y consulta los resultados históricos.
         _diagnosticHistoryStore = diagnosticHistoryStore;
-        // _credentialStore administra el secreto real en Windows Credential Manager.
         _credentialStore = credentialStore;
-        // _cameraCredentialStore relaciona una cámara SQLite con una referencia segura.
         _cameraCredentialStore = cameraCredentialStore;
-        // _videoPlayerService controla la reproducción RTSP.
         _videoPlayerService = videoPlayerService;
 
         foreach (var nic in _interfaceService.GetActiveInterfaces())
             AvailableInterfaces.Add(nic);
-
         SelectedInterface = AvailableInterfaces.FirstOrDefault();
     }
 
     partial void OnSelectedDeviceChanged(DeviceViewModel? value)
     {
-        // Detenemos el video de la cámara anterior para evitar dos reproducciones simultáneas.
         _videoPlayerService.Stop();
-
         ResolvedMainStream = null;
         ResolvedSubStream = null;
         DiagnosticResults.Clear();
         DiagnosticHistory.Clear();
-
-        // Restablecemos el estado persistente antes de cargar el de la nueva selección.
         HasSavedCredentials = false;
         SavedCredentialUsername = null;
         SavedCredentialLastVerifiedAt = null;
-
         if (value is not null)
             _ = LoadSelectedDeviceStateAsync(value);
     }
 
-    /// <summary>
-    /// Carga de forma asíncrona la información persistente de seguridad e historial de la cámara seleccionada.
-    /// </summary>
     private async Task LoadSelectedDeviceStateAsync(DeviceViewModel viewModel)
     {
-        if (viewModel.CameraId is not int cameraId)
-            return;
-
+        if (viewModel.CameraId is not int cameraId) return;
         try
         {
-            // credentialInfo contiene únicamente metadatos; la contraseña sigue en Credential Manager.
             var credentialInfo = await _cameraCredentialStore.GetAsync(cameraId);
             if (credentialInfo is not null)
             {
@@ -163,16 +104,10 @@ public sealed partial class MainViewModel : ObservableObject
                 SavedCredentialUsername = credentialInfo.Username;
                 SavedCredentialLastVerifiedAt = credentialInfo.LastVerifiedAt;
             }
-
-            // history contiene las últimas pruebas y alimenta la pestaña Historial.
             var history = await _diagnosticHistoryStore.GetRecentAsync(cameraId, 100);
-            foreach (var item in history)
-                DiagnosticHistory.Add(item);
+            foreach (var item in history) DiagnosticHistory.Add(item);
         }
-        catch (Exception ex)
-        {
-            StatusText = $"No se pudo cargar la información persistente: {ex.Message}";
-        }
+        catch (Exception ex) { StatusText = $"No se pudo cargar la información persistente: {ex.Message}"; }
     }
 
     [RelayCommand(CanExecute = nameof(CanScan))]
@@ -200,74 +135,40 @@ public sealed partial class MainViewModel : ObservableObject
             {
                 if (progress.NewlyFound is not null)
                 {
-                    // device representa cualquier host descubierto. Primero se conserva internamente.
                     var device = progress.NewlyFound;
-
-                    // vm mantiene el binding WPF aunque el dispositivo termine siendo ocultado por no ser cámara.
                     var vm = new DeviceViewModel(device);
                     _allDiscoveredDevices.Add(vm);
-
-                    // La resolución determina si el host tiene evidencia suficiente para entrar en la lista visible.
                     await ResolveDeviceAsync(device, vm, cancellationToken);
                 }
-
-                StatusText = $"Escaneando... {progress.Scanned} dispositivos de {progress.Total} IPs candidatas · Cámaras visibles: {Devices.Count}";
+                StatusText = $"Escaneando... {progress.Scanned} de {progress.Total} · Cámaras visibles: {Devices.Count}";
             }
-
             StatusText = $"Escaneo completo: {Devices.Count} cámaras/dispositivos de imagen encontrados.";
         }
-        catch (OperationCanceledException)
-        {
-            StatusText = "Escaneo cancelado.";
-        }
-        finally
-        {
-            IsScanning = false;
-        }
+        catch (OperationCanceledException) { StatusText = "Escaneo cancelado."; }
+        finally { IsScanning = false; }
     }
 
     private bool CanScan() => !IsScanning && !IsDiagnosing;
 
-    /// <summary>
-    /// Resuelve la identidad del host y decide si debe mostrarse en la lista principal.
-    /// La UI solo expone cámaras ONVIF o candidatos RTSP; routers, módems, switches y hosts
-    /// que solo respondan a Ping/ARP/HTTP permanecen ocultos.
-    /// </summary>
-    private async Task ResolveDeviceAsync(
-        DiscoveredDevice device,
-        DeviceViewModel viewModel,
-        CancellationToken cancellationToken)
+    private async Task ResolveDeviceAsync(DiscoveredDevice device, DeviceViewModel viewModel, CancellationToken cancellationToken)
     {
         try
         {
-            // Ejecutamos todos los detectores para obtener la mayor cantidad de evidencia posible.
             await _manufacturerResolver.ResolveAsync(device, cancellationToken);
             viewModel.Refresh();
 
-            // isCameraCandidate será verdadero para una cámara ONVIF confirmada o para un dispositivo que
-            // exponga RTSP, que es la señal genérica que utilizaremos para cubrir cámaras no-ONVIF.
-            var isCameraCandidate = device.OnvifSupported || device.RtspSupported;
+            // ONVIF es una evidencia, no el requisito. CameraEvidence permite mostrar cámaras propietarias,
+            // legacy, mDNS/SSDP o descubiertas por fingerprint especializado.
+            var isCameraCandidate = device.CameraEvidence || device.OnvifSupported || device.RtspSupported;
+            if (!isCameraCandidate) return;
 
-            if (!isCameraCandidate)
-                return;
+            if (!Devices.Contains(viewModel)) Devices.Add(viewModel);
 
-            // Una vez obtenida evidencia de cámara, agregamos el dispositivo a la colección visible.
-            // Dispatcher no es necesario porque el método se ejecuta desde la cadena async de WPF.
-            if (!Devices.Contains(viewModel))
-                Devices.Add(viewModel);
-
-            // ONVIF aporta información mucho más fiable que banners genéricos de HTTP.
             if (device.OnvifSupported)
             {
-                var info = await _onvifDeviceService.GetDeviceInformationAsync(
-                    device,
-                    null,
-                    null,
-                    cancellationToken);
-
+                var info = await _onvifDeviceService.GetDeviceInformationAsync(device, null, null, cancellationToken);
                 if (info is not null)
                 {
-                    // Los datos ONVIF tienen prioridad porque provienen directamente del dispositivo.
                     device.Manufacturer = info.Manufacturer ?? device.Manufacturer;
                     device.Model = info.Model ?? device.Model;
                     device.FirmwareVersion = info.FirmwareVersion ?? device.FirmwareVersion;
@@ -275,13 +176,7 @@ public sealed partial class MainViewModel : ObservableObject
                     viewModel.Refresh();
                 }
 
-                // capabilities contiene los endpoints publicados realmente por la cámara.
-                var capabilities = await _onvifDeviceService.GetCapabilitiesAsync(
-                    device,
-                    null,
-                    null,
-                    cancellationToken);
-
+                var capabilities = await _onvifDeviceService.GetCapabilitiesAsync(device, null, null, cancellationToken);
                 if (capabilities is not null)
                 {
                     device.OnvifDeviceServiceXAddr = capabilities.DeviceServiceXAddr ?? device.OnvifDeviceServiceXAddr;
@@ -294,158 +189,81 @@ public sealed partial class MainViewModel : ObservableObject
                 }
             }
 
-            // Solo persistimos cuando existe evidencia de dispositivo de imagen.
-            if (device.OnvifSupported || device.RtspSupported)
+            if (isCameraCandidate)
             {
-                // cameraId es la identidad persistente usada por credenciales e historial.
                 var cameraId = await _inventoryStore.UpsertAsync(device, cancellationToken);
                 viewModel.SetCameraId(cameraId);
             }
         }
-        catch (OperationCanceledException)
-        {
-            // Cancelación normal al detener el escaneo.
-        }
-        catch
-        {
-            // Un error de enriquecimiento no elimina el dispositivo de la lista si ya fue clasificado como cámara.
-        }
+        catch (OperationCanceledException) { }
+        catch { }
     }
 
-    /// <summary>
-    /// Obtiene las credenciales para una operación.
-    /// Si UseSavedCredentials está activo y existe una credencial, el secreto se recupera de Windows Credential Manager.
-    /// Si no, se solicita al técnico mediante el diálogo.
-    /// </summary>
     private async Task<CredentialSession?> GetCredentialsAsync()
     {
-        if (SelectedDevice is null)
-            return null;
-
+        if (SelectedDevice is null) return null;
         if (UseSavedCredentials && SelectedDevice.CameraId is int savedCameraId)
         {
-            // savedInfo contiene el enlace entre la cámara y Credential Manager.
             var savedInfo = await _cameraCredentialStore.GetAsync(savedCameraId);
             if (savedInfo is not null)
             {
-                // storedCredential contiene el secreto únicamente en memoria durante esta operación.
                 var storedCredential = await _credentialStore.GetAsync(savedInfo.CredentialRef);
                 if (storedCredential is not null)
-                {
-                    return new CredentialSession(
-                        storedCredential.Username,
-                        storedCredential.Password,
-                        savedInfo.CredentialRef);
-                }
-
-                StatusText = "La credencial guardada ya no existe en Windows Credential Manager.";
+                    return new CredentialSession(storedCredential.Username, storedCredential.Password, savedInfo.CredentialRef);
             }
         }
 
-        // initialUsername evita obligar al técnico a volver a escribir el usuario almacenado.
-        var dialog = new CredentialsDialog(SavedCredentialUsername)
-        {
-            Owner = System.Windows.Application.Current?.MainWindow
-        };
-
-        if (dialog.ShowDialog() != true)
-            return null;
-
+        var dialog = new CredentialsDialog(SavedCredentialUsername) { Owner = System.Windows.Application.Current?.MainWindow };
+        if (dialog.ShowDialog() != true) return null;
         Guid? credentialRef = null;
-
         if (dialog.SaveCredential && SelectedDevice.CameraId is int cameraId)
         {
-            // credentialRef apunta al secreto seguro y nunca contiene la contraseña.
-            credentialRef = await _credentialStore.SaveAsync(
-                dialog.Username,
-                dialog.Password);
-
-            await _cameraCredentialStore.SaveAsync(
-                cameraId,
-                dialog.Username,
-                credentialRef.Value);
-
+            credentialRef = await _credentialStore.SaveAsync(dialog.Username, dialog.Password);
+            await _cameraCredentialStore.SaveAsync(cameraId, dialog.Username, credentialRef.Value);
             HasSavedCredentials = true;
             SavedCredentialUsername = dialog.Username;
             SavedCredentialLastVerifiedAt = null;
         }
-
         return new CredentialSession(dialog.Username, dialog.Password, credentialRef);
     }
 
     [RelayCommand(CanExecute = nameof(CanManageCredentials))]
     private async Task SaveCredentialsAsync()
     {
-        if (SelectedDevice?.CameraId is not int cameraId)
-            return;
-
-        var dialog = new CredentialsDialog(SavedCredentialUsername)
-        {
-            Owner = System.Windows.Application.Current?.MainWindow
-        };
-
-        if (dialog.ShowDialog() != true)
-            return;
-
+        if (SelectedDevice?.CameraId is not int cameraId) return;
+        var dialog = new CredentialsDialog(SavedCredentialUsername) { Owner = System.Windows.Application.Current?.MainWindow };
+        if (dialog.ShowDialog() != true) return;
         try
         {
-            // newCredentialRef es una referencia nueva al secreto que reemplazará la anterior.
-            var newCredentialRef = await _credentialStore.SaveAsync(
-                dialog.Username,
-                dialog.Password);
-
+            var newCredentialRef = await _credentialStore.SaveAsync(dialog.Username, dialog.Password);
             var previousCredential = await _cameraCredentialStore.GetAsync(cameraId);
-            await _cameraCredentialStore.SaveAsync(
-                cameraId,
-                dialog.Username,
-                newCredentialRef);
-
-            // oldCredentialRef se elimina para evitar secretos abandonados en el almacén seguro.
+            await _cameraCredentialStore.SaveAsync(cameraId, dialog.Username, newCredentialRef);
             if (previousCredential is not null && previousCredential.CredentialRef != newCredentialRef)
                 await _credentialStore.DeleteAsync(previousCredential.CredentialRef);
-
             HasSavedCredentials = true;
             SavedCredentialUsername = dialog.Username;
             SavedCredentialLastVerifiedAt = null;
             StatusText = "Credenciales guardadas de forma segura.";
         }
-        catch (Exception ex)
-        {
-            StatusText = $"No se pudieron guardar las credenciales: {ex.Message}";
-        }
+        catch (Exception ex) { StatusText = $"No se pudieron guardar las credenciales: {ex.Message}"; }
     }
 
     [RelayCommand(CanExecute = nameof(CanManageCredentials))]
     private async Task DeleteCredentialsAsync()
     {
-        if (SelectedDevice?.CameraId is not int cameraId)
-            return;
-
-        if (System.Windows.MessageBox.Show(
-                "¿Desea eliminar las credenciales guardadas para esta cámara?",
-                "Camera Inspector — Credenciales",
-                System.Windows.MessageBoxButton.YesNo,
-                System.Windows.MessageBoxImage.Warning) != System.Windows.MessageBoxResult.Yes)
-            return;
-
+        if (SelectedDevice?.CameraId is not int cameraId) return;
+        if (System.Windows.MessageBox.Show("¿Desea eliminar las credenciales guardadas para esta cámara?", "Camera Inspector — Credenciales", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning) != System.Windows.MessageBoxResult.Yes) return;
         try
         {
-            // savedInfo permite eliminar también el secreto correspondiente de Credential Manager.
             var savedInfo = await _cameraCredentialStore.GetAsync(cameraId);
             await _cameraCredentialStore.DeleteAsync(cameraId);
-
-            if (savedInfo is not null)
-                await _credentialStore.DeleteAsync(savedInfo.CredentialRef);
-
+            if (savedInfo is not null) await _credentialStore.DeleteAsync(savedInfo.CredentialRef);
             HasSavedCredentials = false;
             SavedCredentialUsername = null;
             SavedCredentialLastVerifiedAt = null;
             StatusText = "Credenciales eliminadas.";
         }
-        catch (Exception ex)
-        {
-            StatusText = $"No se pudieron eliminar las credenciales: {ex.Message}";
-        }
+        catch (Exception ex) { StatusText = $"No se pudieron eliminar las credenciales: {ex.Message}"; }
     }
 
     private bool CanManageCredentials() => SelectedDevice?.CameraId is not null && !IsScanning && !IsDiagnosing;
@@ -453,154 +271,78 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanResolveStream))]
     private async Task GetMainStreamUriAsync()
     {
-        if (SelectedDevice is null)
-            return;
-
+        if (SelectedDevice is null) return;
         var credentials = await GetCredentialsAsync();
-        if (credentials is null)
-            return;
-
+        if (credentials is null) return;
         try
         {
             StatusText = $"Resolviendo stream principal de {SelectedDevice.IpAddress}...";
-
-            var result = await _streamUriResolver.GetMainStreamUriAsync(
-                SelectedDevice.Device,
-                credentials.Username,
-                credentials.Password);
-
-            if (result is null)
-            {
-                StatusText = "No se pudo resolver el stream principal.";
-                ShowStreamError(SelectedDevice.IpAddress, "principal");
-                return;
-            }
-
+            var result = await _streamUriResolver.GetMainStreamUriAsync(SelectedDevice.Device, credentials.Username, credentials.Password);
+            if (result is null) { StatusText = "No se pudo resolver el stream principal."; ShowStreamError(SelectedDevice.IpAddress, "principal"); return; }
             ResolvedMainStream = result;
             _videoPlayerService.Play(result, credentials.Username, credentials.Password);
             await MarkCredentialVerifiedAsync(credentials);
             StatusText = $"Main Stream: {result.Resolution} · {result.Encoding ?? "Codec desconocido"} · {result.FrameRate?.ToString() ?? "?"} FPS";
         }
-        catch (OperationCanceledException)
-        {
-            StatusText = "Resolución del stream principal cancelada.";
-        }
-        catch (Exception ex)
-        {
-            StatusText = $"No se pudo reproducir el stream principal: {ex.Message}";
-        }
+        catch (OperationCanceledException) { StatusText = "Resolución del stream principal cancelada."; }
+        catch (Exception ex) { StatusText = $"No se pudo reproducir el stream principal: {ex.Message}"; }
     }
 
     [RelayCommand(CanExecute = nameof(CanResolveStream))]
     private async Task GetSubStreamUriAsync()
     {
-        if (SelectedDevice is null)
-            return;
-
+        if (SelectedDevice is null) return;
         var credentials = await GetCredentialsAsync();
-        if (credentials is null)
-            return;
-
+        if (credentials is null) return;
         try
         {
             StatusText = $"Resolviendo substream de {SelectedDevice.IpAddress}...";
-
-            var result = await _streamUriResolver.GetSubStreamUriAsync(
-                SelectedDevice.Device,
-                credentials.Username,
-                credentials.Password);
-
-            if (result is null)
-            {
-                StatusText = "No se pudo resolver el substream.";
-                ShowStreamError(SelectedDevice.IpAddress, "secundario");
-                return;
-            }
-
+            var result = await _streamUriResolver.GetSubStreamUriAsync(SelectedDevice.Device, credentials.Username, credentials.Password);
+            if (result is null) { StatusText = "No se pudo resolver el substream."; ShowStreamError(SelectedDevice.IpAddress, "secundario"); return; }
             ResolvedSubStream = result;
             _videoPlayerService.Play(result, credentials.Username, credentials.Password);
             await MarkCredentialVerifiedAsync(credentials);
             StatusText = $"Substream: {result.Resolution} · {result.Encoding ?? "Codec desconocido"} · {result.FrameRate?.ToString() ?? "?"} FPS";
         }
-        catch (OperationCanceledException)
-        {
-            StatusText = "Resolución del substream cancelada.";
-        }
-        catch (Exception ex)
-        {
-            StatusText = $"No se pudo reproducir el substream: {ex.Message}";
-        }
+        catch (OperationCanceledException) { StatusText = "Resolución del substream cancelada."; }
+        catch (Exception ex) { StatusText = $"No se pudo reproducir el substream: {ex.Message}"; }
     }
 
     [RelayCommand]
-    private void StopVideo()
-    {
-        // El servicio encapsula el cierre seguro del MediaPlayer.
-        _videoPlayerService.Stop();
-        StatusText = "Reproducción detenida.";
-    }
+    private void StopVideo() { _videoPlayerService.Stop(); StatusText = "Reproducción detenida."; }
 
     [RelayCommand(CanExecute = nameof(CanRunDiagnostics))]
     private async Task RunDiagnosticsAsync()
     {
-        if (SelectedDevice is null)
-            return;
-
+        if (SelectedDevice is null) return;
         var credentials = await GetCredentialsAsync();
-        if (credentials is null)
-            return;
-
+        if (credentials is null) return;
         IsDiagnosing = true;
         DiagnosticResults.Clear();
         StatusText = $"Ejecutando diagnóstico sobre {SelectedDevice.IpAddress}...";
-
         try
         {
-            // results contiene todas las pruebas ejecutadas en paralelo.
-            var results = await _diagnosticService.RunAsync(
-                SelectedDevice.Device,
-                credentials.Username,
-                credentials.Password);
-
-            foreach (var result in results)
-                DiagnosticResults.Add(result);
-
+            var results = await _diagnosticService.RunAsync(SelectedDevice.Device, credentials.Username, credentials.Password);
+            foreach (var result in results) DiagnosticResults.Add(result);
             if (SelectedDevice.CameraId is int cameraId)
             {
-                // Guardamos las pruebas para consultarlas nuevamente después de cerrar la aplicación.
                 await _diagnosticHistoryStore.SaveAsync(cameraId, results);
                 await RefreshHistoryAsync(cameraId);
             }
-
             var successCount = results.Count(result => result.Success);
             var supportedCount = results.Count(result => !result.NotSupported);
-
-            if (successCount > 0)
-                await MarkCredentialVerifiedAsync(credentials);
-
+            if (successCount > 0) await MarkCredentialVerifiedAsync(credentials);
             StatusText = $"Diagnóstico terminado: {successCount}/{supportedCount} pruebas correctas.";
         }
-        catch (OperationCanceledException)
-        {
-            StatusText = "Diagnóstico cancelado.";
-        }
-        catch (Exception ex)
-        {
-            StatusText = $"Error durante diagnóstico: {ex.Message}";
-        }
-        finally
-        {
-            IsDiagnosing = false;
-        }
+        catch (OperationCanceledException) { StatusText = "Diagnóstico cancelado."; }
+        catch (Exception ex) { StatusText = $"Error durante diagnóstico: {ex.Message}"; }
+        finally { IsDiagnosing = false; }
     }
 
-    /// <summary>Actualiza manualmente el historial visible de la cámara seleccionada.</summary>
     [RelayCommand(CanExecute = nameof(CanRefreshHistory))]
     private async Task RefreshHistoryAsync()
     {
-        if (SelectedDevice?.CameraId is not int cameraId)
-            return;
-
+        if (SelectedDevice?.CameraId is not int cameraId) return;
         await RefreshHistoryAsync(cameraId);
         StatusText = $"Historial actualizado: {DiagnosticHistory.Count} registros.";
     }
@@ -609,10 +351,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     private async Task MarkCredentialVerifiedAsync(CredentialSession credentials)
     {
-        if (SelectedDevice?.CameraId is not int cameraId || credentials.CredentialRef is not Guid)
-            return;
-
-        // verifiedAt representa el instante UTC en el que una operación confirmó la credencial.
+        if (SelectedDevice?.CameraId is not int cameraId || credentials.CredentialRef is not Guid) return;
         var verifiedAt = DateTimeOffset.UtcNow;
         await _cameraCredentialStore.MarkVerifiedAsync(cameraId, verifiedAt);
         SavedCredentialLastVerifiedAt = verifiedAt;
@@ -624,16 +363,11 @@ public sealed partial class MainViewModel : ObservableObject
     private static void ShowStreamError(string ipAddress, string streamType)
     {
         System.Windows.MessageBox.Show(
-            $"No se pudo obtener el stream {streamType} de {ipAddress}.\n\n" +
-            "Verifique las credenciales, que el dispositivo exponga Media Service ONVIF y que exista al menos un perfil de video.",
-            "Camera Inspector — Stream ONVIF",
+            $"No se pudo obtener el stream {streamType} de {ipAddress}.\n\nVerifique las credenciales, la disponibilidad del servicio de vídeo y que la cámara exponga un protocolo compatible.",
+            "Camera Inspector — Stream",
             System.Windows.MessageBoxButton.OK,
             System.Windows.MessageBoxImage.Warning);
     }
 
-    /// <summary>Credenciales que viven en memoria únicamente durante la operación solicitada.</summary>
-    private sealed record CredentialSession(
-        string Username,
-        string Password,
-        Guid? CredentialRef);
+    private sealed record CredentialSession(string Username, string Password, Guid? CredentialRef);
 }
