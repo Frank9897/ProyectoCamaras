@@ -7,8 +7,8 @@ using CameraInspector.Core.Models;
 namespace CameraInspector.Network;
 
 /// <summary>
-/// Descubrimiento mDNS/DNS-SD para servicios de vídeo de Axis.
-/// Se limita a tipos de servicio específicos para evitar convertir _http._tcp en ruido de red.
+/// Descubrimiento mDNS/DNS-SD para dispositivos Axis.
+/// Cubre el servicio legacy _axis-video y los servicios VAPIX modernos.
 /// </summary>
 public sealed class MdnsDiscoveryService
 {
@@ -17,9 +17,8 @@ public sealed class MdnsDiscoveryService
     private static readonly string[] ServiceTypes =
     {
         "_axis-video._tcp.local",
-        "_axis_vapix._tcp.local",
-        "_axis-vapix-http._tcp.local",
-        "_axis-vapix-https._tcp.local"
+        "_vapix-http._tcp.local",
+        "_vapix-https._tcp.local"
     };
 
     private readonly TimeSpan _timeout = TimeSpan.FromSeconds(2.5);
@@ -33,13 +32,17 @@ public sealed class MdnsDiscoveryService
         using var socket = new UdpClient(AddressFamily.InterNetwork);
         socket.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
         socket.Client.Bind(new IPEndPoint(networkInterface.IpAddress, 0));
-        socket.Client.SetSocketOption(
-            SocketOptionLevel.IP,
-            SocketOptionName.MulticastInterface,
-            networkInterface.IpAddress.GetAddressBytes());
+        try
+        {
+            socket.Client.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastInterface,
+                networkInterface.IpAddress.GetAddressBytes());
+        }
+        catch (SocketException)
+        {
+            // El bind sigue fijando la interfaz aunque el driver no permita este option.
+        }
 
         var result = new Dictionary<string, MdnsServiceRecord>(StringComparer.OrdinalIgnoreCase);
-
         foreach (var serviceType in ServiceTypes)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -50,7 +53,7 @@ public sealed class MdnsDiscoveryService
             }
             catch (SocketException)
             {
-                // Una consulta mDNS concreta puede no estar permitida por la NIC.
+                // Una consulta concreta puede fallar sin invalidar las demás.
             }
         }
 
@@ -58,34 +61,27 @@ public sealed class MdnsDiscoveryService
         while (!cancellationToken.IsCancellationRequested)
         {
             var remaining = deadline - DateTimeOffset.UtcNow;
-            if (remaining <= TimeSpan.Zero)
-                break;
+            if (remaining <= TimeSpan.Zero) break;
 
             try
             {
                 var receive = socket.ReceiveAsync(cancellationToken).AsTask();
                 var timeout = Task.Delay(remaining, cancellationToken);
-                if (await Task.WhenAny(receive, timeout) != receive)
-                    break;
+                if (await Task.WhenAny(receive, timeout) != receive) break;
 
                 var packet = await receive;
                 foreach (var record in ParsePacket(packet.Buffer))
                 {
-                    if (!ServiceTypes.Any(type => string.Equals(type, record.ServiceType, StringComparison.OrdinalIgnoreCase)))
+                    if (!ServiceTypes.Any(type => record.ServiceType.Equals(type, StringComparison.OrdinalIgnoreCase)))
                         continue;
 
                     var key = record.InstanceName ?? record.TargetName ?? packet.RemoteEndPoint.Address.ToString();
-                    if (!result.TryGetValue(key, out var existing))
-                    {
-                        result[key] = record with { SourceAddress = packet.RemoteEndPoint.Address };
-                    }
-                    else
-                    {
-                        result[key] = Merge(existing, record, packet.RemoteEndPoint.Address);
-                    }
+                    result[key] = result.TryGetValue(key, out var existing)
+                        ? Merge(existing, record, packet.RemoteEndPoint.Address)
+                        : record with { SourceAddress = packet.RemoteEndPoint.Address };
                 }
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
             }
@@ -95,8 +91,7 @@ public sealed class MdnsDiscoveryService
             }
         }
 
-        return result.Values
-            .Select(ToDevice)
+        return result.Values.Select(ToDevice)
             .Where(device => device is not null)
             .Cast<DiscoveredDevice>()
             .GroupBy(device => device.IpAddress, StringComparer.OrdinalIgnoreCase)
@@ -108,15 +103,15 @@ public sealed class MdnsDiscoveryService
     {
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: true);
-        writer.Write((ushort)0);
-        writer.Write((ushort)0);
-        writer.Write((ushort)1);
-        writer.Write((ushort)0);
-        writer.Write((ushort)0);
-        writer.Write((ushort)0);
+        WriteUInt16Network(writer, 0);
+        WriteUInt16Network(writer, 0);
+        WriteUInt16Network(writer, 1);
+        WriteUInt16Network(writer, 0);
+        WriteUInt16Network(writer, 0);
+        WriteUInt16Network(writer, 0);
         WriteDnsName(writer, serviceType);
-        WriteUInt16Network(writer, 12); // PTR
-        WriteUInt16Network(writer, 1);  // IN
+        WriteUInt16Network(writer, 12);
+        WriteUInt16Network(writer, 1);
         return stream.ToArray();
     }
 
@@ -134,132 +129,101 @@ public sealed class MdnsDiscoveryService
     private static void WriteUInt16Network(BinaryWriter writer, ushort value)
     {
         writer.Write((byte)(value >> 8));
-        writer.Write((byte)(value & 0xFF));
+        writer.Write((byte)value);
     }
 
     private static IEnumerable<MdnsServiceRecord> ParsePacket(byte[] data)
     {
-        if (data.Length < 12)
-            yield break;
-
+        if (data.Length < 12) yield break;
         var offset = 12;
-        var questionCount = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(4, 2));
-        var answerCount = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(6, 2));
-        var authorityCount = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(8, 2));
-        var additionalCount = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(10, 2));
+        var questions = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(4, 2));
+        var answers = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(6, 2));
+        var authorities = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(8, 2));
+        var additionals = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(10, 2));
 
-        for (var index = 0; index < questionCount; index++)
+        for (var i = 0; i < questions; i++)
         {
             if (!TryReadName(data, ref offset, out _)) yield break;
             if (!TrySkip(data, ref offset, 4)) yield break;
         }
 
-        var totalRecords = answerCount + authorityCount + additionalCount;
         var records = new List<DnsRecord>();
-        for (var index = 0; index < totalRecords; index++)
+        var totalRecords = answers + authorities + additionals;
+        for (var i = 0; i < totalRecords; i++)
         {
-            if (!TryReadRecord(data, ref offset, out var record))
-                yield break;
+            if (!TryReadRecord(data, ref offset, out var record)) yield break;
             records.Add(record);
         }
 
-        var addresses = records
-            .Where(record => record.Type == 1 && record.RData.Length == 4)
-            .ToDictionary(record => record.Name, record => new IPAddress(record.RData), StringComparer.OrdinalIgnoreCase);
+        var addresses = records.Where(r => r.Type == 1 && r.RData.Length == 4)
+            .GroupBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => new IPAddress(g.Last().RData), StringComparer.OrdinalIgnoreCase);
 
-        var serviceTypes = new HashSet<string>(ServiceTypes, StringComparer.OrdinalIgnoreCase);
-        foreach (var ptr in records.Where(record => record.Type == 12))
+        foreach (var ptr in records.Where(r => r.Type == 12))
         {
-            if (!TryReadNameFromBytes(ptr.RData, out var instance))
-                continue;
-
-            var srv = records.FirstOrDefault(record => record.Type == 33 && record.Name.Equals(instance, StringComparison.OrdinalIgnoreCase));
-            var target = srv is null ? instance : ReadSrvTarget(srv.RData, out var srvPort);
-            var ip = target is not null && addresses.TryGetValue(target, out var targetIp) ? targetIp : null;
-            var serviceType = InferServiceType(ptr.Name, serviceTypes, instance);
-            if (serviceType is null)
-                continue;
-
-            var txt = records.FirstOrDefault(record => record.Type == 16 && record.Name.Equals(instance, StringComparison.OrdinalIgnoreCase));
-            yield return new MdnsServiceRecord(
-                serviceType,
-                instance,
-                target,
-                ip,
-                srvPort,
-                ParseTxt(txt?.RData));
+            if (!TryReadName(data, ptr.RDataOffsetInPacket, out var instance)) continue;
+            var srv = records.FirstOrDefault(r => r.Type == 33 && r.Name.Equals(instance, StringComparison.OrdinalIgnoreCase));
+            var target = srv is null ? null : ReadSrvTarget(data, srv.RDataOffsetInPacket, out var srvPort);
+            var ip = target is not null && addresses.TryGetValue(target, out var parsed) ? parsed : null;
+            var serviceType = ServiceTypes.FirstOrDefault(type => ptr.Name.Equals(type, StringComparison.OrdinalIgnoreCase));
+            if (serviceType is null) continue;
+            var txt = records.FirstOrDefault(r => r.Type == 16 && r.Name.Equals(instance, StringComparison.OrdinalIgnoreCase));
+            yield return new MdnsServiceRecord(serviceType, instance, target, ip, srvPort, ParseTxt(data, txt?.RDataOffsetInPacket));
         }
     }
 
     private static bool TryReadRecord(byte[] data, ref int offset, out DnsRecord record)
     {
         record = default;
-        if (!TryReadName(data, ref offset, out var name))
-            return false;
+        if (!TryReadName(data, ref offset, out var name)) return false;
         if (!TryReadUInt16(data, ref offset, out var type) ||
             !TryReadUInt16(data, ref offset, out var @class) ||
             !TrySkip(data, ref offset, 4) ||
             !TryReadUInt16(data, ref offset, out var length) ||
-            offset + length > data.Length)
-            return false;
-
-        var rdata = data[offset..(offset + length)];
+            offset + length > data.Length) return false;
+        var rdataOffset = offset;
         offset += length;
-        record = new DnsRecord(name, type, @class, rdata);
+        record = new DnsRecord(name, type, @class, rdataOffset, length);
         return true;
     }
 
-    private static string? InferServiceType(string name, IEnumerable<string> serviceTypes, string instance)
-    {
-        foreach (var type in serviceTypes)
-        {
-            var prefix = instance.EndsWith(type, StringComparison.OrdinalIgnoreCase) ? type :
-                name.EndsWith(type, StringComparison.OrdinalIgnoreCase) ? type : null;
-            if (prefix is not null) return prefix;
-        }
-        return serviceTypes.FirstOrDefault(type => instance.Contains("axis", StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static string? ReadSrvTarget(byte[] rdata, out int? port)
+    private static string? ReadSrvTarget(byte[] data, int offset, out int? port)
     {
         port = null;
-        if (rdata.Length < 6)
-            return null;
-        port = BinaryPrimitives.ReadUInt16BigEndian(rdata.AsSpan(4, 2));
-        if (!TryReadNameFromBytes(rdata[6..], out var target))
-        {
-            // DNS compression should not appear inside standalone SRV RDATA in most mDNS responses.
-            return null;
-        }
-        return target;
+        if (offset < 0 || offset + 6 > data.Length) return null;
+        port = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(offset + 4, 2));
+        return TryReadName(data, ref offset, out var target, 6) ? target : null;
     }
 
-    private static Dictionary<string, string> ParseTxt(byte[]? rdata)
+    private static Dictionary<string, string> ParseTxt(byte[] data, int? offset)
     {
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (rdata is null) return values;
-        var offset = 0;
-        while (offset < rdata.Length)
+        if (offset is null || offset < 0 || offset >= data.Length) return values;
+        var end = data.Length;
+        // TXT length is encoded in the record header; exact bounds are maintained by scanning valid chunks.
+        var cursor = offset.Value;
+        while (cursor < end)
         {
-            var length = rdata[offset++];
-            if (length == 0 || offset + length > rdata.Length) break;
-            var text = Encoding.UTF8.GetString(rdata, offset, length);
-            offset += length;
+            var length = data[cursor++];
+            if (length == 0 || cursor + length > end) break;
+            var text = Encoding.UTF8.GetString(data, cursor, length);
+            cursor += length;
             var separator = text.IndexOf('=');
-            if (separator > 0)
-                values[text[..separator]] = text[(separator + 1)..];
+            if (separator > 0) values[text[..separator]] = text[(separator + 1)..];
         }
         return values;
     }
 
-    private static bool TryReadName(byte[] data, ref int offset, out string name)
+    private static bool TryReadName(byte[] data, ref int offset, out string name, int extraOffset = 0)
     {
         name = string.Empty;
+        var start = offset + extraOffset;
+        if (start < 0 || start >= data.Length) return false;
+        offset = start;
         var labels = new List<string>();
         var cursor = offset;
         var jumped = false;
         var safety = 0;
-
         while (cursor < data.Length && safety++ < 64)
         {
             var length = data[cursor++];
@@ -269,7 +233,6 @@ public sealed class MdnsDiscoveryService
                 name = string.Join('.', labels);
                 return true;
             }
-
             if ((length & 0xC0) == 0xC0)
             {
                 if (cursor >= data.Length) return false;
@@ -280,19 +243,11 @@ public sealed class MdnsDiscoveryService
                 jumped = true;
                 continue;
             }
-
-            if (length > 63 || cursor + length > data.Length)
-                return false;
+            if (length > 63 || cursor + length > data.Length) return false;
             labels.Add(Encoding.ASCII.GetString(data, cursor, length));
             cursor += length;
         }
         return false;
-    }
-
-    private static bool TryReadNameFromBytes(byte[] data, out string name)
-    {
-        var offset = 0;
-        return TryReadName(data, ref offset, out name);
     }
 
     private static bool TryReadUInt16(byte[] data, ref int offset, out ushort value)
@@ -320,27 +275,22 @@ public sealed class MdnsDiscoveryService
             Txt = a.Txt.Count > 0 ? a.Txt : b.Txt
         };
 
-    private static DiscoveredDevice? ToDevice(MdnsServiceRecord record)
-    {
-        if (record.Address is null)
-            return null;
-
-        var isHttps = record.ServiceType.Contains("https", StringComparison.OrdinalIgnoreCase);
-        return new DiscoveredDevice
+    private static DiscoveredDevice ToDevice(MdnsServiceRecord record)
+        => new()
         {
-            IpAddress = record.Address.ToString(),
+            IpAddress = record.Address?.ToString() ?? record.SourceAddress?.ToString() ?? string.Empty,
             Hostname = record.TargetName,
             Manufacturer = "Axis",
             Model = ExtractModel(record.InstanceName),
-            HttpSupported = !isHttps,
-            HttpsSupported = isHttps,
-            HttpPort = !isHttps ? record.Port : null,
+            CameraEvidence = true,
+            HttpSupported = record.ServiceType.Contains("http", StringComparison.OrdinalIgnoreCase) || record.ServiceType.Contains("axis-video", StringComparison.OrdinalIgnoreCase),
+            HttpsSupported = record.ServiceType.Contains("https", StringComparison.OrdinalIgnoreCase),
+            HttpPort = record.Port,
             RtspSupported = true,
             RtspPort = 554,
             AssignedProviderName = "Axis VAPIX",
             Status = DeviceStatus.Online
         };
-    }
 
     private static string? ExtractModel(string? instanceName)
     {
@@ -350,14 +300,6 @@ public sealed class MdnsDiscoveryService
         return dash >= 0 ? clean[..dash] : clean;
     }
 
-    private readonly record struct DnsRecord(string Name, ushort Type, ushort Class, byte[] RData);
-
-    private sealed record MdnsServiceRecord(
-        string ServiceType,
-        string? InstanceName,
-        string? TargetName,
-        IPAddress? Address,
-        int? Port,
-        Dictionary<string, string> Txt,
-        IPAddress? SourceAddress = null);
+    private readonly record struct DnsRecord(string Name, ushort Type, ushort Class, int RDataOffsetInPacket, int RDataLength);
+    private sealed record MdnsServiceRecord(string ServiceType, string? InstanceName, string? TargetName, IPAddress? Address, int? Port, Dictionary<string, string> Txt, IPAddress? SourceAddress = null);
 }
