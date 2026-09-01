@@ -68,6 +68,7 @@ public partial class App : Application
                     services.AddSingleton<IManufacturerDetector, Network.Detection.HttpBannerDetector>();
                     services.AddSingleton<IManufacturerDetector, Network.Detection.LegacyCameraHttpDetector>();
                     services.AddSingleton<IManufacturerDetector, Network.Detection.RtspFingerprintDetector>();
+                    services.AddSingleton<IManufacturerDetector, Network.Detection.GenericVideoHttpDetector>();
                     services.AddSingleton<IManufacturerDetector, Network.Detection.OnvifProbeDetector>();
                     services.AddSingleton<IManufacturerResolver, Network.Detection.ManufacturerResolver>();
 
