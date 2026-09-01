@@ -4,67 +4,128 @@ using CameraInspector.Core.Models;
 namespace CameraInspector.Network.Detection;
 
 /// <summary>
-/// Detector basado en la respuesta HTTP del dispositivo (header "Server" + cuerpo de la
-/// página de login). Confianza media: confirma que el puerto HTTP responde y suele
-/// identificar la marca, pero un proxy o gateway podría enmascarar el banner real.
+/// Detector basado en respuesta HTTP del dispositivo. Acepta tanto banners modernos
+/// como páginas HTML de equipos VIVOTEK antiguos sin ONVIF.
 /// </summary>
 public sealed class HttpBannerDetector : IManufacturerDetector
 {
     public string Name => "HttpBanner";
 
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMilliseconds(800) };
+    private static readonly HttpClient Http = new()
+    {
+        Timeout = TimeSpan.FromMilliseconds(1200)
+    };
 
-    // Firmas de texto conocidas en el header Server o en el HTML de login de cada fabricante.
     private static readonly (string Needle, string Manufacturer)[] Signatures =
     {
+        ("vivotek", "VIVOTEK"),
+        ("vivotek ip camera", "VIVOTEK"),
+        ("vivotek network camera", "VIVOTEK"),
+        ("vvtk", "VIVOTEK"),
         ("hikvision", "Hikvision"),
         ("dahua", "Dahua"),
-        ("dvrdvs", "Dahua"), // algunos firmwares Dahua usan este server-string
+        ("dvrdvs", "Dahua"),
         ("axis", "Axis"),
         ("uniview", "Uniview"),
-        ("reolink", "Reolink"),
+        ("reolink", "Reolink")
+    };
+
+    private static readonly string[] CameraIndicators =
+    {
+        "network camera",
+        "ip camera",
+        "video server",
+        "ipcam",
+        "vivotek",
+        "vvtk",
+        "mjpeg",
+        "rtsp"
     };
 
     public async Task<ManufacturerDetectionResult?> TryDetectAsync(
         DiscoveredDevice device, CancellationToken cancellationToken = default)
     {
-        try
+        foreach (var port in GetHttpPortsToTry(device))
         {
-            using var response = await Http.GetAsync($"http://{device.IpAddress}/", cancellationToken);
-
-            var serverHeader = response.Headers.Server?.ToString() ?? string.Empty;
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            var haystack = (serverHeader + " " + body).ToLowerInvariant();
-
-            foreach (var (needle, manufacturer) in Signatures)
+            try
             {
-                if (haystack.Contains(needle))
+                using var response = await Http.GetAsync($"http://{device.IpAddress}:{port}/", cancellationToken);
+                var serverHeader = response.Headers.Server?.ToString() ?? string.Empty;
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                var haystack = (serverHeader + " " + body).ToLowerInvariant();
+
+                foreach (var (needle, manufacturer) in Signatures)
+                {
+                    if (!haystack.Contains(needle, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    var model = ExtractModel(haystack, manufacturer);
+                    return new ManufacturerDetectionResult
+                    {
+                        DetectorName = Name,
+                        Confidence = manufacturer == "VIVOTEK" ? 0.95 : 0.75,
+                        Manufacturer = manufacturer,
+                        Model = model,
+                        HttpSupported = true,
+                        HttpPort = port
+                    };
+                }
+
+                // Un banner de cámara sin firma conocida sigue siendo evidencia válida.
+                if (CameraIndicators.Any(indicator => haystack.Contains(indicator, StringComparison.Ordinal)))
                 {
                     return new ManufacturerDetectionResult
                     {
                         DetectorName = Name,
-                        Confidence = 0.7,
-                        Manufacturer = manufacturer,
+                        Confidence = 0.35,
                         HttpSupported = true,
-                        HttpPort = 80
+                        HttpPort = port
                     };
                 }
-            }
 
-            // Respondió HTTP pero no matcheó ninguna firma conocida: igual es información útil
-            // (confirma que el puerto está vivo), con confianza muy baja en cuanto a fabricante.
-            return new ManufacturerDetectionResult
+                // Respondió HTTP, aunque no parezca cámara: conservar la evidencia débil.
+                return new ManufacturerDetectionResult
+                {
+                    DetectorName = Name,
+                    Confidence = 0.15,
+                    HttpSupported = true,
+                    HttpPort = port
+                };
+            }
+            catch (OperationCanceledException)
             {
-                DetectorName = Name,
-                Confidence = 0.1,
-                HttpSupported = true,
-                HttpPort = 80
-            };
+                throw;
+            }
+            catch
+            {
+                // Probamos el siguiente puerto; una cámara puede usar un HTTP alternativo.
+            }
         }
-        catch (Exception) when (cancellationToken.IsCancellationRequested is false)
+
+        return null;
+    }
+
+    private static IEnumerable<int> GetHttpPortsToTry(DiscoveredDevice device)
+    {
+        if (device.HttpPort.HasValue)
+            yield return device.HttpPort.Value;
+
+        foreach (var port in new[] { 80, 8080, 8081, 8888, 443 })
         {
-            // Timeout, conexión rechazada, sin servidor HTTP en ese puerto: resultado válido = "nada".
-            return null;
+            if (device.HttpPort != port)
+                yield return port;
         }
+    }
+
+    private static string? ExtractModel(string text, string manufacturer)
+    {
+        if (manufacturer != "VIVOTEK")
+            return null;
+
+        var knownModels = new[] { "IP7134", "IP7133" };
+        return knownModels.FirstOrDefault(model =>
+            text.Contains(model, StringComparison.OrdinalIgnoreCase));
     }
 }
