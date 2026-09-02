@@ -26,11 +26,22 @@ public sealed class HttpBannerDetector : IManufacturerDetector
         ("dahua", "Dahua"),
         ("dvrdvs", "Dahua"),
         ("axis", "Axis"),
+        ("axis camera", "Axis"),
         ("uniview", "Uniview"),
+        ("unv ipc", "Uniview"),
         ("reolink", "Reolink"),
         ("hanwha", "Hanwha"),
         ("wisenet", "Hanwha"),
-        ("mobotix", "MOBOTIX")
+        ("mobotix", "MOBOTIX"),
+        ("pelco", "Pelco"),
+        ("panasonic", "Panasonic"),
+        ("foscam", "Foscam"),
+        ("amcrest", "Amcrest"),
+        ("honeywell", "Honeywell"),
+        ("bosch security", "Bosch"),
+        ("bosch video", "Bosch"),
+        ("flir", "FLIR"),
+        ("sony network camera", "Sony")
     };
 
     private static readonly string[] CameraIndicators =
@@ -42,10 +53,14 @@ public sealed class HttpBannerDetector : IManufacturerDetector
         "vivotek",
         "vvtk",
         "mjpeg",
+        "mjpeg-stream",
         "rtsp",
         "wisenet",
         "mobotix",
-        "axis camera"
+        "axis camera",
+        "security camera",
+        "surveillance camera",
+        "camera web server"
     };
 
     public async Task<ManufacturerDetectionResult?> TryDetectAsync(
@@ -73,14 +88,14 @@ public sealed class HttpBannerDetector : IManufacturerDetector
                     return new ManufacturerDetectionResult
                     {
                         DetectorName = Name,
-                        Confidence = manufacturer == "VIVOTEK" ? 0.95 : 0.75,
+                        Confidence = manufacturer is "VIVOTEK" or "Hikvision" or "Dahua" or "Axis" ? 0.95 : 0.82,
                         CameraEvidence = true,
-                        EvidenceDetails = $"HTTP banner: {manufacturer}",
+                        EvidenceDetails = $"HTTP banner: {manufacturer} (TCP/{port})",
                         Manufacturer = manufacturer,
                         Model = ExtractModel(haystack, manufacturer),
-                        HttpSupported = true,
+                        HttpSupported = scheme.Equals("http", StringComparison.OrdinalIgnoreCase),
                         HttpsSupported = scheme.Equals("https", StringComparison.OrdinalIgnoreCase),
-                        HttpPort = port
+                        HttpPort = scheme.Equals("http", StringComparison.OrdinalIgnoreCase) ? port : null
                     };
                 }
 
@@ -89,26 +104,29 @@ public sealed class HttpBannerDetector : IManufacturerDetector
                     return new ManufacturerDetectionResult
                     {
                         DetectorName = Name,
-                        Confidence = 0.35,
+                        Confidence = 0.40,
                         CameraEvidence = true,
-                        EvidenceDetails = "HTTP banner con indicadores de cámara",
-                        HttpSupported = true,
+                        EvidenceDetails = $"HTTP banner con indicadores de cámara (TCP/{port})",
+                        HttpSupported = scheme.Equals("http", StringComparison.OrdinalIgnoreCase),
                         HttpsSupported = scheme.Equals("https", StringComparison.OrdinalIgnoreCase),
-                        HttpPort = port
+                        HttpPort = scheme.Equals("http", StringComparison.OrdinalIgnoreCase) ? port : null
                     };
                 }
 
                 // HTTP abierto es solo una capacidad de red, no evidencia de cámara.
-                return new ManufacturerDetectionResult
+                if (response.IsSuccessStatusCode)
                 {
-                    DetectorName = Name,
-                    Confidence = 0.05,
-                    CameraEvidence = false,
-                    EvidenceDetails = "Servicio HTTP/HTTPS sin firma de cámara",
-                    HttpSupported = true,
-                    HttpsSupported = scheme.Equals("https", StringComparison.OrdinalIgnoreCase),
-                    HttpPort = port
-                };
+                    return new ManufacturerDetectionResult
+                    {
+                        DetectorName = Name,
+                        Confidence = 0.05,
+                        CameraEvidence = false,
+                        EvidenceDetails = $"Servicio HTTP/HTTPS sin firma de cámara (TCP/{port})",
+                        HttpSupported = scheme.Equals("http", StringComparison.OrdinalIgnoreCase),
+                        HttpsSupported = scheme.Equals("https", StringComparison.OrdinalIgnoreCase),
+                        HttpPort = scheme.Equals("http", StringComparison.OrdinalIgnoreCase) ? port : null
+                    };
+                }
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
@@ -128,7 +146,7 @@ public sealed class HttpBannerDetector : IManufacturerDetector
         if (device.HttpPort.HasValue)
             yield return device.HttpPort.Value;
 
-        foreach (var port in new[] { 80, 81, 8080, 8081, 443, 8443, 8888 })
+        foreach (var port in new[] { 80, 81, 82, 88, 443, 8000, 8080, 8081, 8443, 8888, 8899 })
         {
             if (device.HttpPort != port)
                 yield return port;
@@ -140,7 +158,7 @@ public sealed class HttpBannerDetector : IManufacturerDetector
         if (manufacturer != "VIVOTEK")
             return null;
 
-        var knownModels = new[] { "IP7134", "IP7133" };
+        var knownModels = new[] { "IP7134", "IP7133", "IP7135", "IP8160", "IP8332", "FD8166" };
         return knownModels.FirstOrDefault(model =>
             text.Contains(model, StringComparison.OrdinalIgnoreCase));
     }
