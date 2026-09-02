@@ -17,20 +17,18 @@ public sealed class WsDiscoveryOnvifService : IOnvifDiscoveryService
     private static readonly IPAddress MulticastAddress = IPAddress.Parse("239.255.255.250");
     private const int DiscoveryPort = 3702;
 
-    private readonly TimeSpan _discoveryTimeout = TimeSpan.FromSeconds(2);
+    // En una LAN local las cámaras suelen responder inmediatamente. Una ventana corta
+    // evita que una cámara ausente haga lenta toda la detección.
+    private readonly TimeSpan _discoveryTimeout = TimeSpan.FromSeconds(1.2);
 
     public async Task<IReadOnlyList<OnvifDiscoveryResult>> DiscoverAsync(
         NetworkInterfaceInfo? networkInterface = null,
         CancellationToken cancellationToken = default)
     {
-        // messageId identifica de forma única este Probe para depuración y correlación de respuestas.
         var messageId = $"uuid:{Guid.NewGuid()}";
-        // probe contiene el mensaje WS-Discovery dirigido a NetworkVideoTransmitter.
         var probe = BuildProbe(messageId);
-        // payload es el mensaje convertido a UTF-8 para enviarlo por UDP.
         var payload = Encoding.UTF8.GetBytes(probe);
 
-        // Si conocemos la IP del puerto seleccionado, enlazamos el socket explícitamente a esa interfaz.
         using var socket = networkInterface is null
             ? new UdpClient(AddressFamily.InterNetwork)
             : new UdpClient(new IPEndPoint(networkInterface.IpAddress, 0));
@@ -38,12 +36,8 @@ public sealed class WsDiscoveryOnvifService : IOnvifDiscoveryService
         socket.EnableBroadcast = true;
 
         if (networkInterface is not null)
-        {
-            // JoinMulticastGroup fija la interfaz local que recibirá las respuestas multicast.
             socket.JoinMulticastGroup(MulticastAddress, networkInterface.IpAddress);
-        }
 
-        // endpoint representa el destino estándar de WS-Discovery.
         var endpoint = new IPEndPoint(MulticastAddress, DiscoveryPort);
         await socket.SendAsync(payload, payload.Length, endpoint);
 
@@ -52,12 +46,10 @@ public sealed class WsDiscoveryOnvifService : IOnvifDiscoveryService
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            // remaining evita esperar indefinidamente si la red no devuelve ProbeMatch.
             var remaining = deadline - DateTimeOffset.UtcNow;
             if (remaining <= TimeSpan.Zero)
                 break;
 
-            // receiveTask espera respuestas en el mismo socket asociado a la interfaz seleccionada.
             var receiveTask = socket.ReceiveAsync(cancellationToken).AsTask();
             var completedTask = await Task.WhenAny(
                 receiveTask,
@@ -71,14 +63,11 @@ public sealed class WsDiscoveryOnvifService : IOnvifDiscoveryService
             if (parsed is null)
                 continue;
 
-            // Evitamos agregar dos veces el mismo Device Service anunciado por la cámara.
             if (results.Any(item => string.Equals(
                     item.DeviceServiceXAddr,
                     parsed.DeviceServiceXAddr,
                     StringComparison.OrdinalIgnoreCase)))
-            {
                 continue;
-            }
 
             results.Add(parsed);
         }
@@ -110,12 +99,10 @@ public sealed class WsDiscoveryOnvifService : IOnvifDiscoveryService
         {
             var document = XDocument.Parse(Encoding.UTF8.GetString(payload));
 
-            // deviceReference identifica el recurso lógico anunciado por el dispositivo.
             var deviceReference = document.Descendants()
                 .FirstOrDefault(element => element.Name.LocalName == "EndpointReference")?
                 .Value;
 
-            // xAddrs contiene todos los endpoints publicados por WS-Discovery.
             var xAddrs = document.Descendants()
                 .FirstOrDefault(element => element.Name.LocalName == "XAddrs")?
                 .Value?
@@ -124,7 +111,6 @@ public sealed class WsDiscoveryOnvifService : IOnvifDiscoveryService
             if (xAddrs is null)
                 return null;
 
-            // xAddr es el primer endpoint HTTP/HTTPS absoluto que podremos consumir posteriormente.
             var xAddr = xAddrs.FirstOrDefault(IsAbsoluteHttpUri);
             if (string.IsNullOrWhiteSpace(xAddr))
                 return null;
@@ -139,17 +125,14 @@ public sealed class WsDiscoveryOnvifService : IOnvifDiscoveryService
 
             return new OnvifDiscoveryResult
             {
-                // MessageId representa la referencia publicada por el dispositivo; si el paquete
-                // no la contiene conservamos una cadena vacía en lugar de propagar null al modelo.
                 MessageId = deviceReference ?? string.Empty,
                 DeviceServiceXAddr = xAddr,
                 Types = string.IsNullOrWhiteSpace(types) ? null : types,
                 Scopes = string.IsNullOrWhiteSpace(scopes) ? null : scopes
             };
         }
-        catch (Exception)
+        catch
         {
-            // Un paquete multicast malformado no debe interrumpir el descubrimiento de los demás dispositivos.
             return null;
         }
     }
