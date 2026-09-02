@@ -89,6 +89,8 @@ public partial class App : Application
                     services.AddSingleton<MdnsDiscoveryService>();
                     services.AddSingleton<INetworkScanner, NetworkScanOrchestrator>();
 
+                    services.AddSingleton<ICameraHealthService, Network.Diagnostics.CameraHealthService>();
+
                     services.AddSingleton<IManufacturerDetector, Network.Detection.OuiMacDetector>();
                     services.AddSingleton<IManufacturerDetector, Network.Detection.HttpBannerDetector>();
                     services.AddSingleton<IManufacturerDetector, Network.Detection.LegacyCameraHttpDetector>();
