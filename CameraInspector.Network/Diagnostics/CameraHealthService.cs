@@ -22,11 +22,7 @@ public sealed class CameraHealthService : ICameraHealthService
 
     private static readonly string[] SnapshotPaths =
     {
-        "/snapshot.jpg",
-        "/snap.jpg",
-        "/image.jpg",
-        "/snapshot.cgi",
-        "/cgi-bin/snapshot.cgi"
+        "/snapshot.jpg", "/snap.jpg", "/image.jpg", "/snapshot.cgi", "/cgi-bin/snapshot.cgi"
     };
 
     public async Task<CameraHealthResult> CheckAsync(
@@ -34,17 +30,11 @@ public sealed class CameraHealthService : ICameraHealthService
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(device.IpAddress))
-        {
-            return Result(CameraHealthState.NoResponse, false, false, false,
-                null, null, "La cámara no tiene una dirección IP válida.");
-        }
+            return Result(CameraHealthState.NoResponse, false, false, false, null, null, "La cámara no tiene una dirección IP válida.");
 
         var ports = await FindOpenPortsAsync(device.IpAddress, cancellationToken);
         if (ports.Count == 0)
-        {
-            return Result(CameraHealthState.NoResponse, false, false, false,
-                null, null, "Sin respuesta: no se pudo establecer comunicación TCP con puertos habituales de cámara.");
-        }
+            return Result(CameraHealthState.NoResponse, false, false, false, null, null, "SIN RESPUESTA: no se pudo establecer comunicación TCP con puertos habituales.");
 
         foreach (var port in ports)
         {
@@ -54,16 +44,9 @@ public sealed class CameraHealthService : ICameraHealthService
             {
                 var rtsp = await ProbeRtspAsync(device.IpAddress, port, cancellationToken);
                 if (rtsp.VideoAvailable)
-                {
-                    return Result(CameraHealthState.Healthy, true, true, false,
-                        port, "RTSP", "Comunicación RTSP y vídeo disponibles.");
-                }
-
+                    return Result(CameraHealthState.Healthy, true, true, false, port, "RTSP", "Comunicación RTSP y vídeo disponibles.");
                 if (rtsp.AuthenticationRequired)
-                {
-                    return Result(CameraHealthState.AuthenticationRequired, true, false, true,
-                        port, "RTSP", "La cámara responde por RTSP pero solicita autenticación para entregar vídeo.");
-                }
+                    return Result(CameraHealthState.AuthenticationRequired, true, false, true, port, "RTSP", "La cámara responde por RTSP pero solicita autenticación para entregar vídeo.");
             }
         }
 
@@ -71,16 +54,9 @@ public sealed class CameraHealthService : ICameraHealthService
         {
             var http = await ProbeHttpVideoAsync(device.IpAddress, port, cancellationToken);
             if (http.VideoAvailable)
-            {
-                return Result(CameraHealthState.Healthy, true, true, false,
-                    port, http.Protocol, "Comunicación HTTP/HTTPS y vídeo disponibles.");
-            }
-
+                return Result(CameraHealthState.Healthy, true, true, false, port, http.Protocol, "Comunicación HTTP/HTTPS y vídeo disponibles.");
             if (http.AuthenticationRequired)
-            {
-                return Result(CameraHealthState.AuthenticationRequired, true, false, true,
-                    port, http.Protocol, "La cámara responde por HTTP/HTTPS pero solicita autenticación para entregar vídeo.");
-            }
+                return Result(CameraHealthState.AuthenticationRequired, true, false, true, port, http.Protocol, "La cámara responde por HTTP/HTTPS pero solicita autenticación para entregar vídeo.");
         }
 
         var hasKnownCameraEvidence = device.CameraEvidence
@@ -89,15 +65,9 @@ public sealed class CameraHealthService : ICameraHealthService
             || device.DetectionEvidence.Any(e => e.IsCameraEvidence);
 
         if (hasKnownCameraEvidence)
-        {
-            return Result(CameraHealthState.NoVideo, true, false, false,
-                ports[0], ProtocolForPort(ports[0]),
-                "Hay comunicación con el dispositivo, pero no se pudo confirmar un flujo de vídeo en la comprobación rápida.");
-        }
+            return Result(CameraHealthState.NoVideo, true, false, false, ports[0], ProtocolForPort(ports[0]), "ALERTA: hay comunicación con el dispositivo, pero no se pudo confirmar vídeo en la comprobación rápida.");
 
-        return Result(CameraHealthState.CommunicationOnly, true, false, false,
-            ports[0], ProtocolForPort(ports[0]),
-            "El equipo responde en red, pero todavía no hay evidencia suficiente para confirmar vídeo.");
+        return Result(CameraHealthState.CommunicationOnly, true, false, false, ports[0], ProtocolForPort(ports[0]), "ALERTA: el equipo responde en red, pero no hay evidencia suficiente para confirmar vídeo.");
     }
 
     private static async Task<List<int>> FindOpenPortsAsync(string ip, CancellationToken cancellationToken)
@@ -112,18 +82,15 @@ public sealed class CameraHealthService : ICameraHealthService
                 await client.ConnectAsync(ip, port, timeout.Token);
                 return (Port: port, Open: true);
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { return (port, false); }
-            catch (SocketException) { return (port, false); }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { return (Port: port, Open: false); }
+            catch (SocketException) { return (Port: port, Open: false); }
         });
 
         var results = await Task.WhenAll(tasks);
         return results.Where(x => x.Open).Select(x => x.Port).OrderBy(p => p).ToList();
     }
 
-    private static async Task<(bool VideoAvailable, bool AuthenticationRequired, string Protocol)> ProbeRtspAsync(
-        string ip,
-        int port,
-        CancellationToken cancellationToken)
+    private static async Task<(bool VideoAvailable, bool AuthenticationRequired, string Protocol)> ProbeRtspAsync(string ip, int port, CancellationToken cancellationToken)
     {
         using var client = new TcpClient();
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -153,24 +120,12 @@ public sealed class CameraHealthService : ICameraHealthService
 
             return (false, false, "RTSP");
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return (false, false, "RTSP");
-        }
-        catch (SocketException)
-        {
-            return (false, false, "RTSP");
-        }
-        catch (IOException)
-        {
-            return (false, false, "RTSP");
-        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { return (false, false, "RTSP"); }
+        catch (SocketException) { return (false, false, "RTSP"); }
+        catch (IOException) { return (false, false, "RTSP"); }
     }
 
-    private static async Task<(bool VideoAvailable, bool AuthenticationRequired, string Protocol)> ProbeHttpVideoAsync(
-        string ip,
-        int port,
-        CancellationToken cancellationToken)
+    private static async Task<(bool VideoAvailable, bool AuthenticationRequired, string Protocol)> ProbeHttpVideoAsync(string ip, int port, CancellationToken cancellationToken)
     {
         var https = port is 443 or 8443;
         var protocol = https ? "HTTPS" : "HTTP";
@@ -214,22 +169,15 @@ public sealed class CameraHealthService : ICameraHealthService
         _ => "TCP"
     };
 
-    private static CameraHealthResult Result(
-        CameraHealthState state,
-        bool communication,
-        bool video,
-        bool auth,
-        int? port,
-        string? protocol,
-        string message) => new()
-        {
-            State = state,
-            CommunicationAvailable = communication,
-            VideoAvailable = video,
-            AuthenticationRequired = auth,
-            CommunicationPort = port,
-            Protocol = protocol,
-            Message = message,
-            CheckedAt = DateTimeOffset.UtcNow
-        };
+    private static CameraHealthResult Result(CameraHealthState state, bool communication, bool video, bool auth, int? port, string? protocol, string message) => new()
+    {
+        State = state,
+        CommunicationAvailable = communication,
+        VideoAvailable = video,
+        AuthenticationRequired = auth,
+        CommunicationPort = port,
+        Protocol = protocol,
+        Message = message,
+        CheckedAt = DateTimeOffset.UtcNow
+    };
 }
