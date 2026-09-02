@@ -49,15 +49,10 @@ public partial class IpCameraVideoWindow : Window
         try
         {
             await _viewModel.RecheckSelectedHealthAsync();
-            await _viewModel.TryStartIpVideoAutomaticallyAsync();
-        }
-        catch (OperationCanceledException)
-        {
-            _viewModel.StatusText = "Inicio automático del video cancelado.";
         }
         catch (Exception ex)
         {
-            _viewModel.StatusText = $"No se pudo iniciar automáticamente el video: {ex.Message}";
+            _viewModel.StatusText = $"No se pudo comprobar la salud inicial: {ex.Message}";
         }
         finally
         {
@@ -94,7 +89,7 @@ public partial class IpCameraVideoWindow : Window
         }
     }
 
-    private async void NetworkButton_Click(object sender, RoutedEventArgs e)
+    private void NetworkButton_Click(object sender, RoutedEventArgs e)
     {
         var device = _viewModel.SelectedDevice;
         if (device is null)
@@ -122,7 +117,7 @@ public partial class IpCameraVideoWindow : Window
                 ShowInTaskbar = false
             };
             window.ShowDialog();
-            await _viewModel.RecheckSelectedHealthAsync();
+            _ = _viewModel.RecheckSelectedHealthAsync();
             RefreshButtons();
         }
         catch (Exception ex)
@@ -139,11 +134,7 @@ public partial class IpCameraVideoWindow : Window
 
         try
         {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = $"http://{ip}",
-                UseShellExecute = true
-            });
+            Process.Start(new ProcessStartInfo { FileName = $"http://{ip}", UseShellExecute = true });
             _viewModel.StatusText = $"Abriendo interfaz web de {ip}...";
         }
         catch (Exception ex)
@@ -166,24 +157,6 @@ public partial class IpCameraVideoWindow : Window
         catch (Exception ex)
         {
             _viewModel.StatusText = $"No se pudo copiar la IP: {ex.Message}";
-        }
-    }
-
-    private async void CredentialsButton_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            if (_viewModel.SaveCredentialsCommand.CanExecute(null))
-                await _viewModel.SaveCredentialsCommand.ExecuteAsync(null);
-        }
-        catch (Exception ex)
-        {
-            _viewModel.StatusText = $"No se pudieron gestionar las credenciales: {ex.Message}";
-        }
-        finally
-        {
-            RefreshCredentialsButton();
-            RefreshButtons();
         }
     }
 
@@ -229,12 +202,7 @@ public partial class IpCameraVideoWindow : Window
             if (credentials is null)
                 return;
 
-            var success = await service.ContinuousMoveAsync(
-                device.Device,
-                request,
-                credentials.Value.Username,
-                credentials.Value.Password);
-
+            var success = await service.ContinuousMoveAsync(device.Device, request, credentials.Value.Username, credentials.Value.Password);
             _viewModel.StatusText = success
                 ? $"PTZ: {description}."
                 : $"PTZ no disponible: la cámara rechazó o no respondió al movimiento ({description}).";
@@ -302,9 +270,7 @@ public partial class IpCameraVideoWindow : Window
         try
         {
             var saved = _videoPlayerService.TakeSnapshot(dialog.FileName);
-            _viewModel.StatusText = saved
-                ? $"Captura guardada: {dialog.FileName}"
-                : "No hay un frame de video disponible para capturar.";
+            _viewModel.StatusText = saved ? $"Captura guardada: {dialog.FileName}" : "No hay un frame de video disponible para capturar.";
         }
         catch (Exception ex)
         {
@@ -336,13 +302,9 @@ public partial class IpCameraVideoWindow : Window
             RecordButton.IsEnabled = false;
             var started = await _viewModel.StartRecordingAsync(dialog.FileName);
             if (!started)
-            {
                 MessageBox.Show(this, _viewModel.StatusText, "Camera Inspector — Grabación", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
             else
-            {
                 _viewModel.StatusText = $"Grabación iniciada: {dialog.FileName}";
-            }
         }
         catch (Exception ex)
         {
@@ -423,7 +385,6 @@ public partial class IpCameraVideoWindow : Window
 
     private void RefreshCredentialsButton()
     {
-        // El control permanece visible y disponible aunque todavía no se haya detectado la necesidad de autenticación.
         CredentialsButton.IsEnabled = _viewModel.SelectedDevice is not null;
         CredentialsButton.ToolTip = _viewModel.AuthenticationRequired
             ? "La cámara solicita autenticación. Ingrese o actualice usuario y contraseña."
