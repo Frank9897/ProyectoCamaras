@@ -16,9 +16,6 @@ public sealed partial class DeviceViewModel : ObservableObject
 
     public DeviceViewModel(DiscoveredDevice device) => _device = device;
 
-    // Estas propiedades se mantienen con setter para tolerar bindings TwoWay generados por
-    // DataGrid/WPF. La vista principal es de solo lectura, por lo que estos setters solo
-    // sincronizan el modelo subyacente y notifican cambios cuando alguna vista los actualiza.
     public string IpAddress
     {
         get => _device.IpAddress;
@@ -90,7 +87,24 @@ public sealed partial class DeviceViewModel : ObservableObject
         }
     }
 
-    public int? CameraId => _cameraId;
+    public int? CameraId
+    {
+        get => _cameraId;
+        set
+        {
+            if (value is null)
+            {
+                if (_cameraId is null) return;
+                _cameraId = null;
+                OnPropertyChanged();
+                return;
+            }
+
+            if (value <= 0 || _cameraId == value) return;
+            _cameraId = value;
+            OnPropertyChanged();
+        }
+    }
 
     public bool OnvifSupported
     {
@@ -119,21 +133,122 @@ public sealed partial class DeviceViewModel : ObservableObject
         get => !string.IsNullOrWhiteSpace(_device.OnvifDeviceServiceXAddr);
         set
         {
-            if (!value && !string.IsNullOrWhiteSpace(_device.OnvifDeviceServiceXAddr))
+            if (value) return;
+            if (!string.IsNullOrWhiteSpace(_device.OnvifDeviceServiceXAddr))
                 _device.OnvifDeviceServiceXAddr = null;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasMediaService));
+        }
+    }
+
+    public bool HasMediaService
+    {
+        get => _device.HasOnvifMediaService;
+        set
+        {
+            if (value || string.IsNullOrWhiteSpace(_device.OnvifMediaServiceXAddr)) return;
+            _device.OnvifMediaServiceXAddr = null;
             OnPropertyChanged();
         }
     }
 
-    public bool HasMediaService => _device.HasOnvifMediaService;
-    public bool HasImagingService => _device.HasOnvifImagingService;
-    public bool HasPtzService => _device.HasOnvifPtzService;
-    public bool HasEventsService => _device.HasOnvifEventsService;
-    public string OnvifDeviceServiceXAddr => _device.OnvifDeviceServiceXAddr ?? "—";
-    public string OnvifMediaServiceXAddr => _device.OnvifMediaServiceXAddr ?? "—";
-    public string OnvifImagingServiceXAddr => _device.OnvifImagingServiceXAddr ?? "—";
-    public string OnvifPtzServiceXAddr => _device.OnvifPtzServiceXAddr ?? "—";
-    public string OnvifEventsServiceXAddr => _device.OnvifEventsServiceXAddr ?? "—";
+    public bool HasImagingService
+    {
+        get => _device.HasOnvifImagingService;
+        set
+        {
+            if (value || string.IsNullOrWhiteSpace(_device.OnvifImagingServiceXAddr)) return;
+            _device.OnvifImagingServiceXAddr = null;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool HasPtzService
+    {
+        get => _device.HasOnvifPtzService;
+        set
+        {
+            if (value || string.IsNullOrWhiteSpace(_device.OnvifPtzServiceXAddr)) return;
+            _device.OnvifPtzServiceXAddr = null;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool HasEventsService
+    {
+        get => _device.HasOnvifEventsService;
+        set
+        {
+            if (value || string.IsNullOrWhiteSpace(_device.OnvifEventsServiceXAddr)) return;
+            _device.OnvifEventsServiceXAddr = null;
+            OnPropertyChanged();
+        }
+    }
+
+    public string OnvifDeviceServiceXAddr
+    {
+        get => _device.OnvifDeviceServiceXAddr ?? "—";
+        set
+        {
+            var normalized = string.Equals(value, "—", StringComparison.Ordinal) ? null : value?.Trim();
+            if (string.Equals(_device.OnvifDeviceServiceXAddr, normalized, StringComparison.OrdinalIgnoreCase)) return;
+            _device.OnvifDeviceServiceXAddr = normalized;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(DiscoveredByOnvif));
+        }
+    }
+
+    public string OnvifMediaServiceXAddr
+    {
+        get => _device.OnvifMediaServiceXAddr ?? "—";
+        set
+        {
+            var normalized = string.Equals(value, "—", StringComparison.Ordinal) ? null : value?.Trim();
+            if (string.Equals(_device.OnvifMediaServiceXAddr, normalized, StringComparison.OrdinalIgnoreCase)) return;
+            _device.OnvifMediaServiceXAddr = normalized;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasMediaService));
+        }
+    }
+
+    public string OnvifImagingServiceXAddr
+    {
+        get => _device.OnvifImagingServiceXAddr ?? "—";
+        set
+        {
+            var normalized = string.Equals(value, "—", StringComparison.Ordinal) ? null : value?.Trim();
+            if (string.Equals(_device.OnvifImagingServiceXAddr, normalized, StringComparison.OrdinalIgnoreCase)) return;
+            _device.OnvifImagingServiceXAddr = normalized;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasImagingService));
+        }
+    }
+
+    public string OnvifPtzServiceXAddr
+    {
+        get => _device.OnvifPtzServiceXAddr ?? "—";
+        set
+        {
+            var normalized = string.Equals(value, "—", StringComparison.Ordinal) ? null : value?.Trim();
+            if (string.Equals(_device.OnvifPtzServiceXAddr, normalized, StringComparison.OrdinalIgnoreCase)) return;
+            _device.OnvifPtzServiceXAddr = normalized;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasPtzService));
+        }
+    }
+
+    public string OnvifEventsServiceXAddr
+    {
+        get => _device.OnvifEventsServiceXAddr ?? "—";
+        set
+        {
+            var normalized = string.Equals(value, "—", StringComparison.Ordinal) ? null : value?.Trim();
+            if (string.Equals(_device.OnvifEventsServiceXAddr, normalized, StringComparison.OrdinalIgnoreCase)) return;
+            _device.OnvifEventsServiceXAddr = normalized;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasEventsService));
+        }
+    }
 
     public DeviceStatus Status
     {
@@ -157,19 +272,33 @@ public sealed partial class DeviceViewModel : ObservableObject
         }
     }
 
-    public string DetectionReason => _device.DetectionReason;
-    public string DetectionDetails => _device.DetectionEvidence.Count == 0
-        ? "Sin evidencia"
-        : string.Join(Environment.NewLine, _device.DetectionEvidence
-            .OrderByDescending(item => item.Confidence)
-            .Select(item => $"{item.Method}: {item.Details ?? "confirmado"} · {(item.Confidence * 100):0}%"));
+    public string DetectionReason
+    {
+        get => _device.DetectionReason;
+        set
+        {
+            // Propiedad calculada: el setter existe solo para evitar fallos TwoWay inesperados.
+        }
+    }
+
+    public string DetectionDetails
+    {
+        get => _device.DetectionEvidence.Count == 0
+            ? "Sin evidencia"
+            : string.Join(Environment.NewLine, _device.DetectionEvidence
+                .OrderByDescending(item => item.Confidence)
+                .Select(item => $"{item.Method}: {item.Details ?? "confirmado"} · {(item.Confidence * 100):0}%"));
+        set
+        {
+            // Propiedad calculada: el setter existe solo para evitar fallos TwoWay inesperados.
+        }
+    }
 
     public void SetCameraId(int cameraId)
     {
         if (cameraId <= 0)
             throw new ArgumentOutOfRangeException(nameof(cameraId));
-        _cameraId = cameraId;
-        OnPropertyChanged(nameof(CameraId));
+        CameraId = cameraId;
     }
 
     public void Refresh()
