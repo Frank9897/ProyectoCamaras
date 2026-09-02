@@ -6,14 +6,12 @@ namespace CameraInspector.Core.Models;
 /// </summary>
 public sealed class OnvifNetworkConfiguration
 {
+    public string? Hostname { get; init; }
     public List<OnvifNetworkInterfaceInfo> Interfaces { get; init; } = [];
     public List<OnvifNetworkProtocolInfo> Protocols { get; init; } = [];
     public List<string> IPv4Gateways { get; init; } = [];
 }
 
-/// <summary>
-/// Información básica de una interfaz de red ONVIF.
-/// </summary>
 public sealed class OnvifNetworkInterfaceInfo
 {
     public required string Token { get; init; }
@@ -27,10 +25,6 @@ public sealed class OnvifNetworkInterfaceInfo
     public int? IPv4PrefixLength { get; init; }
 }
 
-/// <summary>
-/// Estado de un protocolo de transporte ONVIF.
-/// ONVIF define HTTP, HTTPS y RTSP como protocolos de red consultables.
-/// </summary>
 public sealed class OnvifNetworkProtocolInfo
 {
     public required string Name { get; init; }
