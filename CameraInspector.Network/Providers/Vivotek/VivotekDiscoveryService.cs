@@ -14,7 +14,7 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
 {
     private const int ShepherdDiscoveryPort = 5678;
     private const int LegacyDiscoveryPort = 10000;
-    private readonly TimeSpan _discoveryTimeout = TimeSpan.FromSeconds(3);
+    private readonly TimeSpan _discoveryTimeout = TimeSpan.FromSeconds(2);
 
     public async Task<IReadOnlyList<DiscoveredDevice>> DiscoverAsync(
         NetworkInterfaceInfo networkInterface,
@@ -30,34 +30,27 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
         if (IsApipa(bindAddress))
             broadcasts.Add(IPAddress.Parse("169.254.255.255"));
 
-        foreach (var target in broadcasts.Distinct())
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            await ProbePortAsync(bindAddress, target, ShepherdDiscoveryPort, results, cancellationToken);
-            await ProbePortAsync(bindAddress, target, LegacyDiscoveryPort, results, cancellationToken);
-        }
-
-        return results.Values.ToList();
-    }
-
-    private async Task ProbePortAsync(
-        IPAddress bindAddress,
-        IPAddress target,
-        int targetPort,
-        Dictionary<string, DiscoveredDevice> results,
-        CancellationToken cancellationToken)
-    {
         using var socket = await CreateBoundSocketAsync(bindAddress, ShepherdDiscoveryPort, cancellationToken);
         socket.EnableBroadcast = true;
         var probe = BuildProbe();
 
-        try
+        // Enviamos todas las variantes primero y hacemos una sola ventana de recepción.
+        // El código anterior esperaba el timeout completo por cada broadcast/puerto.
+        foreach (var target in broadcasts.Distinct())
         {
-            await socket.SendAsync(probe, probe.Length, new IPEndPoint(target, targetPort));
-        }
-        catch (SocketException)
-        {
-            return;
+            cancellationToken.ThrowIfCancellationRequested();
+
+            foreach (var targetPort in new[] { ShepherdDiscoveryPort, LegacyDiscoveryPort })
+            {
+                try
+                {
+                    await socket.SendAsync(probe, probe.Length, new IPEndPoint(target, targetPort));
+                }
+                catch (SocketException)
+                {
+                    // Una ruta/puerto puede no estar disponible; continuamos con las restantes.
+                }
+            }
         }
 
         var deadline = DateTimeOffset.UtcNow + _discoveryTimeout;
@@ -95,21 +88,23 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
                 break;
             }
         }
+
+        return results.Values.ToList();
     }
 
-    private static async Task<UdpClient> CreateBoundSocketAsync(
+    private static Task<UdpClient> CreateBoundSocketAsync(
         IPAddress bindAddress,
         int preferredPort,
         CancellationToken cancellationToken)
     {
         try
         {
-            return new UdpClient(new IPEndPoint(bindAddress, preferredPort));
+            return Task.FromResult(new UdpClient(new IPEndPoint(bindAddress, preferredPort)));
         }
         catch (SocketException)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return new UdpClient(new IPEndPoint(bindAddress, 0));
+            return Task.FromResult(new UdpClient(new IPEndPoint(bindAddress, 0)));
         }
     }
 
