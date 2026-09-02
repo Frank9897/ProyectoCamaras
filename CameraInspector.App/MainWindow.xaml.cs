@@ -2,6 +2,7 @@ using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Media;
 using Microsoft.Win32;
 using CameraInspector.App.ViewModels;
@@ -43,6 +44,7 @@ public partial class MainWindow : Window
         ICameraCredentialStore cameraCredentialStore)
     {
         InitializeComponent();
+        ConfigureReadOnlyGridBindings();
         DataContext = viewModel;
         _videoPlayerService = videoPlayerService;
         _onvifDeviceService = onvifDeviceService;
@@ -57,6 +59,41 @@ public partial class MainWindow : Window
 
         // La vista LibVLC se enlaza directamente al MediaPlayer desde MainWindow.xaml.
         Loaded += (_, _) => ConfigureCameraContextMenu();
+    }
+
+    /// <summary>
+    /// DataGridTextColumn usa TwoWay por defecto aunque el DataGrid sea de solo lectura.
+    /// Los ViewModels exponen varias propiedades calculadas/solo lectura, por lo que las
+    /// columnas deben trabajar siempre en modo OneWay para evitar que WPF intente escribirlas.
+    /// </summary>
+    private void ConfigureReadOnlyGridBindings()
+    {
+        foreach (var dataGrid in FindLogicalChildren<DataGrid>(this))
+        {
+            foreach (var column in dataGrid.Columns.OfType<DataGridBoundColumn>())
+            {
+                if (column.Binding is Binding binding)
+                    binding.Mode = BindingMode.OneWay;
+            }
+
+            dataGrid.AutoGeneratingColumn += (_, args) =>
+            {
+                if (args.Column is DataGridBoundColumn boundColumn && boundColumn.Binding is Binding binding)
+                    binding.Mode = BindingMode.OneWay;
+            };
+        }
+    }
+
+    private static IEnumerable<T> FindLogicalChildren<T>(DependencyObject parent) where T : DependencyObject
+    {
+        foreach (var child in LogicalTreeHelper.GetChildren(parent).OfType<DependencyObject>())
+        {
+            if (child is T typedChild)
+                yield return typedChild;
+
+            foreach (var nestedChild in FindLogicalChildren<T>(child))
+                yield return nestedChild;
+        }
     }
 
     private void ConfigureCameraContextMenu()
