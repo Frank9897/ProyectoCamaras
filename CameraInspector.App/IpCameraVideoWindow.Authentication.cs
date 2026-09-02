@@ -15,23 +15,14 @@ public partial class IpCameraVideoWindow
 
     static IpCameraVideoWindow()
     {
-        EventManager.RegisterClassHandler(
-            typeof(IpCameraVideoWindow),
-            FrameworkElement.LoadedEvent,
-            new RoutedEventHandler(OnWindowLoadedForAuthentication));
-
-        EventManager.RegisterClassHandler(
-            typeof(IpCameraVideoWindow),
-            FrameworkElement.UnloadedEvent,
-            new RoutedEventHandler(OnWindowUnloadedForAuthentication));
+        EventManager.RegisterClassHandler(typeof(IpCameraVideoWindow), FrameworkElement.LoadedEvent, new RoutedEventHandler(OnWindowLoadedForAuthentication));
+        EventManager.RegisterClassHandler(typeof(IpCameraVideoWindow), FrameworkElement.UnloadedEvent, new RoutedEventHandler(OnWindowUnloadedForAuthentication));
     }
 
     private static void OnWindowLoadedForAuthentication(object sender, RoutedEventArgs e)
     {
-        if (sender is not IpCameraVideoWindow window)
-            return;
-
-        window.ConfigureAuthenticationUi();
+        if (sender is IpCameraVideoWindow window)
+            window.ConfigureAuthenticationUi();
     }
 
     private static void OnWindowUnloadedForAuthentication(object sender, RoutedEventArgs e)
@@ -47,7 +38,6 @@ public partial class IpCameraVideoWindow
             _credentialsButton = FindButtonByContent(this, "CREDENCIALES");
             if (_credentialsButton is not null)
             {
-                // Se habilita exclusivamente cuando el acceso anónimo no fue posible.
                 _credentialsButton.Command = null;
                 _credentialsButton.Click += CredentialsButton_Click;
             }
@@ -134,10 +124,7 @@ public partial class IpCameraVideoWindow
                 return;
 
             var ip = viewModel.SelectedDevice?.IpAddress ?? "cámara seleccionada";
-            viewModel.StatusText =
-                $"No se pudo iniciar el video de {ip}. La cámara puede requerir usuario y contraseña, RTSP habilitado o una ruta de stream compatible. " +
-                "Puede abrir CREDENCIALES y volver a intentar.";
-
+            viewModel.StatusText = $"ALERTA: no se pudo iniciar el video de {ip}. Puede requerir usuario/contraseña, RTSP habilitado o una ruta de stream compatible. Puede abrir CREDENCIALES y volver a intentar.";
             RefreshCredentialsButton();
             RefreshButtons();
         }));
@@ -156,5 +143,21 @@ public partial class IpCameraVideoWindow
             _authenticationViewModel.PropertyChanged -= AuthenticationViewModel_PropertyChanged;
             _authenticationViewModel = null;
         }
+    }
+
+    private static Button? FindButtonByContent(DependencyObject root, string expectedContent)
+    {
+        for (var index = 0; index < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); index++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(root, index);
+            if (child is Button button && string.Equals(button.Content?.ToString(), expectedContent, StringComparison.OrdinalIgnoreCase))
+                return button;
+
+            var nested = FindButtonByContent(child, expectedContent);
+            if (nested is not null)
+                return nested;
+        }
+
+        return null;
     }
 }
