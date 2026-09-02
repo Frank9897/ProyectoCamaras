@@ -5,8 +5,8 @@ using CameraInspector.Core.Models;
 namespace CameraInspector.Network;
 
 /// <summary>
-/// Orquestador de descubrimiento multi-evidencia. ONVIF es una técnica más entre
-/// mDNS, SSDP, protocolos propietarios, ARP, TCP e identificación RTSP/HTTP.
+/// Orquestador de descubrimiento multi-evidencia. Todas las fuentes se fusionan por IP
+/// antes de entregarlas a la UI para no perder información cuando varias técnicas detectan el mismo equipo.
 /// </summary>
 public sealed class NetworkScanOrchestrator : INetworkScanner
 {
@@ -65,16 +65,11 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
             ? Task.FromResult<IReadOnlyList<IPAddress>>(Array.Empty<IPAddress>())
             : _pingScanner.ScanAsync(candidates, cancellationToken: cancellationToken);
 
-        var onvifTask = SafeDiscoverAsync(
-            () => _onvifDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
-        var vivotekTask = SafeDiscoverAsync(
-            () => _vivotekDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
-        var ssdpTask = SafeDiscoverAsync(
-            () => _ssdpDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
-        var legacyVendorTask = SafeDiscoverAsync(
-            () => _legacyVendorDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
-        var mdnsTask = SafeDiscoverAsync(
-            () => _mdnsDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
+        var onvifTask = SafeDiscoverAsync(() => _onvifDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
+        var vivotekTask = SafeDiscoverAsync(() => _vivotekDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
+        var ssdpTask = SafeDiscoverAsync(() => _ssdpDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
+        var legacyVendorTask = SafeDiscoverAsync(() => _legacyVendorDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
+        var mdnsTask = SafeDiscoverAsync(() => _mdnsDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
 
         await Task.WhenAll(pingTask, onvifTask, vivotekTask, ssdpTask, legacyVendorTask, mdnsTask);
 
@@ -88,14 +83,13 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         await Task.Delay(150, cancellationToken);
         var arpTable = _arpResolver.GetArpTable();
 
-        // TCP se ejecuta sobre IPs de la subred, vecinos ARP y cualquier dirección aportada por discovery.
         var portCandidates = candidates
             .Concat(arpTable.Keys)
             .Concat(onvifResults.Select(GetIpFromOnvif).Where(ip => ip is not null).Cast<IPAddress>())
-            .Concat(vivotekResults.Select(item => IPAddress.TryParse(item.IpAddress, out var ip) ? ip : null).Where(ip => ip is not null).Cast<IPAddress>())
-            .Concat(ssdpResults.Select(item => IPAddress.TryParse(item.IpAddress, out var ip) ? ip : null).Where(ip => ip is not null).Cast<IPAddress>())
-            .Concat(legacyVendorResults.Select(item => IPAddress.TryParse(item.IpAddress, out var ip) ? ip : null).Where(ip => ip is not null).Cast<IPAddress>())
-            .Concat(mdnsResults.Select(item => IPAddress.TryParse(item.IpAddress, out var ip) ? ip : null).Where(ip => ip is not null).Cast<IPAddress>())
+            .Concat(vivotekResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>())
+            .Concat(ssdpResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>())
+            .Concat(legacyVendorResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>())
+            .Concat(mdnsResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>())
             .Where(address => address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
             .Distinct()
             .ToList();
@@ -104,82 +98,122 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
             ? Array.Empty<CameraPortScanResult>()
             : await _cameraPortScanner.ScanAsync(portCandidates, cancellationToken: cancellationToken);
 
-        var onvifByIp = onvifResults
-            .Select(result => new
-            {
-                Result = result,
-                Uri = Uri.TryCreate(result.DeviceServiceXAddr, UriKind.Absolute, out var parsedUri) ? parsedUri : null
-            })
-            .Where(item => item.Uri is not null && item.Uri.Host.Length > 0)
-            .Select(item => new { item.Result, Address = item.Uri!.Host })
-            .Where(item => IPAddress.TryParse(item.Address, out _))
-            .GroupBy(item => item.Address, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.First().Result, StringComparer.OrdinalIgnoreCase);
-
-        var discoveredCount = responsive.Count + onvifByIp.Count + vivotekResults.Count + ssdpResults.Count +
-                              legacyVendorResults.Count + mdnsResults.Count + portResults.Length;
-        var total = Math.Max(candidates.Count, discoveredCount);
-        var processedIps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var scanned = 0;
+        var devices = new Dictionary<string, DiscoveredDevice>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var ip in responsive)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var ipText = ip.ToString();
-            if (!processedIps.Add(ipText)) continue;
-
-            arpTable.TryGetValue(ip, out var mac);
-            var device = new DiscoveredDevice { IpAddress = ipText, MacAddress = mac, Status = DeviceStatus.Unknown };
-            ApplyOnvifEvidence(device, onvifByIp, ipText);
-            ApplyVivotekEvidence(device, vivotekResults, ipText);
-            ApplyPortEvidence(device, portResults.FirstOrDefault(item => item.IpAddress.Equals(ip)));
-            yield return Report(new ScanProgress(++scanned, total, device), progress);
+            var device = GetOrCreate(devices, ipText);
+            if (arpTable.TryGetValue(ip, out var mac)) device.MacAddress ??= mac;
+            device.Status = DeviceStatus.Online;
+            device.AddEvidence("Ping", 0.05, "ICMP respondió", false);
         }
 
-        foreach (var pair in onvifByIp)
+        foreach (var result in onvifResults)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!processedIps.Add(pair.Key)) continue;
-
-            IPAddress.TryParse(pair.Key, out var parsedIp);
-            var mac = parsedIp is not null && arpTable.TryGetValue(parsedIp, out var knownMac) ? knownMac : null;
-            var device = new DiscoveredDevice
-            {
-                IpAddress = pair.Key, MacAddress = mac, Status = DeviceStatus.Online,
-                OnvifSupported = true, OnvifProfile = "detectado por WS-Discovery",
-                OnvifDeviceServiceXAddr = pair.Value.DeviceServiceXAddr
-            };
-            ApplyVivotekEvidence(device, vivotekResults, pair.Key);
-            ApplyPortEvidence(device, parsedIp is not null ? portResults.FirstOrDefault(item => item.IpAddress.Equals(parsedIp)) : null);
-            yield return Report(new ScanProgress(++scanned, total, device), progress);
+            var ip = GetIpFromOnvif(result);
+            if (ip is null) continue;
+            var device = GetOrCreate(devices, ip.ToString());
+            device.OnvifSupported = true;
+            device.OnvifDeviceServiceXAddr = result.DeviceServiceXAddr;
+            device.OnvifProfile = "detectado por WS-Discovery";
+            device.CameraEvidence = true;
+            device.Status = DeviceStatus.Online;
+            device.AddEvidence("WS-Discovery", 0.98, "respuesta ONVIF", true);
+            if (arpTable.TryGetValue(ip, out var mac)) device.MacAddress ??= mac;
         }
 
-        foreach (var sourceDevice in ssdpResults.Concat(mdnsResults).Concat(legacyVendorResults).Concat(vivotekResults))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!IPAddress.TryParse(sourceDevice.IpAddress, out var parsedIp) || !processedIps.Add(sourceDevice.IpAddress))
-                continue;
-
-            if (arpTable.TryGetValue(parsedIp, out var knownMac)) sourceDevice.MacAddress = knownMac;
-            ApplyPortEvidence(sourceDevice, portResults.FirstOrDefault(item => item.IpAddress.Equals(parsedIp)));
-            sourceDevice.Status = DeviceStatus.Online;
-            yield return Report(new ScanProgress(++scanned, total, sourceDevice), progress);
-        }
+        MergeDiscoverySource(devices, vivotekResults, "VIVOTEK Discovery", true, 0.99, "Shepherd/IW2", "VIVOTEK");
+        MergeDiscoverySource(devices, legacyVendorResults, null, true, 0.99, null, null);
+        MergeDiscoverySource(devices, ssdpResults, "SSDP/UPnP", false, 0.35, null, null);
+        MergeDiscoverySource(devices, mdnsResults, "mDNS/Bonjour", false, 0.3, null, null);
 
         foreach (var portResult in portResults)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var ipText = portResult.IpAddress.ToString();
-            if (!processedIps.Add(ipText)) continue;
-
-            arpTable.TryGetValue(portResult.IpAddress, out var mac);
-            var device = new DiscoveredDevice { IpAddress = ipText, MacAddress = mac, Status = DeviceStatus.Online };
+            var device = GetOrCreate(devices, ipText);
+            if (arpTable.TryGetValue(portResult.IpAddress, out var mac)) device.MacAddress ??= mac;
             ApplyPortEvidence(device, portResult);
-            yield return Report(new ScanProgress(++scanned, total, device), progress);
         }
 
-        if (scanned == 0)
+        var ordered = devices.Values
+            .Where(device => device.IpAddress.Length > 0)
+            .OrderBy(device => device.IpAddress, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var total = Math.Max(candidates.Count, ordered.Count);
+        for (var index = 0; index < ordered.Count; index++)
+        {
+            var device = ordered[index];
+            cancellationToken.ThrowIfCancellationRequested();
+            device.LastSeenAt = DateTimeOffset.UtcNow;
+            yield return Report(new ScanProgress(index + 1, total, device), progress);
+        }
+
+        if (ordered.Count == 0)
             yield return new ScanProgress(total, total, null);
+    }
+
+    private static DiscoveredDevice GetOrCreate(Dictionary<string, DiscoveredDevice> devices, string ipText)
+    {
+        if (!devices.TryGetValue(ipText, out var device))
+        {
+            device = new DiscoveredDevice { IpAddress = ipText };
+            devices[ipText] = device;
+        }
+        return device;
+    }
+
+    private static void MergeDiscoverySource(
+        Dictionary<string, DiscoveredDevice> devices,
+        IEnumerable<DiscoveredDevice> sourceResults,
+        string? evidenceMethod,
+        bool defaultCameraEvidence,
+        double confidence,
+        string? defaultDetails,
+        string? defaultManufacturer)
+    {
+        foreach (var source in sourceResults)
+        {
+            if (!IPAddress.TryParse(source.IpAddress, out var ip)) continue;
+            var target = GetOrCreate(devices, source.IpAddress);
+
+            target.MacAddress ??= source.MacAddress;
+            target.Hostname ??= source.Hostname;
+            target.Manufacturer ??= source.Manufacturer ?? defaultManufacturer;
+            target.Model ??= source.Model;
+            target.FirmwareVersion ??= source.FirmwareVersion;
+            target.SerialNumber ??= source.SerialNumber;
+            target.AssignedProviderName ??= source.AssignedProviderName;
+            target.OnvifSupported |= source.OnvifSupported;
+            target.RtspSupported |= source.RtspSupported;
+            target.HttpSupported |= source.HttpSupported;
+            target.HttpsSupported |= source.HttpsSupported;
+            target.HttpPort ??= source.HttpPort;
+            target.RtspPort ??= source.RtspPort;
+            target.CameraEvidence |= source.CameraEvidence || defaultCameraEvidence;
+            if (!string.IsNullOrWhiteSpace(source.OnvifDeviceServiceXAddr)) target.OnvifDeviceServiceXAddr ??= source.OnvifDeviceServiceXAddr;
+            if (!string.IsNullOrWhiteSpace(source.OnvifProfile)) target.OnvifProfile ??= source.OnvifProfile;
+            if (source.DetectionEvidence.Count > 0)
+            {
+                foreach (var evidence in source.DetectionEvidence)
+                    target.AddEvidence(evidence.Method, evidence.Confidence, evidence.Details, evidence.IsCameraEvidence);
+            }
+
+            if (!string.IsNullOrWhiteSpace(evidenceMethod))
+                target.AddEvidence(evidenceMethod, confidence, defaultDetails ?? source.AssignedProviderName ?? source.Manufacturer, defaultCameraEvidence);
+            target.Status = DeviceStatus.Online;
+
+            if (target.MacAddress is null && arpTablePlaceholder())
+            {
+                // Se conserva el flujo de fusión; la MAC se completa en la capa de ARP si está disponible.
+            }
+        }
+
+        static bool arpTablePlaceholder() => false;
     }
 
     private static ScanProgress Report(ScanProgress update, IProgress<ScanProgress>? progress)
@@ -203,31 +237,15 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         return IPAddress.TryParse(uri.Host, out var ip) ? ip : null;
     }
 
-    private static void ApplyOnvifEvidence(DiscoveredDevice device, IReadOnlyDictionary<string, OnvifDiscoveryResult> onvifByIp, string ipText)
-    {
-        if (!onvifByIp.TryGetValue(ipText, out var result)) return;
-        device.OnvifSupported = true;
-        device.OnvifDeviceServiceXAddr = result.DeviceServiceXAddr;
-        device.OnvifProfile = "detectado por WS-Discovery";
-    }
+    private static IPAddress? ToIp(DiscoveredDevice device)
+        => IPAddress.TryParse(device.IpAddress, out var ip) ? ip : null;
 
-    private static void ApplyVivotekEvidence(DiscoveredDevice device, IReadOnlyList<DiscoveredDevice> vivotekResults, string ipText)
+    private static void ApplyPortEvidence(DiscoveredDevice device, CameraPortScanResult portResult)
     {
-        var match = vivotekResults.FirstOrDefault(item => string.Equals(item.IpAddress, ipText, StringComparison.OrdinalIgnoreCase));
-        if (match is null) return;
-        device.Manufacturer = "VIVOTEK";
-        device.AssignedProviderName = "VIVOTEK";
-        device.Model ??= match.Model;
-        device.MacAddress ??= match.MacAddress;
-        device.CameraEvidence = true;
-    }
-
-    private static void ApplyPortEvidence(DiscoveredDevice device, CameraPortScanResult? portResult)
-    {
-        if (portResult is null) return;
         device.HttpSupported |= portResult.Http;
         device.HttpsSupported |= portResult.Https;
         device.RtspSupported |= portResult.Rtsp;
+
         if (portResult.Ports.Contains(80)) device.HttpPort ??= 80;
         else if (portResult.Ports.Contains(81)) device.HttpPort ??= 81;
         else if (portResult.Ports.Contains(8080)) device.HttpPort ??= 8080;
@@ -236,6 +254,12 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         if (portResult.Ports.Contains(443) || portResult.Ports.Contains(8443)) device.HttpsSupported = true;
         if (portResult.Ports.Contains(554)) device.RtspPort ??= 554;
         else if (portResult.Ports.Contains(8554)) device.RtspPort ??= 8554;
+
+        if (device.RtspSupported)
+            device.AddEvidence("TCP/RTSP", 0.45, $"puerto RTSP abierto ({device.RtspPort ?? 554})", false);
+        if (device.HttpSupported || device.HttpsSupported)
+            device.AddEvidence("TCP/HTTP", 0.2, "servicio web abierto", false);
+
         device.Status = DeviceStatus.Online;
     }
 }
