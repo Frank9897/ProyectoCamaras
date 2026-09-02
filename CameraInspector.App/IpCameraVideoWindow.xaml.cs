@@ -57,6 +57,7 @@ public partial class IpCameraVideoWindow : Window
         }
         finally
         {
+            RefreshCredentialsButton();
             RefreshButtons();
         }
     }
@@ -108,12 +109,12 @@ public partial class IpCameraVideoWindow : Window
 
         var dialog = new SaveFileDialog
         {
-            Title = "Guardar grabación RTSP",
-            Filter = "MPEG-TS (*.ts)|*.ts",
-            DefaultExt = ".ts",
+            Title = "Guardar grabación de cámara IP",
+            Filter = "Video MP4 (*.mp4)|*.mp4",
+            DefaultExt = ".mp4",
             AddExtension = true,
             OverwritePrompt = true,
-            FileName = $"grabacion_{device.IpAddress}_{DateTime.Now:yyyyMMdd_HHmmss}.ts"
+            FileName = $"grabacion_{device.IpAddress.Replace('.', '_')}_{DateTime.Now:yyyyMMdd_HHmmss}.mp4"
         };
 
         if (dialog.ShowDialog(this) != true)
@@ -132,6 +133,10 @@ public partial class IpCameraVideoWindow : Window
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
             }
+            else
+            {
+                _viewModel.StatusText = $"Grabación iniciada: {dialog.FileName}";
+            }
         }
         catch (Exception ex)
         {
@@ -146,6 +151,7 @@ public partial class IpCameraVideoWindow : Window
     private void StopRecordButton_Click(object sender, RoutedEventArgs e)
     {
         _viewModel.StopRecording();
+        _viewModel.StatusText = "Grabación finalizada y archivo MP4 cerrado correctamente.";
         RefreshButtons();
     }
 
@@ -192,14 +198,48 @@ public partial class IpCameraVideoWindow : Window
     {
         var hasDevice = _viewModel.SelectedDevice is not null;
         var hasStream = _viewModel.ResolvedMainStream is not null;
+        var playing = _videoPlayerService.Player.IsPlaying;
         var recording = _viewModel.IsRecording;
 
-        // El stream resuelto representa una sesión de reproducción aceptada; LibVLC puede tardar
-        // unos instantes en marcar IsPlaying después de recibir Play().
-        SnapshotButton.IsEnabled = hasDevice && hasStream;
-        RecordButton.IsEnabled = hasDevice && hasStream && !recording;
+        MainStreamButton.IsEnabled = hasDevice && !playing && !recording;
+        SubStreamButton.IsEnabled = hasDevice && !recording;
+        SnapshotButton.IsEnabled = hasDevice && playing;
+        RecordButton.IsEnabled = hasDevice && playing && hasStream && !recording;
         StopRecordButton.IsEnabled = recording;
-        StopButton.IsEnabled = hasDevice && hasStream;
+        StopButton.IsEnabled = hasDevice && playing;
         InfoButton.IsEnabled = hasDevice;
+    }
+
+    private void RefreshCredentialsButton()
+    {
+        // La visibilidad/estado real de credenciales se controla desde AuthenticationRequired.
+        var button = FindButtonByContent(this, "CREDENCIALES");
+        if (button is null)
+            return;
+
+        button.IsEnabled = _viewModel.SelectedDevice is not null && _viewModel.AuthenticationRequired;
+        button.ToolTip = button.IsEnabled
+            ? "La cámara requiere autenticación. Ingrese o actualice usuario y contraseña."
+            : "La cámara no requiere credenciales para el acceso actual.";
+    }
+
+    private static Button? FindButtonByContent(DependencyObject root, string expectedContent)
+    {
+        var childrenCount = System.Windows.Media.VisualTreeHelper.GetChildrenCount(root);
+        for (var index = 0; index < childrenCount; index++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(root, index);
+            if (child is Button button &&
+                string.Equals(button.Content?.ToString(), expectedContent, StringComparison.OrdinalIgnoreCase))
+            {
+                return button;
+            }
+
+            var nested = FindButtonByContent(child, expectedContent);
+            if (nested is not null)
+                return nested;
+        }
+
+        return null;
     }
 }
