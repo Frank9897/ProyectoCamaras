@@ -19,8 +19,12 @@ public sealed partial class MainViewModel
 
         // Primero probamos credenciales ya guardadas para no pedirlas innecesariamente.
         var savedCredentials = await LoadSavedCredentialSessionAsync(cancellationToken);
-        if (savedCredentials is not null && await TryResolveAndPlayMainStreamAsync(savedCredentials, cancellationToken))
+        if (savedCredentials is not null &&
+            await TryResolveAndPlayMainStreamAsync(savedCredentials, cancellationToken))
+        {
+            StatusText = $"Video iniciado con las credenciales guardadas en {device.IpAddress}.";
             return true;
+        }
 
         // Una cámara recién restaurada o configurada puede publicar RTSP sin autenticación.
         var anonymous = new CredentialSession(string.Empty, string.Empty, null);
@@ -31,16 +35,25 @@ public sealed partial class MainViewModel
         }
 
         // Si ninguno de los dos caminos funcionó, pedimos las credenciales dentro del flujo de VIDEO.
-        StatusText = "La cámara responde, pero el video requiere autenticación o una configuración de stream compatible.";
+        StatusText =
+            $"No se pudo iniciar el video automáticamente en {device.IpAddress}. " +
+            "La cámara puede requerir usuario y contraseña.";
+
         var prompted = await PromptAndStoreCredentialsAsync();
         if (!prompted || SelectedDevice is null)
             return false;
 
         var enteredCredentials = await LoadSavedCredentialSessionAsync(cancellationToken);
-        if (enteredCredentials is not null && await TryResolveAndPlayMainStreamAsync(enteredCredentials, cancellationToken))
+        if (enteredCredentials is not null &&
+            await TryResolveAndPlayMainStreamAsync(enteredCredentials, cancellationToken))
+        {
+            StatusText = $"Video iniciado correctamente en {SelectedDevice.IpAddress}.";
             return true;
+        }
 
-        StatusText = "Las credenciales no permitieron iniciar el video. Puede modificarlas y volver a intentar desde CREDENCIALES.";
+        StatusText =
+            "Las credenciales ingresadas no permitieron iniciar el video. " +
+            "Puede abrir CREDENCIALES, modificarlas y volver a probar MAIN STREAM.";
         return false;
     }
 
@@ -51,15 +64,26 @@ public sealed partial class MainViewModel
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var savedInfo = await _cameraCredentialStore.GetAsync(cameraId);
-        if (savedInfo is null)
-            return null;
+        try
+        {
+            var savedInfo = await _cameraCredentialStore.GetAsync(cameraId);
+            if (savedInfo is null)
+                return null;
 
-        var credential = await _credentialStore.GetAsync(savedInfo.CredentialRef);
-        if (credential is null)
-            return null;
+            var credential = await _credentialStore.GetAsync(savedInfo.CredentialRef);
+            if (credential is null)
+                return null;
 
-        return new CredentialSession(credential.Username, credential.Password, savedInfo.CredentialRef);
+            return new CredentialSession(
+                credential.Username,
+                credential.Password,
+                savedInfo.CredentialRef);
+        }
+        catch
+        {
+            // Si el almacén seguro no está disponible, todavía podemos probar acceso anónimo.
+            return null;
+        }
     }
 
     private async Task<bool> TryResolveAndPlayMainStreamAsync(
@@ -82,11 +106,11 @@ public sealed partial class MainViewModel
             if (stream is null)
                 return false;
 
+            _videoPlayerService.Stop();
             ResolvedMainStream = stream;
             _videoPlayerService.Play(stream, credentials.Username, credentials.Password);
 
-            // LibVLC puede tardar en informar Playing o EncounteredError. Esperamos ambos
-            // eventos para decidir si la prueba automática fue realmente aceptada.
+            // Esperamos a que LibVLC confirme Playing o informe un error real.
             var player = _videoPlayerService.Player;
             var result = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             EventHandler? playingHandler = null;
@@ -101,16 +125,23 @@ public sealed partial class MainViewModel
                 if (player.IsPlaying)
                     return true;
 
-                var completed = await Task.WhenAny(result.Task, Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
+                var completed = await Task.WhenAny(
+                    result.Task,
+                    Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
+
                 if (completed == result.Task)
                 {
                     var success = await result.Task;
-                    if (success)
+                    if (success && credentials.CredentialRef is Guid)
                         await MarkCredentialVerifiedAsync(credentials);
                     return success;
                 }
 
-                return player.IsPlaying;
+                var playing = player.IsPlaying;
+                if (playing && credentials.CredentialRef is Guid)
+                    await MarkCredentialVerifiedAsync(credentials);
+
+                return playing;
             }
             finally
             {
@@ -124,6 +155,7 @@ public sealed partial class MainViewModel
         }
         catch
         {
+            try { _videoPlayerService.Stop(); } catch { }
             return false;
         }
     }
