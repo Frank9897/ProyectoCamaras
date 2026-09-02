@@ -80,6 +80,17 @@ public sealed class DiscoveredDevice
     public bool HttpsSupported { get; set; }
     public int? HttpPort { get; set; }
     public int? RtspPort { get; set; }
+
+    // Salud operacional actualizada por comprobaciones ligeras, sin ocultar la cámara cuando algo falla.
+    public CameraHealthState HealthState { get; set; } = CameraHealthState.Unknown;
+    public bool CommunicationAvailable { get; set; }
+    public bool VideoAvailable { get; set; }
+    public bool AuthenticationRequired { get; set; }
+    public int? CommunicationPort { get; set; }
+    public string? CommunicationProtocol { get; set; }
+    public string? HealthMessage { get; set; }
+    public DateTimeOffset? LastHealthCheckAt { get; set; }
+
     public DateTimeOffset FirstSeenAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset LastSeenAt { get; set; } = DateTimeOffset.UtcNow;
     public string? AssignedProviderName { get; set; }
