@@ -43,12 +43,27 @@ public static class CameraDetectionClassifier
 
         foreach (var evidence in device.DetectionEvidence)
         {
-            if (StrongMethods.Contains(evidence.Method) || evidence.IsCameraEvidence && evidence.Confidence >= 0.9)
+            if (StrongMethods.Contains(evidence.Method))
             {
                 strong++;
                 details.Add($"{evidence.Method} ({evidence.Confidence:P0})");
+                continue;
             }
-            else if (WeakMethods.Contains(evidence.Method) || evidence.IsCameraEvidence)
+
+            if (WeakMethods.Contains(evidence.Method))
+            {
+                weak++;
+                details.Add($"{evidence.Method} ({evidence.Confidence:P0})");
+                continue;
+            }
+
+            if (evidence.IsCameraEvidence && evidence.Confidence >= 0.9)
+            {
+                // Evidencia no genérica: solo suma como fuerte cuando el propio detector la marcó explícitamente.
+                strong++;
+                details.Add($"{evidence.Method} ({evidence.Confidence:P0})");
+            }
+            else if (evidence.IsCameraEvidence)
             {
                 weak++;
                 details.Add($"{evidence.Method} ({evidence.Confidence:P0})");
@@ -65,10 +80,16 @@ public static class CameraDetectionClassifier
             strong++;
 
         var score = Math.Min(100, strong * 40 + Math.Min(20, weak * 5));
+        var hasStrongEvidence = strong > 0;
+        var hasCorroboration = strong >= 2 || (strong >= 1 && weak >= 1);
+
+        // ONVIF o un detector propietario fuerte bastan. Señales genéricas nunca bastan.
         var isLikelyCamera = device.OnvifSupported
             || device.HasOnvifMediaService
             || device.HasOnvifImagingService
-            || strong >= 1 && (device.CameraEvidence || device.Manufacturer is not null || device.RtspSupported || device.HttpSupported);
+            || device.HasOnvifPtzService
+            || hasCorroboration
+            || (hasStrongEvidence && device.CameraEvidence && !IsGenericOnly(device));
 
         return new CameraClassificationResult
         {
@@ -78,6 +99,14 @@ public static class CameraDetectionClassifier
             WeakEvidenceCount = weak,
             Reason = details.Count == 0 ? "Sin evidencia de cámara" : string.Join(" + ", details.Distinct(StringComparer.OrdinalIgnoreCase))
         };
+    }
+
+    private static bool IsGenericOnly(DiscoveredDevice device)
+    {
+        var meaningful = device.DetectionEvidence.Any(e =>
+            !WeakMethods.Contains(e.Method) &&
+            !string.Equals(e.Method, "RtspFingerprint", StringComparison.OrdinalIgnoreCase));
+        return !meaningful;
     }
 }
 
