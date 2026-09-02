@@ -1,46 +1,63 @@
-# Camera Inspector — MVP de descubrimiento y diagnóstico de cámaras IP
+# Camera Inspector — descubrimiento y diagnóstico de cámaras IP
 
-Camera Inspector es una aplicación de escritorio para Windows orientada a técnicos de CCTV. Su objetivo es descubrir dispositivos en red, identificar cámaras/IP devices, consultar ONVIF, resolver streams RTSP y, progresivamente, incorporar diagnóstico y administración.
+Camera Inspector es una aplicación de escritorio para Windows orientada a técnicos de CCTV. Su objetivo es descubrir dispositivos en red, identificar cámaras incluso cuando no usan ONVIF, resolver streams, ejecutar diagnóstico y mantener un inventario local.
 
 ## Estado actual
 
-La aplicación ya incorpora:
+La aplicación incorpora varias capas independientes de detección y las fusiona por IP antes de presentarlas en la interfaz:
 
-- Descubrimiento de interfaces de red.
+- Descubrimiento de interfaces IPv4 activas.
 - Cálculo de subred y ping sweep paralelo.
 - Resolución ARP para obtener MAC cuando está disponible.
-- Resolución de fabricante mediante OUI, HTTP y ONVIF.
-- WS-Discovery para detectar dispositivos ONVIF y obtener su `Device Service XAddr`.
-- `GetDeviceInformation` para fabricante, modelo, firmware y número de serie.
-- `GetCapabilities` para descubrir Media, Imaging, PTZ y Events.
-- `GetProfiles` + `GetStreamUri` para resolver Main Stream y Sub Stream.
-- Identificación de resolución, codec y FPS del perfil de video.
-- Interfaz WPF con tabla de dispositivos y panel técnico.
+- ONVIF / WS-Discovery.
+- Descubrimiento propietario VIVOTEK, incluyendo redes APIPA `169.254.0.0/16`.
+- Hikvision SADP y Dahua DHIP.
+- SSDP / UPnP.
+- mDNS / Bonjour para Axis, VAPIX y servicios HTTP/HTTPS/RTSP anunciados.
+- Sondeo TCP de puertos frecuentes de cámaras y NVR.
+- Fingerprint RTSP mediante `OPTIONS`.
+- Fingerprint HTTP de fabricantes y equipos legacy.
+- Detección de endpoints HTTP de imagen/JPEG/MJPEG.
+- Detección por OUI de MAC como evidencia débil.
+- Evidencia acumulativa con método, confianza y detalle.
+- Deduplicación de resultados por IP.
 
-## Requisitos
+La interfaz muestra el motivo de detección, por ejemplo:
 
-- Windows 10/11.
-- .NET 9 SDK.
-- Para desarrollo: Visual Studio 2022 o VS Code con el SDK de .NET 9.
-
-La solución utiliza componentes específicos de Windows para ARP y WPF, por lo que la ejecución objetivo es Windows.
-
-## Compilar
-
-```bash
-dotnet restore
-dotnet build CameraInspector.sln
+```text
+192.168.1.20   VIVOTEK Discovery + TCP/RTSP + HTTP banner
+192.168.1.31   WS-Discovery + TCP/RTSP
+192.168.1.40   mDNS/Bonjour
+192.168.1.51   GenericVideoHttp + TCP/RTSP
 ```
 
-## Ejecutar
+Tener un puerto HTTP abierto no es suficiente para clasificar un dispositivo como cámara. La aplicación intenta acumular evidencias independientes antes de considerarlo un candidato de vídeo.
 
-```bash
-dotnet run --project CameraInspector.App
-```
+## Fabricantes y protocolos
 
-## Persistencia
+### Integración de descubrimiento real
 
-La aplicación utiliza SQLite mediante Entity Framework Core. La base local se almacena en el perfil local del usuario para evitar requerir un servidor de base de datos.
+- ONVIF / WS-Discovery
+- VIVOTEK discovery
+- Hikvision SADP
+- Dahua DHIP
+- Axis mDNS / Bonjour
+- SSDP / UPnP
+
+### Identificación y fingerprint
+
+- VIVOTEK
+- Hikvision
+- Dahua
+- Axis
+- Hanwha / Wisenet
+- Uniview
+- MOBOTIX
+- Reolink
+- cámaras RTSP genéricas
+- cámaras HTTP/MJPEG antiguas o propietarias
+
+Los fingerprints HTTP y RTSP no sustituyen a los protocolos propietarios. Cuando un protocolo de descubrimiento específico no está suficientemente documentado, el proyecto evita enviar paquetes experimentales que puedan producir falsos positivos o comportamientos inesperados.
 
 ## Arquitectura
 
@@ -50,20 +67,74 @@ CameraInspector.App
 CameraInspector.Core
         ↓
 CameraInspector.Network
-        ↓
-ONVIF / WS-Discovery / RTSP
+        ├── Ping / ARP
+        ├── ONVIF / WS-Discovery
+        ├── VIVOTEK Discovery
+        ├── Hikvision SADP
+        ├── Dahua DHIP
+        ├── SSDP / UPnP
+        ├── mDNS / Bonjour
+        ├── TCP Port Scan
+        └── HTTP / RTSP fingerprints
         ↓
 CameraInspector.Persistence
+        ↓
+SQLite local + Windows Credential Manager
 ```
 
-El núcleo debe permanecer desacoplado de WPF, SQLite y protocolos concretos.
+El núcleo permanece desacoplado de WPF, SQLite y protocolos concretos. Los detectores de fabricante implementan `IManufacturerDetector` y sus resultados pasan por `ManufacturerResolver`.
 
-## Próximos bloques
+## Evidencia de detección
 
-1. Visor RTSP dentro de la aplicación.
-2. Diagnóstico automático de conectividad, autenticación y video.
-3. Credential Manager de Windows.
-4. Providers de fabricantes (Hikvision, Dahua, Axis, etc.).
-5. Configuración ONVIF: imagen, red, PTZ, eventos.
-6. Historial, auditoría y reportes.
-7. Soporte USB/UVC como funcionalidad secundaria.
+Cada `DiscoveredDevice` puede conservar varias evidencias simultáneas. La UI puede mostrar:
+
+- método de detección;
+- confianza estimada;
+- detalle técnico;
+- si la señal constituye evidencia de cámara.
+
+Esto permite investigar casos en los que una cámara no responde a ONVIF, pero sí aparece por un protocolo propietario, mDNS, RTSP o HTTP/MJPEG.
+
+## Video y diagnóstico
+
+La aplicación también incluye:
+
+- resolución de perfiles ONVIF;
+- Main Stream y Sub Stream;
+- identificación de resolución, codec y FPS;
+- reproducción mediante LibVLC;
+- diagnóstico de conectividad/autenticación/video;
+- historial de diagnósticos;
+- persistencia del inventario;
+- almacenamiento de credenciales mediante Windows Credential Manager.
+
+## Requisitos
+
+- Windows 10/11.
+- .NET 9 SDK.
+- Visual Studio 2022 o VS Code con .NET 9.
+
+El proyecto utiliza componentes específicos de Windows para WPF y ARP, por lo que la ejecución objetivo es Windows.
+
+## Compilar
+
+```bash
+dotnet restore
+dotnet build CameraInspector.sln
+dotnet test CameraInspector.sln
+```
+
+## Ejecutar
+
+```bash
+dotnet run --project CameraInspector.App
+```
+
+## Prueba recomendada en red real
+
+Para una prueba con cámaras de trabajo conviene comparar dos escenarios:
+
+1. **ESCANEAR RED** con la interfaz LAN seleccionada.
+2. Conectar una cámara conocida directamente y revisar si aparece por VIVOTEK, ONVIF, RTSP, HTTP o varias fuentes simultáneamente.
+
+En particular, una VIVOTEK antigua como la IP7134 es útil para comprobar el descubrimiento propietario y el comportamiento de cámaras sin ONVIF.
