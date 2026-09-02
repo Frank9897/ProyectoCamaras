@@ -9,6 +9,7 @@ public partial class IpCameraVideoWindow
 {
     private bool _authenticationUiConfigured;
     private bool _playerErrorHooked;
+    private bool _autoPlaybackStarted;
     private Button? _credentialsButton;
 
     static IpCameraVideoWindow()
@@ -45,7 +46,7 @@ public partial class IpCameraVideoWindow
             _credentialsButton = FindButtonByContent(this, "CREDENCIALES");
             if (_credentialsButton is not null)
             {
-                // No dependemos de CameraId ni del CanExecute del comando antiguo.
+                // El botón siempre está disponible mientras exista una cámara seleccionada.
                 _credentialsButton.Command = null;
                 _credentialsButton.IsEnabled = true;
                 _credentialsButton.Click += CredentialsButton_Click;
@@ -61,6 +62,31 @@ public partial class IpCameraVideoWindow
         }
 
         RefreshCredentialsButton();
+
+        if (!_autoPlaybackStarted)
+        {
+            _autoPlaybackStarted = true;
+            Dispatcher.BeginInvoke(new Action(async () =>
+            {
+                try
+                {
+                    await _viewModel.TryStartIpVideoAutomaticallyAsync();
+                }
+                catch (OperationCanceledException)
+                {
+                    _viewModel.StatusText = "Inicio automático del video cancelado.";
+                }
+                catch (Exception ex)
+                {
+                    _viewModel.StatusText = $"No se pudo iniciar automáticamente el video: {ex.Message}";
+                }
+                finally
+                {
+                    RefreshCredentialsButton();
+                    RefreshButtons();
+                }
+            }));
+        }
     }
 
     private async void CredentialsButton_Click(object sender, RoutedEventArgs e)
@@ -73,7 +99,8 @@ public partial class IpCameraVideoWindow
             var saved = await viewModel.PromptAndStoreCredentialsAsync();
             if (saved)
             {
-                viewModel.StatusText = "Nuevas credenciales guardadas. Probá nuevamente MAIN STREAM o SUB STREAM.";
+                viewModel.StatusText = "Nuevas credenciales guardadas. Iniciando nuevamente el video...";
+                await viewModel.TryStartIpVideoAutomaticallyAsync();
             }
         }
         catch (Exception ex)
@@ -83,6 +110,7 @@ public partial class IpCameraVideoWindow
         finally
         {
             RefreshCredentialsButton();
+            RefreshButtons();
         }
     }
 
@@ -99,6 +127,7 @@ public partial class IpCameraVideoWindow
                 "Podés abrir CREDENCIALES, ingresar otros datos y volver a pulsar MAIN STREAM o SUB STREAM.";
 
             RefreshCredentialsButton();
+            RefreshButtons();
         }));
     }
 
