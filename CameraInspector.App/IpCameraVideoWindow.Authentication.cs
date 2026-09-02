@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -11,6 +12,7 @@ public partial class IpCameraVideoWindow
     private bool _playerErrorHooked;
     private bool _autoPlaybackStarted;
     private Button? _credentialsButton;
+    private MainViewModel? _authenticationViewModel;
 
     static IpCameraVideoWindow()
     {
@@ -46,10 +48,15 @@ public partial class IpCameraVideoWindow
             _credentialsButton = FindButtonByContent(this, "CREDENCIALES");
             if (_credentialsButton is not null)
             {
-                // El botón siempre está disponible mientras exista una cámara seleccionada.
+                // Se habilita exclusivamente cuando el acceso anónimo no fue posible.
                 _credentialsButton.Command = null;
-                _credentialsButton.IsEnabled = true;
                 _credentialsButton.Click += CredentialsButton_Click;
+            }
+
+            if (DataContext is MainViewModel viewModel)
+            {
+                _authenticationViewModel = viewModel;
+                _authenticationViewModel.PropertyChanged += AuthenticationViewModel_PropertyChanged;
             }
 
             _authenticationUiConfigured = true;
@@ -89,6 +96,12 @@ public partial class IpCameraVideoWindow
         }
     }
 
+    private void AuthenticationViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.AuthenticationRequired))
+            Dispatcher.BeginInvoke(new Action(RefreshCredentialsButton));
+    }
+
     private async void CredentialsButton_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is not MainViewModel viewModel)
@@ -123,9 +136,11 @@ public partial class IpCameraVideoWindow
 
             var ip = viewModel.SelectedDevice?.IpAddress ?? "cámara seleccionada";
             viewModel.StatusText =
-                $"No se pudo iniciar el video de {ip}. Verificá usuario y contraseña, que RTSP esté habilitado y la ruta del stream. " +
-                "Podés abrir CREDENCIALES, ingresar otros datos y volver a pulsar MAIN STREAM o SUB STREAM.";
+                $"No se pudo iniciar el video de {ip}. La cámara puede requerir usuario y contraseña, RTSP habilitado o una ruta de stream compatible. " +
+                "Puede abrir CREDENCIALES y volver a intentar.";
 
+            viewModel.PropertyChanged -= AuthenticationViewModel_PropertyChanged;
+            viewModel.PropertyChanged += AuthenticationViewModel_PropertyChanged;
             RefreshCredentialsButton();
             RefreshButtons();
         }));
@@ -137,7 +152,8 @@ public partial class IpCameraVideoWindow
             return;
 
         _credentialsButton.IsEnabled = DataContext is MainViewModel viewModel
-                                       && viewModel.SelectedDevice is not null;
+                                       && viewModel.SelectedDevice is not null
+                                       && viewModel.AuthenticationRequired;
     }
 
     private void DetachAuthenticationHandlers()
@@ -146,6 +162,12 @@ public partial class IpCameraVideoWindow
         {
             _videoPlayerService.Player.EncounteredError -= Player_EncounteredError;
             _playerErrorHooked = false;
+        }
+
+        if (_authenticationViewModel is not null)
+        {
+            _authenticationViewModel.PropertyChanged -= AuthenticationViewModel_PropertyChanged;
+            _authenticationViewModel = null;
         }
     }
 
