@@ -4,37 +4,63 @@ namespace CameraInspector.App.ViewModels;
 
 public sealed partial class MainViewModel
 {
+    private bool _authenticationRequired;
+
+    /// <summary>
+    /// Indica si la cámara necesita autenticación para iniciar el video.
+    /// La ventana de video utiliza este estado para habilitar el acceso a credenciales.
+    /// </summary>
+    public bool AuthenticationRequired
+    {
+        get => _authenticationRequired;
+        private set
+        {
+            if (_authenticationRequired == value)
+                return;
+
+            _authenticationRequired = value;
+            OnPropertyChanged();
+        }
+    }
+
     /// <summary>
     /// Intenta abrir automáticamente el video al entrar a la ventana independiente.
     /// Primero usa credenciales guardadas, luego prueba sin credenciales y finalmente
-    /// solicita credenciales cuando la cámara parece requerir autenticación.
+    /// solicita credenciales únicamente cuando el acceso al video lo requiere.
     /// </summary>
     public async Task<bool> TryStartIpVideoAutomaticallyAsync(CancellationToken cancellationToken = default)
     {
         if (SelectedDevice is null)
             return false;
 
+        AuthenticationRequired = false;
         var device = SelectedDevice.Device;
         StatusText = $"Probando video de {device.IpAddress}...";
 
+        // Primero probamos credenciales ya guardadas para no pedirlas innecesariamente.
         var savedCredentials = await LoadSavedCredentialSessionAsync(cancellationToken);
         if (savedCredentials is not null &&
             await TryResolveAndPlayMainStreamAsync(savedCredentials, cancellationToken))
         {
+            AuthenticationRequired = false;
             StatusText = $"Video iniciado con las credenciales guardadas en {device.IpAddress}.";
             return true;
         }
 
+        // Una cámara recién restaurada o configurada puede publicar RTSP sin autenticación.
         var anonymous = new CredentialSession(string.Empty, string.Empty, null);
         if (await TryResolveAndPlayMainStreamAsync(anonymous, cancellationToken))
         {
+            AuthenticationRequired = false;
             StatusText = $"Video iniciado automáticamente en {device.IpAddress} sin credenciales.";
             return true;
         }
 
+        // Solo llegamos aquí cuando no pudimos acceder automáticamente al stream.
+        AuthenticationRequired = true;
         StatusText =
-            $"No se pudo iniciar el video automáticamente en {device.IpAddress}. " +
-            "La cámara puede requerir usuario y contraseña.";
+            $"La cámara {device.IpAddress} requiere usuario y contraseña o rechazó el acceso anónimo. " +
+            "Ingrese las credenciales para continuar.";
 
         var prompted = await PromptAndStoreCredentialsAsync();
         if (!prompted || SelectedDevice is null)
@@ -44,13 +70,15 @@ public sealed partial class MainViewModel
         if (enteredCredentials is not null &&
             await TryResolveAndPlayMainStreamAsync(enteredCredentials, cancellationToken))
         {
+            AuthenticationRequired = false;
             StatusText = $"Video iniciado correctamente en {SelectedDevice.IpAddress}.";
             return true;
         }
 
+        AuthenticationRequired = true;
         StatusText =
             "Las credenciales ingresadas no permitieron iniciar el video. " +
-            "Puede abrir CREDENCIALES, modificarlas y volver a probar MAIN STREAM.";
+            "Puede modificarlas desde CREDENCIALES y volver a probar MAIN STREAM.";
         return false;
     }
 
@@ -78,6 +106,7 @@ public sealed partial class MainViewModel
         }
         catch
         {
+            // Un problema del almacén seguro no impide probar acceso anónimo.
             return null;
         }
     }
@@ -118,7 +147,11 @@ public sealed partial class MainViewModel
             try
             {
                 if (player.IsPlaying)
+                {
+                    if (credentials.CredentialRef is Guid)
+                        await MarkCredentialVerifiedAsync(credentials);
                     return true;
+                }
 
                 var completed = await Task.WhenAny(
                     result.Task,
