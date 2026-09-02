@@ -1,4 +1,5 @@
 using System.Windows;
+using CameraInspector.App;
 
 namespace CameraInspector.App.ViewModels;
 
