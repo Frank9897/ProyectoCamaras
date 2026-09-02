@@ -2,7 +2,9 @@ using System.Net;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
 using CameraInspector.Network;
+using CameraInspector.Network.Detection;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace CameraInspector.App.ViewModels;
 
@@ -115,9 +117,6 @@ public sealed partial class MainViewModel
         }
     }
 
-    /// <summary>
-    /// Ejecuta el escaneo clásico de la subred de la interfaz seleccionada.
-    /// </summary>
     [RelayCommand(CanExecute = nameof(CanStartAlternativeScan))]
     private async Task ScanNetworkSubnetAsync(CancellationToken cancellationToken)
     {
@@ -142,7 +141,7 @@ public sealed partial class MainViewModel
                 StatusText = $"Subred · {progress.Scanned}/{Math.Max(progress.Total, 1)} candidatos · Cámaras visibles: {Devices.Count}";
             }
 
-            StatusText = $"Escaneo de subred completo: {Devices.Count} cámara(s)/dispositivo(s) de imagen encontrado(s).";
+            StatusText = $"Escaneo de subred completo: {Devices.Count} cámara(s) encontrada(s).";
         }
         catch (OperationCanceledException)
         {
@@ -155,10 +154,6 @@ public sealed partial class MainViewModel
         }
     }
 
-    /// <summary>
-    /// Recorre todas las interfaces activas elegibles y consolida los dispositivos encontrados.
-    /// Cada interfaz se procesa por separado para evitar mezclar sockets, subredes y métricas de progreso.
-    /// </summary>
     [RelayCommand(CanExecute = nameof(CanStartAlternativeScan))]
     private async Task ScanFullNetworkAsync(CancellationToken cancellationToken)
     {
@@ -191,7 +186,7 @@ public sealed partial class MainViewModel
                 }
             }
 
-            StatusText = $"Escaneo total completo: {Devices.Count} cámara(s)/dispositivo(s) de imagen encontrado(s).";
+            StatusText = $"Escaneo total completo: {Devices.Count} cámara(s) encontrada(s).";
         }
         catch (OperationCanceledException)
         {
@@ -204,9 +199,6 @@ public sealed partial class MainViewModel
         }
     }
 
-    /// <summary>
-    /// Limpia el estado de descubrimiento antes de iniciar uno de los modos nuevos.
-    /// </summary>
     private async Task PrepareAlternativeScanAsync()
     {
         IsScanning = true;
@@ -218,14 +210,12 @@ public sealed partial class MainViewModel
         ResolvedSubStream = null;
         _videoPlayerService.Stop();
         NotifyAlternativeScanCommands();
-
-        // Yield permite que WPF pinte el estado "escaneando" antes de empezar el trabajo de red.
         await Task.Yield();
     }
 
     /// <summary>
-    /// Publica inmediatamente la evidencia descubierta. El enriquecimiento del dispositivo
-    /// continúa en segundo plano y ya no bloquea la aparición del resultado en la UI.
+    /// Publica inmediatamente la evidencia descubierta y ejecuta salud/enriquecimiento en segundo plano.
+    /// Un fallo de salud jamás elimina una cámara de la lista.
     /// </summary>
     private Task ProcessScanProgressAsync(
         ScanProgress progress,
@@ -242,34 +232,24 @@ public sealed partial class MainViewModel
             return Task.CompletedTask;
         }
 
+        var classification = CameraDetectionClassifier.Classify(device);
         var viewModel = new DeviceViewModel(device);
         _allDiscoveredDevices.Add(viewModel);
 
-        // Las fuentes de discovery ya entregan evidencia suficiente para mostrar el equipo.
-        var cameraCandidate = device.CameraEvidence ||
-                              device.OnvifSupported ||
-                              device.RtspSupported ||
-                              device.DetectionEvidence.Any(item => item.IsCameraEvidence);
-
-        if (cameraCandidate && !Devices.Contains(viewModel))
+        if (classification.IsLikelyCamera && !Devices.Contains(viewModel))
             Devices.Add(viewModel);
 
         if (SelectedDevice is null && Devices.Count == 1 && Devices.Contains(viewModel))
             SelectedDevice = viewModel;
 
-        // No esperamos fabricante/ONVIF/inventario. El usuario ve el dispositivo inmediatamente.
-        _ = EnrichDiscoveredDeviceAsync(device, viewModel, cancellationToken);
-
+        _ = EnrichDiscoveredDeviceAsync(device, viewModel, classification, cancellationToken);
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Enriquece una cámara descubierta sin bloquear el pipeline de discovery.
-    /// Las consultas ONVIF pesadas quedan para las operaciones específicas del dispositivo.
-    /// </summary>
     private async Task EnrichDiscoveredDeviceAsync(
         DiscoveredDevice device,
         DeviceViewModel viewModel,
+        CameraClassificationResult initialClassification,
         CancellationToken cancellationToken)
     {
         try
@@ -277,38 +257,92 @@ public sealed partial class MainViewModel
             await _manufacturerResolver.ResolveAsync(device, cancellationToken);
             viewModel.Refresh();
 
-            var cameraCandidate = device.CameraEvidence ||
-                                  device.OnvifSupported ||
-                                  device.RtspSupported ||
-                                  device.DetectionEvidence.Any(item => item.IsCameraEvidence);
-
-            if (!cameraCandidate)
+            var classification = CameraDetectionClassifier.Classify(device);
+            if (!classification.IsLikelyCamera)
+            {
+                // Un equipo que parecía candidato por una señal genérica vuelve a ser ocultado.
+                if (Devices.Contains(viewModel))
+                    Devices.Remove(viewModel);
                 return;
+            }
 
             if (!Devices.Contains(viewModel))
                 Devices.Add(viewModel);
 
             var cameraId = await _inventoryStore.UpsertAsync(device, cancellationToken);
             viewModel.SetCameraId(cameraId);
+            viewModel.Refresh();
+
+            // La comprobación de salud es independiente del enrichment y no bloquea el discovery.
+            await CheckDeviceHealthAsync(device, viewModel, cancellationToken);
         }
         catch (OperationCanceledException)
         {
-            // El cierre/cancelación del escaneo no debe producir errores visibles.
         }
         catch
         {
-            // La evidencia descubierta sigue siendo válida aunque el enriquecimiento falle.
+            // Un error del enrichment no invalida la evidencia que ya se mostró.
+            try
+            {
+                await CheckDeviceHealthAsync(device, viewModel, cancellationToken);
+            }
+            catch
+            {
+            }
         }
     }
 
-    /// <summary>
-    /// Las tres acciones comparten el mismo criterio de disponibilidad.
-    /// </summary>
+    private async Task CheckDeviceHealthAsync(
+        DiscoveredDevice device,
+        DeviceViewModel viewModel,
+        CancellationToken cancellationToken)
+    {
+        var healthService = App.Services?.GetService<ICameraHealthService>();
+        if (healthService is null)
+            return;
+
+        try
+        {
+            var health = await healthService.CheckAsync(device, cancellationToken);
+            device.HealthState = health.State;
+            device.CommunicationAvailable = health.CommunicationAvailable;
+            device.VideoAvailable = health.VideoAvailable;
+            device.AuthenticationRequired = health.AuthenticationRequired;
+            device.CommunicationPort = health.CommunicationPort;
+            device.CommunicationProtocol = health.Protocol;
+            device.HealthMessage = health.Message;
+            device.LastHealthCheckAt = health.CheckedAt;
+
+            device.Status = health.State switch
+            {
+                CameraHealthState.Healthy => DeviceStatus.Online,
+                CameraHealthState.NoResponse => DeviceStatus.Error,
+                CameraHealthState.NoVideo => DeviceStatus.Warning,
+                CameraHealthState.CommunicationOnly => DeviceStatus.Warning,
+                CameraHealthState.AuthenticationRequired => DeviceStatus.Warning,
+                CameraHealthState.Degraded => DeviceStatus.Warning,
+                _ => device.Status
+            };
+
+            viewModel.RefreshHealth();
+            viewModel.Refresh();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            device.HealthState = CameraHealthState.Degraded;
+            device.HealthMessage = $"No fue posible completar la comprobación de salud: {ex.Message}";
+            device.LastHealthCheckAt = DateTimeOffset.UtcNow;
+            device.Status = DeviceStatus.Warning;
+            viewModel.RefreshHealth();
+            viewModel.Refresh();
+        }
+    }
+
     private bool CanStartAlternativeScan() => !IsScanning && !IsDiagnosing;
 
-    /// <summary>
-    /// Refresca los tres comandos cuando cambia el estado de ejecución.
-    /// </summary>
     private void NotifyAlternativeScanCommands()
     {
         ScanDirectCameraCommand.NotifyCanExecuteChanged();
