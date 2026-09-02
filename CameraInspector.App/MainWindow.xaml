@@ -22,11 +22,16 @@
 
         <!-- CABECERA compacta para reservar más espacio al contenido técnico. -->
         <Grid Grid.Row="0" Margin="0,0,0,8">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                 <TextBlock Text="CAMERA INSPECTOR" FontFamily="Consolas" FontSize="18" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
                 <TextBlock Text="  //  DESCUBRIMIENTO · DIAGNÓSTICO · VIDEO · INVENTARIO" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}" Margin="12,4,0,0"/>
             </StackPanel>
+
             <StackPanel Grid.Column="1" Orientation="Horizontal">
                 <ComboBox ItemsSource="{Binding AvailableInterfaces}" SelectedItem="{Binding SelectedInterface}" Width="315" Height="32"/>
                 <Button Content="▣ ESCANEAR RED" Width="145" Height="32" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}" Command="{Binding ScanCommand}"/>
@@ -38,7 +43,7 @@
             <TextBlock Text="{Binding StatusText}" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
         </Border>
 
-        <!-- LISTA: una fila por IP, fusionada desde todas las fuentes. -->
+        <!-- LISTA: altura controlada para garantizar que el detalle siempre permanezca visible. -->
         <Border Grid.Row="2" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="5">
             <DataGrid ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" IsReadOnly="True" AutoGenerateColumns="False" HeadersVisibility="Column" CanUserAddRows="False" CanUserResizeRows="False" CanUserSortColumns="True" RowHeight="27" ColumnHeaderHeight="29" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" BorderThickness="0">
                 <DataGrid.Columns>
@@ -46,10 +51,11 @@
                     <DataGridTextColumn Header="IP" Binding="{Binding IpAddress}" Width="115"/>
                     <DataGridTextColumn Header="MAC" Binding="{Binding MacAddress}" Width="140"/>
                     <DataGridTextColumn Header="FABRICANTE" Binding="{Binding Manufacturer}" Width="120"/>
-                    <DataGridTextColumn Header="MODELO" Binding="{Binding Model}" Width="130"/>
+                    <DataGridTextColumn Header="MODELO" Binding="{Binding Model}" Width="135"/>
                     <DataGridTextColumn Header="FIRMWARE" Binding="{Binding Firmware}" Width="95"/>
                     <DataGridTextColumn Header="EVIDENCIA" Binding="{Binding DetectionReason}" Width="220"/>
                     <DataGridTextColumn Header="ONVIF" Binding="{Binding OnvifSupported}" Width="60"/>
+                    <DataGridTextColumn Header="WS-DISCOVERY" Binding="{Binding DiscoveredByOnvif}" Width="105"/>
                     <DataGridTextColumn Header="RTSP" Binding="{Binding RtspSupported}" Width="55"/>
                     <DataGridTextColumn Header="CAMERA ID" Binding="{Binding CameraId}" Width="80"/>
                     <DataGridTextColumn Header="ÚLT. VISTO" Binding="{Binding LastSeenAt}" Width="*"/>
@@ -78,18 +84,27 @@
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="95"/><ColumnDefinition Width="190"/><ColumnDefinition Width="95"/><ColumnDefinition Width="190"/><ColumnDefinition Width="95"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                                    <TextBlock Grid.Column="0" Text="IP" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Column="1" Text="{Binding IpAddress}" FontFamily="Consolas"/>
-                                    <TextBlock Grid.Column="2" Text="MAC" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Column="3" Text="{Binding MacAddress}" FontFamily="Consolas"/>
-                                    <TextBlock Grid.Column="4" Text="ESTADO" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Column="5" Text="{Binding Status}" FontFamily="Consolas"/>
-                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="FABRICANTE" Margin="0,8,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Manufacturer}" Margin="0,8,0,0"/>
-                                    <TextBlock Grid.Row="1" Grid.Column="2" Text="MODELO" Margin="0,8,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Row="1" Grid.Column="3" Text="{Binding Model}" Margin="0,8,0,0"/>
-                                    <TextBlock Grid.Row="1" Grid.Column="4" Text="SERIAL" Margin="0,8,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Row="1" Grid.Column="5" Text="{Binding SerialNumber}" Margin="0,8,0,0" FontFamily="Consolas"/>
-                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="CAMERA ID" Margin="0,8,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding CameraId}" Margin="0,8,0,0" FontFamily="Consolas"/>
-                                    <TextBlock Grid.Row="2" Grid.Column="2" Text="FIRMWARE" Margin="0,8,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Row="2" Grid.Column="3" Text="{Binding Firmware}" Margin="0,8,0,0"/>
-                                    <TextBlock Grid.Row="2" Grid.Column="4" Text="ÚLT. VISTO" Margin="0,8,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Row="2" Grid.Column="5" Text="{Binding LastSeenAt}" Margin="0,8,0,0" FontFamily="Consolas"/>
+                                    <TextBlock Grid.Column="0" Text="IP" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding IpAddress}" FontFamily="Consolas"/>
+                                    <TextBlock Grid.Column="2" Text="MAC" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding MacAddress}" FontFamily="Consolas"/>
+                                    <TextBlock Grid.Column="4" Text="ESTADO" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="5" Text="{Binding Status}" FontFamily="Consolas"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="FABRICANTE" Margin="0,8,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Manufacturer}" Margin="0,8,0,0"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="2" Text="MODELO" Margin="0,8,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="3" Text="{Binding Model}" Margin="0,8,0,0"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="4" Text="SERIAL" Margin="0,8,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="5" Text="{Binding SerialNumber}" Margin="0,8,0,0" FontFamily="Consolas"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="CAMERA ID" Margin="0,8,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding CameraId}" Margin="0,8,0,0" FontFamily="Consolas"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="2" Text="FIRMWARE" Margin="0,8,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="3" Text="{Binding Firmware}" Margin="0,8,0,0"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="4" Text="ÚLT. VISTO" Margin="0,8,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="5" Text="{Binding LastSeenAt}" Margin="0,8,0,0" FontFamily="Consolas"/>
                                 </Grid>
 
-                                <TextBlock Text="MÉTODOS DE DETECCIÓN" Margin="0,16,0,7" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontWeight="Bold"/>
+                                <TextBlock Text="MÉTODOS DE DETECCIÓN" Margin="0,14,0,7" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontWeight="Bold"/>
                                 <Border Padding="9" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
                                     <TextBlock Text="{Binding DetectionDetails}" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap"/>
                                 </Border>
@@ -108,11 +123,16 @@
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="135"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="DEVICE SERVICE" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding OnvifDeviceServiceXAddr}" FontFamily="Consolas" TextWrapping="Wrap"/>
-                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="MEDIA SERVICE" Margin="0,5,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding OnvifMediaServiceXAddr}" Margin="0,5,0,0" FontFamily="Consolas" TextWrapping="Wrap"/>
-                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="IMAGING SERVICE" Margin="0,5,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding OnvifImagingServiceXAddr}" Margin="0,5,0,0" FontFamily="Consolas" TextWrapping="Wrap"/>
-                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="PTZ SERVICE" Margin="0,5,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding OnvifPtzServiceXAddr}" Margin="0,5,0,0" FontFamily="Consolas" TextWrapping="Wrap"/>
-                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="EVENTS SERVICE" Margin="0,5,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding OnvifEventsServiceXAddr}" Margin="0,5,0,0" FontFamily="Consolas" TextWrapping="Wrap"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="DEVICE SERVICE" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding OnvifDeviceServiceXAddr}" FontFamily="Consolas" TextWrapping="Wrap"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="MEDIA SERVICE" Margin="0,5,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding OnvifMediaServiceXAddr}" Margin="0,5,0,0" FontFamily="Consolas" TextWrapping="Wrap"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="IMAGING SERVICE" Margin="0,5,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding OnvifImagingServiceXAddr}" Margin="0,5,0,0" FontFamily="Consolas" TextWrapping="Wrap"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="PTZ SERVICE" Margin="0,5,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding OnvifPtzServiceXAddr}" Margin="0,5,0,0" FontFamily="Consolas" TextWrapping="Wrap"/>
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="EVENTS SERVICE" Margin="0,5,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding OnvifEventsServiceXAddr}" Margin="0,5,0,0" FontFamily="Consolas" TextWrapping="Wrap"/>
                                 </Grid>
                             </StackPanel>
                         </ScrollViewer>
@@ -125,11 +145,14 @@
                                 <TextBlock Margin="0,9,0,0" TextWrapping="Wrap" Foreground="{StaticResource TextDimBrush}" Text="La contraseña se almacena únicamente en Windows Credential Manager. SQLite conserva solo el usuario y la referencia al secreto."/>
                                 <Grid Margin="0,14,0,0">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="CREDENCIALES" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding HasSavedCredentials}" FontFamily="Consolas"/>
-                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="USUARIO" Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SavedCredentialUsername}" Margin="0,6,0,0" FontFamily="Consolas"/>
-                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="ÚLT. VERIFICACIÓN" Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SavedCredentialLastVerifiedAt}" Margin="0,6,0,0" FontFamily="Consolas"/>
-                                    <CheckBox Grid.Row="3" Grid.Column="1" Content="Usar credenciales guardadas automáticamente" IsChecked="{Binding UseSavedCredentials}" Margin="0,9,0,0"/>
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="CREDENCIALES" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding HasSavedCredentials}" FontFamily="Consolas"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="USUARIO" Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SavedCredentialUsername}" Margin="0,6,0,0" FontFamily="Consolas"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="ÚLT. VERIFICACIÓN" Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SavedCredentialLastVerifiedAt}" Margin="0,6,0,0" FontFamily="Consolas"/>
+                                    <CheckBox Grid.Row="2" Grid.Column="1" Content="Usar credenciales guardadas automáticamente" IsChecked="{Binding UseSavedCredentials}" Margin="0,28,0,0"/>
                                 </Grid>
                             </StackPanel>
                         </ScrollViewer>
@@ -140,7 +163,7 @@
                             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                             <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
                                 <Button Content="▶ MAIN STREAM" Command="{Binding DataContext.GetMainStreamUriCommand, RelativeSource={RelativeSource AncestorType=Window}}" Margin="0,0,6,0" Style="{StaticResource PrimaryButton}"/>
-                                <Button Content="▶ SUB STREAM" Command="{Binding DataContext.GetSubStreamUriCommand, RelativeSource={RelativeSource AncestorType=Window}}" Margin="0,0,6,0}"/>
+                                <Button Content="▶ SUB STREAM" Command="{Binding DataContext.GetSubStreamUriCommand, RelativeSource={RelativeSource AncestorType=Window}}" Margin="0,0,6,0"/>
                                 <Button Content="■ DETENER" Command="{Binding DataContext.StopVideoCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
                             </StackPanel>
                             <vlc:VideoView Grid.Row="1" MediaPlayer="{Binding DataContext.VideoPlayer, RelativeSource={RelativeSource AncestorType=Window}}" Background="Black"/>
