@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -8,6 +9,7 @@ namespace CameraInspector.App;
 public partial class MainWindow
 {
     private Button? _saveCredentialsButton;
+    private MainViewModel? _credentialsViewModel;
     private bool _credentialsUiConfigured;
 
     static MainWindow()
@@ -35,11 +37,23 @@ public partial class MainWindow
         if (_saveCredentialsButton is not null)
         {
             _saveCredentialsButton.Command = null;
-            _saveCredentialsButton.IsEnabled = DataContext is MainViewModel viewModel && viewModel.SelectedDevice is not null;
             _saveCredentialsButton.Click += SaveCredentialsButton_Click;
         }
 
+        if (DataContext is MainViewModel viewModel)
+        {
+            _credentialsViewModel = viewModel;
+            _credentialsViewModel.PropertyChanged += CredentialsViewModel_PropertyChanged;
+        }
+
         _credentialsUiConfigured = true;
+        RefreshSaveCredentialsButton();
+    }
+
+    private void CredentialsViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(MainViewModel.SelectedDevice) or nameof(MainViewModel.StatusText))
+            Dispatcher.BeginInvoke(new Action(RefreshSaveCredentialsButton));
     }
 
     private async void SaveCredentialsButton_Click(object sender, RoutedEventArgs e)
