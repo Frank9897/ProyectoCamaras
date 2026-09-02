@@ -100,7 +100,7 @@ public sealed class ReolinkDiscoveryService
         var printable = new string(text.Select(character =>
             character is >= (char)32 and <= (char)126 ? character : ' ').ToArray());
 
-        var ip = FindIpv4(payload) ?? sourceAddress.ToString();
+        var ip = (FindIpv4(payload) ?? sourceAddress).ToString();
         var mac = FindMac(payload);
         var name = FindTextCandidate(printable, sourceAddress.ToString(), mac);
         var uid = FindUid(printable);
@@ -112,6 +112,7 @@ public sealed class ReolinkDiscoveryService
             Hostname = name,
             Manufacturer = "Reolink",
             Model = name,
+            SerialNumber = uid,
             CameraEvidence = true,
             AssignedProviderName = "Reolink LAN Discovery",
             HttpSupported = true,
