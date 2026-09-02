@@ -56,6 +56,14 @@ public sealed partial class MainViewModel
             SavedCredentialUsername = dialog.Username.Trim();
             SavedCredentialLastVerifiedAt = null;
             UseSavedCredentials = true;
+
+            SaveCredentialsCommand.NotifyCanExecuteChanged();
+            DeleteCredentialsCommand.NotifyCanExecuteChanged();
+            GetMainStreamUriCommand.NotifyCanExecuteChanged();
+            GetSubStreamUriCommand.NotifyCanExecuteChanged();
+            RunDiagnosticsCommand.NotifyCanExecuteChanged();
+            RefreshHistoryCommand.NotifyCanExecuteChanged();
+
             StatusText = "Credenciales guardadas. Vuelva a probar MAIN STREAM o SUB STREAM.";
             return true;
         }
