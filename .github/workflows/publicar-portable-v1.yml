@@ -37,9 +37,26 @@ jobs:
           --no-restore
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:IncludeAllContentForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -p:PublishTrimmed=false
           -p:DebugType=None
           -p:DebugSymbols=false
           -o publish/CameraInspector-v1.0-win-x64
+
+      - name: Verificar EXE autonomo
+        shell: pwsh
+        run: |
+          $exe = 'publish/CameraInspector-v1.0-win-x64/CameraInspector.exe'
+          if (-not (Test-Path $exe)) {
+            throw 'No se genero CameraInspector.exe como ejecutable portable.'
+          }
+          $dlls = Get-ChildItem 'publish/CameraInspector-v1.0-win-x64' -Filter '*.dll' -File -ErrorAction SilentlyContinue
+          if ($dlls.Count -gt 0) {
+            $names = ($dlls | ForEach-Object Name) -join ', '
+            throw "La publicación esperaba un único EXE, pero quedaron DLL externas: $names"
+          }
+          Write-Host "EXE portable validado: $exe"
 
       - name: Crear archivo de version
         shell: pwsh
@@ -49,7 +66,7 @@ jobs:
             'Camera Inspector'
             'Version: 1.0.0'
             'Runtime: win-x64'
-            'Distribucion: portable self-contained'
+            'Distribucion: portable self-contained single-file EXE'
             "Commit: $env:GITHUB_SHA"
           ) | Set-Content -Path $path -Encoding utf8
 
