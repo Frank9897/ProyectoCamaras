@@ -20,7 +20,6 @@ public partial class NetworkConfigurationWindow : Window
     {
         InitializeComponent();
 
-        // _viewModel coordina lectura y edición controlada de la red sin exponer contraseñas a la UI.
         _viewModel = new NetworkConfigurationEditViewModel(
             deviceViewModel,
             onvifDeviceService,
@@ -30,7 +29,10 @@ public partial class NetworkConfigurationWindow : Window
         DataContext = _viewModel;
         _viewModel.RequestClose += (_, _) => Close();
 
-        // Al abrir solo se consulta el estado actual; ninguna escritura ocurre automáticamente.
-        Loaded += async (_, _) => await _viewModel.LoadCommand.ExecuteAsync(null);
+        Loaded += async (_, _) =>
+        {
+            await _viewModel.LoadCommand.ExecuteAsync(null);
+            await _viewModel.LoadHostnameCommand.ExecuteAsync(null);
+        };
     }
 }
