@@ -16,16 +16,115 @@ public sealed partial class DeviceViewModel : ObservableObject
 
     public DeviceViewModel(DiscoveredDevice device) => _device = device;
 
-    public string IpAddress => _device.IpAddress;
-    public string MacAddress => _device.MacAddress ?? "—";
-    public string Manufacturer => _device.Manufacturer ?? "Sin identificar";
-    public string Model => _device.Model ?? "—";
-    public string Firmware => _device.FirmwareVersion ?? "—";
-    public string SerialNumber => _device.SerialNumber ?? "—";
+    // Estas propiedades se mantienen con setter para tolerar bindings TwoWay generados por
+    // DataGrid/WPF. La vista principal es de solo lectura, por lo que estos setters solo
+    // sincronizan el modelo subyacente y notifican cambios cuando alguna vista los actualiza.
+    public string IpAddress
+    {
+        get => _device.IpAddress;
+        set
+        {
+            if (string.IsNullOrWhiteSpace(value) || string.Equals(_device.IpAddress, value, StringComparison.OrdinalIgnoreCase)) return;
+            _device.IpAddress = value.Trim();
+            OnPropertyChanged();
+        }
+    }
+
+    public string MacAddress
+    {
+        get => _device.MacAddress ?? "—";
+        set
+        {
+            var normalized = string.Equals(value, "—", StringComparison.Ordinal) ? null : value?.Trim();
+            if (string.Equals(_device.MacAddress, normalized, StringComparison.OrdinalIgnoreCase)) return;
+            _device.MacAddress = normalized;
+            OnPropertyChanged();
+        }
+    }
+
+    public string Manufacturer
+    {
+        get => _device.Manufacturer ?? "Sin identificar";
+        set
+        {
+            var normalized = string.Equals(value, "Sin identificar", StringComparison.Ordinal) ? null : value?.Trim();
+            if (string.Equals(_device.Manufacturer, normalized, StringComparison.OrdinalIgnoreCase)) return;
+            _device.Manufacturer = normalized;
+            OnPropertyChanged();
+        }
+    }
+
+    public string Model
+    {
+        get => _device.Model ?? "—";
+        set
+        {
+            var normalized = string.Equals(value, "—", StringComparison.Ordinal) ? null : value?.Trim();
+            if (string.Equals(_device.Model, normalized, StringComparison.OrdinalIgnoreCase)) return;
+            _device.Model = normalized;
+            OnPropertyChanged();
+        }
+    }
+
+    public string Firmware
+    {
+        get => _device.FirmwareVersion ?? "—";
+        set
+        {
+            var normalized = string.Equals(value, "—", StringComparison.Ordinal) ? null : value?.Trim();
+            if (string.Equals(_device.FirmwareVersion, normalized, StringComparison.OrdinalIgnoreCase)) return;
+            _device.FirmwareVersion = normalized;
+            OnPropertyChanged();
+        }
+    }
+
+    public string SerialNumber
+    {
+        get => _device.SerialNumber ?? "—";
+        set
+        {
+            var normalized = string.Equals(value, "—", StringComparison.Ordinal) ? null : value?.Trim();
+            if (string.Equals(_device.SerialNumber, normalized, StringComparison.OrdinalIgnoreCase)) return;
+            _device.SerialNumber = normalized;
+            OnPropertyChanged();
+        }
+    }
+
     public int? CameraId => _cameraId;
-    public bool OnvifSupported => _device.OnvifSupported;
-    public bool RtspSupported => _device.RtspSupported;
-    public bool DiscoveredByOnvif => !string.IsNullOrWhiteSpace(_device.OnvifDeviceServiceXAddr);
+
+    public bool OnvifSupported
+    {
+        get => _device.OnvifSupported;
+        set
+        {
+            if (_device.OnvifSupported == value) return;
+            _device.OnvifSupported = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool RtspSupported
+    {
+        get => _device.RtspSupported;
+        set
+        {
+            if (_device.RtspSupported == value) return;
+            _device.RtspSupported = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool DiscoveredByOnvif
+    {
+        get => !string.IsNullOrWhiteSpace(_device.OnvifDeviceServiceXAddr);
+        set
+        {
+            if (!value && !string.IsNullOrWhiteSpace(_device.OnvifDeviceServiceXAddr))
+                _device.OnvifDeviceServiceXAddr = null;
+            OnPropertyChanged();
+        }
+    }
+
     public bool HasMediaService => _device.HasOnvifMediaService;
     public bool HasImagingService => _device.HasOnvifImagingService;
     public bool HasPtzService => _device.HasOnvifPtzService;
@@ -35,8 +134,29 @@ public sealed partial class DeviceViewModel : ObservableObject
     public string OnvifImagingServiceXAddr => _device.OnvifImagingServiceXAddr ?? "—";
     public string OnvifPtzServiceXAddr => _device.OnvifPtzServiceXAddr ?? "—";
     public string OnvifEventsServiceXAddr => _device.OnvifEventsServiceXAddr ?? "—";
-    public DeviceStatus Status => _device.Status;
-    public DateTimeOffset LastSeenAt => _device.LastSeenAt;
+
+    public DeviceStatus Status
+    {
+        get => _device.Status;
+        set
+        {
+            if (_device.Status == value) return;
+            _device.Status = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public DateTimeOffset LastSeenAt
+    {
+        get => _device.LastSeenAt;
+        set
+        {
+            if (_device.LastSeenAt == value) return;
+            _device.LastSeenAt = value;
+            OnPropertyChanged();
+        }
+    }
+
     public string DetectionReason => _device.DetectionReason;
     public string DetectionDetails => _device.DetectionEvidence.Count == 0
         ? "Sin evidencia"
