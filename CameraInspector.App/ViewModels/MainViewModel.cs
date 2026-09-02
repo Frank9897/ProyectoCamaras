@@ -266,7 +266,7 @@ public sealed partial class MainViewModel : ObservableObject
         catch (Exception ex) { StatusText = $"No se pudieron eliminar las credenciales: {ex.Message}"; }
     }
 
-    private bool CanManageCredentials() => SelectedDevice?.CameraId is not null && !IsScanning && !IsDiagnosing;
+    private bool CanManageCredentials() => SelectedDevice?.CameraId is not null && !IsDiagnosing;
 
     [RelayCommand(CanExecute = nameof(CanResolveStream))]
     private async Task GetMainStreamUriAsync()
@@ -347,7 +347,7 @@ public sealed partial class MainViewModel : ObservableObject
         StatusText = $"Historial actualizado: {DiagnosticHistory.Count} registros.";
     }
 
-    private bool CanRefreshHistory() => SelectedDevice?.CameraId is not null && !IsScanning && !IsDiagnosing;
+    private bool CanRefreshHistory() => SelectedDevice?.CameraId is not null && !IsDiagnosing;
 
     private async Task MarkCredentialVerifiedAsync(CredentialSession credentials)
     {
@@ -357,8 +357,8 @@ public sealed partial class MainViewModel : ObservableObject
         SavedCredentialLastVerifiedAt = verifiedAt;
     }
 
-    private bool CanResolveStream() => SelectedDevice is not null && !IsScanning && !IsDiagnosing;
-    private bool CanRunDiagnostics() => SelectedDevice is not null && !IsScanning && !IsDiagnosing;
+    private bool CanResolveStream() => SelectedDevice is not null && !IsDiagnosing;
+    private bool CanRunDiagnostics() => SelectedDevice is not null && !IsDiagnosing;
 
     private static void ShowStreamError(string ipAddress, string streamType)
     {
