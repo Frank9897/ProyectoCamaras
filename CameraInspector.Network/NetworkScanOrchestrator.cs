@@ -50,19 +50,34 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         NetworkInterfaceInfo networkInterface,
         IProgress<ScanProgress>? progress = null,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default,
-        DiscoveryScanMode mode = DiscoveryScanMode.NetworkSubnet)
+        DiscoveryScanMode mode = DiscoveryScanMode.NetworkSubnet,
+        IPAddress? directAddress = null)
     {
+        var directMode = mode == DiscoveryScanMode.DirectCamera;
+        var hasDirectTarget = directMode && directAddress is not null;
+
         List<IPAddress> candidates;
         try
         {
-            var directSmallSubnet = mode == DiscoveryScanMode.DirectCamera && networkInterface.CidrPrefixLength >= 23;
-            candidates = mode == DiscoveryScanMode.DirectCamera && !directSmallSubnet
-                ? new List<IPAddress>()
-                : _subnetCalculator.GetHostAddresses(networkInterface).ToList();
+            if (hasDirectTarget)
+            {
+                // Cámara directa siempre significa un único host. No dependemos del CIDR de la interfaz,
+                // por lo que también funciona con cámaras antiguas/APIPA o con IP fuera de la subred local.
+                candidates = new List<IPAddress> { directAddress! };
+            }
+            else if (directMode)
+            {
+                // Sin IP objetivo mantenemos únicamente discovery (broadcast/multicast), sin hacer sweep.
+                candidates = new List<IPAddress>();
+            }
+            else
+            {
+                candidates = _subnetCalculator.GetHostAddresses(networkInterface).ToList();
+            }
         }
         catch (InvalidOperationException)
         {
-            candidates = new List<IPAddress>();
+            candidates = hasDirectTarget ? new List<IPAddress> { directAddress! } : new List<IPAddress>();
         }
 
         var pingTask = candidates.Count == 0
@@ -86,11 +101,28 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         var legacyVendorResults = await legacyVendorTask;
         var mdnsResults = await mdnsTask;
 
+        if (hasDirectTarget)
+        {
+            // El modo directo no debe convertir un broadcast que respondió con otra cámara en
+            // una lista de cámaras. Conservamos solo la evidencia perteneciente al host solicitado.
+            onvifResults = FilterDirect(onvifResults, directAddress!, GetIpFromOnvif);
+            vivotekResults = FilterDirect(vivotekResults, directAddress!, ToIp);
+            reolinkResults = FilterDirect(reolinkResults, directAddress!, ToIp);
+            ssdpResults = FilterDirect(ssdpResults, directAddress!, ToIp);
+            legacyVendorResults = FilterDirect(legacyVendorResults, directAddress!, ToIp);
+            mdnsResults = FilterDirect(mdnsResults, directAddress!, ToIp);
+            responsive = responsive.Where(ip => ip.Equals(directAddress)).ToArray();
+        }
+
         await Task.Delay(150, cancellationToken);
         var arpTable = _arpResolver.GetArpTable();
 
+        var arpCandidates = hasDirectTarget
+            ? arpTable.Keys.Where(ip => ip.Equals(directAddress!))
+            : arpTable.Keys;
+
         var portCandidates = candidates
-            .Concat(arpTable.Keys)
+            .Concat(arpCandidates)
             .Concat(onvifResults.Select(GetIpFromOnvif).Where(ip => ip is not null).Cast<IPAddress>())
             .Concat(vivotekResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>())
             .Concat(reolinkResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>())
@@ -147,6 +179,7 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
 
         var ordered = devices.Values
             .Where(device => device.IpAddress.Length > 0)
+            .Where(device => !hasDirectTarget || string.Equals(device.IpAddress, directAddress!.ToString(), StringComparison.OrdinalIgnoreCase))
             .OrderBy(device => device.IpAddress, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -162,6 +195,12 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         if (ordered.Count == 0)
             yield return new ScanProgress(total, total, null);
     }
+
+    private static IReadOnlyList<T> FilterDirect<T>(
+        IReadOnlyList<T> source,
+        IPAddress target,
+        Func<T, IPAddress?> ipSelector)
+        => source.Where(item => ipSelector(item)?.Equals(target) == true).ToArray();
 
     private static DiscoveredDevice GetOrCreate(Dictionary<string, DiscoveredDevice> devices, string ipText)
     {
