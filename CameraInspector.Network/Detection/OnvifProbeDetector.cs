@@ -8,6 +8,7 @@ namespace CameraInspector.Network.Detection;
 
 /// <summary>
 /// Detector ONVIF activo. Confirma el dispositivo mediante GetDeviceInformation.
+/// No depende de que WS-Discovery haya respondido previamente.
 /// </summary>
 public sealed class OnvifProbeDetector : IManufacturerDetector
 {
@@ -16,6 +17,11 @@ public sealed class OnvifProbeDetector : IManufacturerDetector
     private static readonly HttpClient Http = new()
     {
         Timeout = TimeSpan.FromMilliseconds(1200)
+    };
+
+    private static readonly int[] DefaultPorts =
+    {
+        80, 81, 82, 88, 443, 8000, 8080, 8081, 8443, 8888, 8899
     };
 
     private const string SoapEnvelope = """
@@ -31,57 +37,97 @@ public sealed class OnvifProbeDetector : IManufacturerDetector
     public async Task<ManufacturerDetectionResult?> TryDetectAsync(
         DiscoveredDevice device, CancellationToken cancellationToken = default)
     {
-        try
+        foreach (var port in GetPortsToTry(device))
         {
-            var endpoint = $"http://{device.IpAddress}/onvif/device_service";
-            using var content = new StringContent(SoapEnvelope, Encoding.UTF8);
-            content.Headers.ContentType = new MediaTypeHeaderValue("application/soap+xml");
-            using var response = await Http.PostAsync(endpoint, content, cancellationToken);
-            if (!response.IsSuccessStatusCode) return null;
+            cancellationToken.ThrowIfCancellationRequested();
 
-            var xml = await response.Content.ReadAsStringAsync(cancellationToken);
-            var doc = XDocument.Parse(xml);
+            var isHttps = port is 443 or 8443;
+            var scheme = isHttps ? "https" : "http";
+            var endpoint = $"{scheme}://{device.IpAddress}:{port}/onvif/device_service";
 
-            string? Get(string localName) =>
-                doc.Descendants()
-                    .FirstOrDefault(element => element.Name.LocalName.Equals(localName, StringComparison.OrdinalIgnoreCase))
-                    ?.Value;
-
-            var manufacturer = Get("Manufacturer");
-            if (string.IsNullOrWhiteSpace(manufacturer)) return null;
-
-            return new ManufacturerDetectionResult
+            try
             {
-                DetectorName = Name,
-                Confidence = 0.95,
-                CameraEvidence = true,
-                EvidenceDetails = "ONVIF GetDeviceInformation",
-                Manufacturer = manufacturer.Trim(),
-                Model = Get("Model")?.Trim(),
-                FirmwareVersion = Get("FirmwareVersion")?.Trim(),
-                SerialNumber = Get("SerialNumber")?.Trim(),
-                OnvifSupported = true,
-                OnvifProfile = "detectado",
-                OnvifDeviceServiceXAddr = endpoint,
-                HttpSupported = true,
-                HttpPort = 80
-            };
+                using var content = new StringContent(SoapEnvelope, Encoding.UTF8);
+                content.Headers.ContentType = new MediaTypeHeaderValue("application/soap+xml");
+                using var response = await Http.PostAsync(endpoint, content, cancellationToken);
+
+                // 401/403 sigue siendo útil: el endpoint ONVIF respondió pero exige acceso.
+                if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+                {
+                    return new ManufacturerDetectionResult
+                    {
+                        DetectorName = Name,
+                        Confidence = 0.92,
+                        CameraEvidence = true,
+                        EvidenceDetails = $"Endpoint ONVIF respondió {((int)response.StatusCode)} en {endpoint}",
+                        OnvifSupported = true,
+                        OnvifProfile = "endpoint detectado",
+                        OnvifDeviceServiceXAddr = endpoint,
+                        HttpSupported = !isHttps,
+                        HttpsSupported = isHttps,
+                        HttpPort = isHttps ? null : port
+                    };
+                }
+
+                if (!response.IsSuccessStatusCode)
+                    continue;
+
+                var xml = await response.Content.ReadAsStringAsync(cancellationToken);
+                var doc = XDocument.Parse(xml);
+
+                string? Get(string localName) =>
+                    doc.Descendants()
+                        .FirstOrDefault(element => element.Name.LocalName.Equals(localName, StringComparison.OrdinalIgnoreCase))
+                        ?.Value;
+
+                var manufacturer = Get("Manufacturer");
+                if (string.IsNullOrWhiteSpace(manufacturer))
+                    continue;
+
+                return new ManufacturerDetectionResult
+                {
+                    DetectorName = Name,
+                    Confidence = 0.99,
+                    CameraEvidence = true,
+                    EvidenceDetails = $"ONVIF GetDeviceInformation en {endpoint}",
+                    Manufacturer = manufacturer.Trim(),
+                    Model = Get("Model")?.Trim(),
+                    FirmwareVersion = Get("FirmwareVersion")?.Trim(),
+                    SerialNumber = Get("SerialNumber")?.Trim(),
+                    OnvifSupported = true,
+                    OnvifProfile = "detectado",
+                    OnvifDeviceServiceXAddr = endpoint,
+                    HttpSupported = !isHttps,
+                    HttpsSupported = isHttps,
+                    HttpPort = isHttps ? null : port
+                };
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                // Timeout del puerto: probar el siguiente endpoint.
+            }
+            catch (HttpRequestException)
+            {
+                // El siguiente puerto puede ser el correcto.
+            }
+            catch (System.Xml.XmlException)
+            {
+                // Respuesta HTTP que no es XML ONVIF: seguir probando.
+            }
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+
+        return null;
+    }
+
+    private static IEnumerable<int> GetPortsToTry(DiscoveredDevice device)
+    {
+        if (device.HttpPort is int configured)
+            yield return configured;
+
+        foreach (var port in DefaultPorts)
         {
-            return null;
-        }
-        catch (HttpRequestException)
-        {
-            return null;
-        }
-        catch (InvalidOperationException)
-        {
-            return null;
-        }
-        catch (System.Xml.XmlException)
-        {
-            return null;
+            if (port != device.HttpPort)
+                yield return port;
         }
     }
 }
