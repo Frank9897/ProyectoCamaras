@@ -13,21 +13,16 @@ namespace CameraInspector.App;
 /// </summary>
 public partial class MainWindow
 {
-    // _embeddedLocalCameraWindow conserva la vista de cámaras UVC mientras permanece alojada en la pestaña principal.
     private LocalCamerasWindow? _embeddedLocalCameraWindow;
-
-    // _moduleNavigationBuilt impide reconstruir la navegación cuando WPF dispara Loaded más de una vez.
     private bool _moduleNavigationBuilt;
 
     static MainWindow()
     {
-        // El clic derecho debe seleccionar primero la fila bajo el cursor para que las acciones trabajen sobre ella.
         EventManager.RegisterClassHandler(
             typeof(DataGrid),
             FrameworkElement.PreviewMouseRightButtonDownEvent,
             new MouseButtonEventHandler(OnDataGridPreviewMouseRightButtonDown));
 
-        // MainWindow_LoadedForModules inicia la construcción después de que el namescope XAML esté completamente creado.
         EventManager.RegisterClassHandler(
             typeof(MainWindow),
             FrameworkElement.LoadedEvent,
@@ -58,7 +53,7 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Construye una navegación real de módulos alrededor de la interfaz existente.
+    /// Constrói uma navegação real de módulos alrededor de la interfaz existente.
     /// No reubica hijos internos del Grid original; aloja el Grid completo dentro del módulo RED/IP.
     /// </summary>
     private void BuildModuleNavigation()
@@ -109,6 +104,7 @@ public partial class MainWindow
 
     /// <summary>
     /// Envuelve la pantalla de RED/IP existente con una consola de modos de descubrimiento.
+    /// En cámara directa permite fijar un único host, incluyendo IPs APIPA (169.254.0.0/16).
     /// </summary>
     private Grid CreateNetworkModuleContent(Grid originalContent)
     {
@@ -131,7 +127,7 @@ public partial class MainWindow
         };
 
         var modeLayout = new Grid();
-        modeLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(210) });
+        modeLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(245) });
         modeLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
         var titlePanel = new StackPanel
@@ -148,30 +144,60 @@ public partial class MainWindow
         });
         titlePanel.Children.Add(new TextBlock
         {
-            Text = "Elegí cuánto querés buscar.",
+            Text = "Directa admite IP fija o discovery sin sweep.",
             Margin = new Thickness(0, 3, 0, 0),
             Foreground = (Brush)FindResource("TextDimBrush")
         });
         Grid.SetColumn(titlePanel, 0);
         modeLayout.Children.Add(titlePanel);
 
-        var buttonsPanel = new StackPanel
+        var controlsPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center
         };
+
+        var targetLabel = new TextBlock
+        {
+            Text = "IP OBJETIVO",
+            FontFamily = new FontFamily("Consolas"),
+            FontSize = 10,
+            FontWeight = FontWeights.Bold,
+            Foreground = (Brush)FindResource("TextDimBrush"),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 7, 0)
+        };
+        controlsPanel.Children.Add(targetLabel);
+
+        var targetTextBox = new TextBox
+        {
+            Width = 145,
+            Height = 32,
+            Padding = new Thickness(7, 5, 7, 4),
+            FontFamily = new FontFamily("Consolas"),
+            ToolTip = "IP de la cámara. Ej.: 192.168.1.50 o 169.254.10.20. Vacío = solo discovery."
+        };
+        targetTextBox.SetBinding(
+            TextBox.TextProperty,
+            new System.Windows.Data.Binding("DirectCameraIp")
+            {
+                Mode = System.Windows.Data.BindingMode.TwoWay,
+                UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged
+            });
+        controlsPanel.Children.Add(targetTextBox);
 
         var directButton = new Button
         {
             Content = "CÁMARA DIRECTA",
             Width = 145,
             Height = 38,
-            Margin = new Thickness(6, 0, 0, 0),
+            Margin = new Thickness(8, 0, 0, 0),
             Style = (Style)FindResource("PrimaryButton"),
-            ToolTip = "Detectar una cámara conectada directamente al puerto Ethernet seleccionado."
+            ToolTip = "Probar únicamente la IP objetivo. No hace ping sweep de la subred."
         };
         directButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("ScanDirectCameraCommand"));
-        buttonsPanel.Children.Add(directButton);
+        controlsPanel.Children.Add(directButton);
 
         var subnetButton = new Button
         {
@@ -183,7 +209,7 @@ public partial class MainWindow
             ToolTip = "Escanear la subred asociada a la interfaz seleccionada."
         };
         subnetButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("ScanNetworkSubnetCommand"));
-        buttonsPanel.Children.Add(subnetButton);
+        controlsPanel.Children.Add(subnetButton);
 
         var fullButton = new Button
         {
@@ -195,10 +221,10 @@ public partial class MainWindow
             ToolTip = "Recorrer todas las interfaces de red activas y consolidar cámaras sin duplicados."
         };
         fullButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("ScanFullNetworkCommand"));
-        buttonsPanel.Children.Add(fullButton);
+        controlsPanel.Children.Add(fullButton);
 
-        Grid.SetColumn(buttonsPanel, 1);
-        modeLayout.Children.Add(buttonsPanel);
+        Grid.SetColumn(controlsPanel, 1);
+        modeLayout.Children.Add(controlsPanel);
         modePanel.Child = modeLayout;
         Grid.SetRow(modePanel, 0);
         networkModule.Children.Add(modePanel);
