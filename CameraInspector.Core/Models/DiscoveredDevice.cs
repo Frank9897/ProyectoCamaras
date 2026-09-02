@@ -25,6 +25,43 @@ public sealed class DiscoveredDevice
     public DeviceStatus Status { get; set; } = DeviceStatus.Unknown;
 
     public bool CameraEvidence { get; set; }
+    public List<CameraDetectionEvidence> DetectionEvidence { get; } = new();
+
+    public void AddEvidence(string method, double confidence = 0, string? details = null, bool isCameraEvidence = false)
+    {
+        if (string.IsNullOrWhiteSpace(method)) return;
+
+        var existing = DetectionEvidence.FirstOrDefault(item =>
+            item.Method.Equals(method, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(item.Details, details, StringComparison.OrdinalIgnoreCase));
+
+        if (existing is null)
+        {
+            DetectionEvidence.Add(new CameraDetectionEvidence
+            {
+                Method = method.Trim(),
+                Details = string.IsNullOrWhiteSpace(details) ? null : details.Trim(),
+                Confidence = Math.Clamp(confidence, 0, 1),
+                IsCameraEvidence = isCameraEvidence
+            });
+            return;
+        }
+
+        var index = DetectionEvidence.IndexOf(existing);
+        DetectionEvidence[index] = existing with
+        {
+            Confidence = Math.Max(existing.Confidence, Math.Clamp(confidence, 0, 1)),
+            IsCameraEvidence = existing.IsCameraEvidence || isCameraEvidence
+        };
+    }
+
+    public string DetectionReason => DetectionEvidence.Count == 0
+        ? "Sin evidencia"
+        : string.Join(" + ", DetectionEvidence
+            .OrderByDescending(item => item.Confidence)
+            .Select(item => item.Method)
+            .Distinct(StringComparer.OrdinalIgnoreCase));
+
     public bool OnvifSupported { get; set; }
     public string? OnvifProfile { get; set; }
     public string? OnvifDeviceServiceXAddr { get; set; }
