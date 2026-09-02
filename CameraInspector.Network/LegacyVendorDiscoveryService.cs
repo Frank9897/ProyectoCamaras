@@ -10,7 +10,7 @@ namespace CameraInspector.Network;
 
 /// <summary>
 /// Descubrimiento propietario para fabricantes que no dependen de ONVIF.
-/// Actualmente cubre SADP de Hikvision y DHIP de Dahua.
+/// Cubre SADP de Hikvision y DHIP de Dahua.
 /// </summary>
 public sealed class LegacyVendorDiscoveryService
 {
@@ -23,161 +23,94 @@ public sealed class LegacyVendorDiscoveryService
     {
         ArgumentNullException.ThrowIfNull(networkInterface);
 
-        var tasks = new[]
-        {
+        var results = await Task.WhenAll(
             DiscoverHikvisionAsync(networkInterface, cancellationToken),
-            DiscoverDahuaAsync(networkInterface, cancellationToken)
-        };
+            DiscoverDahuaAsync(networkInterface, cancellationToken));
 
-        var results = await Task.WhenAll(tasks);
-        return results
-            .SelectMany(item => item)
+        return results.SelectMany(item => item)
             .GroupBy(item => item.IpAddress, StringComparer.OrdinalIgnoreCase)
             .Select(group => Merge(group))
             .ToList();
     }
 
-    private static async Task<IReadOnlyList<DiscoveredDevice>> DiscoverHikvisionAsync(
-        NetworkInterfaceInfo networkInterface,
-        CancellationToken cancellationToken)
+    private static async Task<IReadOnlyList<DiscoveredDevice>> DiscoverHikvisionAsync(NetworkInterfaceInfo networkInterface, CancellationToken cancellationToken)
     {
         const int port = 37020;
         var results = new Dictionary<string, DiscoveredDevice>(StringComparer.OrdinalIgnoreCase);
-
         using var socket = CreateBoundSocket(networkInterface.IpAddress, port);
         socket.EnableBroadcast = true;
-
         var probe = Encoding.UTF8.GetBytes($"<?xml version=\"1.0\" encoding=\"utf-8\"?><Probe><Uuid>{Guid.NewGuid():D}</Uuid><Types>inquiry</Types></Probe>");
 
         foreach (var target in new[] { HikvisionMulticast, IPAddress.Broadcast })
         {
-            try
-            {
-                await socket.SendAsync(probe, probe.Length, new IPEndPoint(target, port));
-            }
-            catch (SocketException)
-            {
-                // Una ruta de broadcast puede fallar sin invalidar la otra.
-            }
+            try { await socket.SendAsync(probe, probe.Length, new IPEndPoint(target, port)); }
+            catch (SocketException) { }
         }
 
-        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(2.5);
-        while (!cancellationToken.IsCancellationRequested)
+        await ReceiveUntilAsync(socket, TimeSpan.FromSeconds(2.5), cancellationToken, packet =>
         {
-            var remaining = deadline - DateTimeOffset.UtcNow;
-            if (remaining <= TimeSpan.Zero)
-                break;
-
-            try
-            {
-                var receive = socket.ReceiveAsync(cancellationToken).AsTask();
-                var timeout = Task.Delay(remaining, cancellationToken);
-                if (await Task.WhenAny(receive, timeout) != receive)
-                    break;
-
-                var packet = await receive;
-                var parsed = ParseHikvisionResponse(packet.Buffer, packet.RemoteEndPoint.Address);
-                if (parsed is null)
-                    continue;
-
-                results[parsed.IpAddress] = parsed;
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (SocketException)
-            {
-                break;
-            }
-        }
+            var parsed = ParseHikvisionResponse(packet.Buffer, packet.RemoteEndPoint.Address);
+            if (parsed is not null) results[parsed.IpAddress] = parsed;
+        });
 
         return results.Values.ToList();
     }
 
-    private static async Task<IReadOnlyList<DiscoveredDevice>> DiscoverDahuaAsync(
-        NetworkInterfaceInfo networkInterface,
-        CancellationToken cancellationToken)
+    private static async Task<IReadOnlyList<DiscoveredDevice>> DiscoverDahuaAsync(NetworkInterfaceInfo networkInterface, CancellationToken cancellationToken)
     {
         const int port = 37810;
         var results = new Dictionary<string, DiscoveredDevice>(StringComparer.OrdinalIgnoreCase);
-
-        using var socket = new UdpClient(new IPEndPoint(networkInterface.IpAddress, 0));
-        socket.EnableBroadcast = true;
-        try
-        {
-            socket.Client.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastInterface,
-                networkInterface.IpAddress.GetAddressBytes());
-        }
-        catch (SocketException)
-        {
-            // Algunas NIC no aceptan MulticastInterface; el bind sigue fijando la interfaz local.
-        }
-
+        using var socket = new UdpClient(new IPEndPoint(networkInterface.IpAddress, 0)) { EnableBroadcast = true };
         var probe = BuildDahuaProbe();
+
         try
         {
             await socket.SendAsync(probe, probe.Length, new IPEndPoint(DahuaMulticast, port));
             await socket.SendAsync(probe, probe.Length, new IPEndPoint(IPAddress.Broadcast, port));
         }
-        catch (SocketException)
+        catch (SocketException) { }
+
+        await ReceiveUntilAsync(socket, TimeSpan.FromSeconds(2.5), cancellationToken, packet =>
         {
-            // El descubrimiento por otras técnicas continúa aunque DHIP no sea permitido por la NIC.
-        }
-
-        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(2.5);
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            var remaining = deadline - DateTimeOffset.UtcNow;
-            if (remaining <= TimeSpan.Zero)
-                break;
-
-            try
-            {
-                var receive = socket.ReceiveAsync(cancellationToken).AsTask();
-                var timeout = Task.Delay(remaining, cancellationToken);
-                if (await Task.WhenAny(receive, timeout) != receive)
-                    break;
-
-                var packet = await receive;
-                var parsed = ParseDahuaResponse(packet.Buffer, packet.RemoteEndPoint.Address);
-                if (parsed is null)
-                    continue;
-
-                results[parsed.IpAddress] = parsed;
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (SocketException)
-            {
-                break;
-            }
-        }
+            var parsed = ParseDahuaResponse(packet.Buffer, packet.RemoteEndPoint.Address);
+            if (parsed is not null) results[parsed.IpAddress] = parsed;
+        });
 
         return results.Values.ToList();
     }
 
+    private static async Task ReceiveUntilAsync(UdpClient socket, TimeSpan timeout, CancellationToken cancellationToken, Action<UdpReceiveResult> handle)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var remaining = deadline - DateTimeOffset.UtcNow;
+            if (remaining <= TimeSpan.Zero) break;
+
+            try
+            {
+                var receive = socket.ReceiveAsync(cancellationToken).AsTask();
+                var timer = Task.Delay(remaining, cancellationToken);
+                if (await Task.WhenAny(receive, timer) != receive) break;
+                handle(await receive);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (SocketException) { break; }
+        }
+    }
+
     private static UdpClient CreateBoundSocket(IPAddress address, int preferredPort)
     {
-        try
-        {
-            return new UdpClient(new IPEndPoint(address, preferredPort));
-        }
-        catch (SocketException)
-        {
-            return new UdpClient(new IPEndPoint(address, 0));
-        }
+        try { return new UdpClient(new IPEndPoint(address, preferredPort)); }
+        catch (SocketException) { return new UdpClient(new IPEndPoint(address, 0)); }
     }
 
     private static byte[] BuildDahuaProbe()
     {
         const uint headerSize = 32;
-        const uint magic = 0x50494844; // ASCII "DHIP" en little-endian.
+        const uint magic = 0x50494844;
         var json = Encoding.UTF8.GetBytes("{\"method\":\"DHDiscover.search\",\"params\":{\"mac\":\"\",\"uni\":1}}");
         var packet = new byte[32 + json.Length];
-
         BinaryPrimitives.WriteUInt32LittleEndian(packet.AsSpan(0, 4), headerSize);
         BinaryPrimitives.WriteUInt32LittleEndian(packet.AsSpan(4, 4), magic);
         BinaryPrimitives.WriteUInt32LittleEndian(packet.AsSpan(8, 4), 0);
@@ -197,15 +130,13 @@ public sealed class LegacyVendorDiscoveryService
             var text = Encoding.UTF8.GetString(payload);
             if (!text.Contains("ProbeMatch", StringComparison.OrdinalIgnoreCase) &&
                 !text.Contains("Hikvision", StringComparison.OrdinalIgnoreCase) &&
-                !text.Contains("Hik", StringComparison.OrdinalIgnoreCase))
-                return null;
+                !text.Contains("Hik", StringComparison.OrdinalIgnoreCase)) return null;
 
             var document = XDocument.Parse(text, LoadOptions.PreserveWhitespace);
             var ip = ReadXml(document, "IPv4Address") ?? sourceAddress.ToString();
-            if (!IPAddress.TryParse(ip, out _))
-                ip = sourceAddress.ToString();
+            if (!IPAddress.TryParse(ip, out _)) ip = sourceAddress.ToString();
 
-            return new DiscoveredDevice
+            var device = new DiscoveredDevice
             {
                 IpAddress = ip,
                 MacAddress = NormalizeMac(ReadXml(document, "mac") ?? ReadXml(document, "MAC")),
@@ -220,11 +151,11 @@ public sealed class LegacyVendorDiscoveryService
                 AssignedProviderName = "Hikvision ISAPI",
                 Status = DeviceStatus.Online
             };
+            device.AddEvidence("Hikvision SADP", 0.99, "respuesta ProbeMatch", true);
+            device.CameraEvidence = true;
+            return device;
         }
-        catch
-        {
-            return null;
-        }
+        catch { return null; }
     }
 
     private static DiscoveredDevice? ParseDahuaResponse(byte[] payload, IPAddress sourceAddress)
@@ -232,57 +163,39 @@ public sealed class LegacyVendorDiscoveryService
         try
         {
             const uint magic = 0x50494844;
-            if (payload.Length < 32)
-                return null;
-
+            if (payload.Length < 32) return null;
             var actualMagic = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(4, 4));
             var bodyOffset = actualMagic == magic ? 32 : 0;
             var body = Encoding.UTF8.GetString(payload, bodyOffset, payload.Length - bodyOffset);
             using var document = JsonDocument.Parse(body);
 
             JsonElement info;
-            if (document.RootElement.TryGetProperty("params", out var parameters) &&
-                parameters.TryGetProperty("deviceInfo", out var deviceInfo))
-            {
-                info = deviceInfo;
-            }
-            else if (document.RootElement.TryGetProperty("params", out parameters))
-            {
-                info = parameters;
-            }
-            else
-            {
-                return null;
-            }
+            if (document.RootElement.TryGetProperty("params", out var parameters) && parameters.TryGetProperty("deviceInfo", out var deviceInfo)) info = deviceInfo;
+            else if (document.RootElement.TryGetProperty("params", out parameters)) info = parameters;
+            else return null;
 
             var ip = GetJsonString(info, "IP") ?? GetJsonString(info, "ip") ?? sourceAddress.ToString();
-            if (!IPAddress.TryParse(ip, out _))
-                ip = sourceAddress.ToString();
+            if (!IPAddress.TryParse(ip, out _)) ip = sourceAddress.ToString();
 
-            var deviceType = GetJsonString(info, "DeviceType") ?? GetJsonString(info, "deviceType");
-            var serial = GetJsonString(info, "SerialNo") ?? GetJsonString(info, "serialNumber");
-            var mac = GetJsonString(info, "mac") ?? GetJsonString(info, "MAC");
-            var httpPort = GetJsonInt(info, "HttpPort") ?? 80;
-
-            return new DiscoveredDevice
+            var device = new DiscoveredDevice
             {
                 IpAddress = ip,
-                MacAddress = NormalizeMac(mac),
+                MacAddress = NormalizeMac(GetJsonString(info, "mac") ?? GetJsonString(info, "MAC")),
                 Manufacturer = "Dahua",
-                Model = deviceType,
-                SerialNumber = serial,
+                Model = GetJsonString(info, "DeviceType") ?? GetJsonString(info, "deviceType"),
+                SerialNumber = GetJsonString(info, "SerialNo") ?? GetJsonString(info, "serialNumber"),
                 HttpSupported = true,
                 RtspSupported = true,
-                HttpPort = httpPort,
+                HttpPort = GetJsonInt(info, "HttpPort") ?? 80,
                 RtspPort = 554,
                 AssignedProviderName = "Dahua CGI/DHIP",
                 Status = DeviceStatus.Online
             };
+            device.AddEvidence("Dahua DHIP", 0.99, "respuesta DHDiscover.search", true);
+            device.CameraEvidence = true;
+            return device;
         }
-        catch
-        {
-            return null;
-        }
+        catch { return null; }
     }
 
     private static DiscoveredDevice Merge(IEnumerable<DiscoveredDevice> devices)
@@ -301,46 +214,27 @@ public sealed class LegacyVendorDiscoveryService
             first.RtspSupported |= item.RtspSupported;
             first.HttpPort ??= item.HttpPort;
             first.RtspPort ??= item.RtspPort;
+            first.CameraEvidence |= item.CameraEvidence;
+            foreach (var evidence in item.DetectionEvidence)
+                first.AddEvidence(evidence.Method, evidence.Confidence, evidence.Details, evidence.IsCameraEvidence);
         }
         return first;
     }
 
-    private static string? ReadXml(XDocument document, string localName) =>
-        document.Descendants().FirstOrDefault(element =>
-            element.Name.LocalName.Equals(localName, StringComparison.OrdinalIgnoreCase))?.Value.Trim();
-
-    private static string? GetJsonString(JsonElement element, string name) =>
-        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
-            ? value.GetString()
-            : null;
-
+    private static string? ReadXml(XDocument document, string localName) => document.Descendants().FirstOrDefault(element => element.Name.LocalName.Equals(localName, StringComparison.OrdinalIgnoreCase))?.Value.Trim();
+    private static string? GetJsonString(JsonElement element, string name) => element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
     private static int? GetJsonInt(JsonElement element, string name)
     {
-        if (!element.TryGetProperty(name, out var value))
-            return null;
-
-        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number))
-            return number;
-
+        if (!element.TryGetProperty(name, out var value)) return null;
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)) return number;
         return int.TryParse(value.ToString(), out var parsed) ? parsed : null;
     }
-
-    private static int? TryParseInt(string? value) =>
-        int.TryParse(value, out var result) ? result : null;
-
+    private static int? TryParseInt(string? value) => int.TryParse(value, out var result) ? result : null;
     private static string? NormalizeMac(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value))
-            return null;
-
-        var compact = value.Replace(":", string.Empty, StringComparison.Ordinal)
-            .Replace("-", string.Empty, StringComparison.Ordinal)
-            .Trim();
-
-        if (compact.Length != 12 || compact.Any(character => !Uri.IsHexDigit(character)))
-            return null;
-
-        return string.Join(":", Enumerable.Range(0, 6)
-            .Select(index => compact.Substring(index * 2, 2).ToUpperInvariant()));
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var compact = value.Replace(":", string.Empty, StringComparison.Ordinal).Replace("-", string.Empty, StringComparison.Ordinal).Trim();
+        if (compact.Length != 12 || compact.Any(character => !Uri.IsHexDigit(character))) return null;
+        return string.Join(":", Enumerable.Range(0, 6).Select(index => compact.Substring(index * 2, 2).ToUpperInvariant()));
     }
 }
