@@ -14,7 +14,7 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
 {
     private const int ShepherdDiscoveryPort = 5678;
     private const int LegacyDiscoveryPort = 10000;
-    private readonly TimeSpan _discoveryTimeout = TimeSpan.FromSeconds(2);
+    private readonly TimeSpan _discoveryTimeout = TimeSpan.FromSeconds(1.2);
 
     public async Task<IReadOnlyList<DiscoveredDevice>> DiscoverAsync(
         NetworkInterfaceInfo networkInterface,
@@ -34,8 +34,6 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
         socket.EnableBroadcast = true;
         var probe = BuildProbe();
 
-        // Enviamos todas las variantes primero y hacemos una sola ventana de recepción.
-        // El código anterior esperaba el timeout completo por cada broadcast/puerto.
         foreach (var target in broadcasts.Distinct())
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -48,7 +46,6 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
                 }
                 catch (SocketException)
                 {
-                    // Una ruta/puerto puede no estar disponible; continuamos con las restantes.
                 }
             }
         }
@@ -138,7 +135,6 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
         if (payload.Length < 11 || payload[0] != 0x02)
             return false;
 
-        // La respuesta propietaria observada de VIVOTEK contiene TLV y la firma MAC 00-02-D1.
         return ExtractVivotekMac(payload) is not null ||
                Encoding.ASCII.GetString(payload).Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase);
     }
@@ -179,7 +175,6 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
 
     private static IPAddress? ExtractVivotekIp(byte[] payload)
     {
-        // Formato TLV observado: tag 0x03 + length 0x04 + IPv4 en cuatro octetos.
         for (var index = 0; index <= payload.Length - 6; index++)
         {
             if (payload[index] != 0x03 || payload[index + 1] != 0x04)
