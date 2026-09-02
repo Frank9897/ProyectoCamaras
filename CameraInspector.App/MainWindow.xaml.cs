@@ -58,7 +58,11 @@ public partial class MainWindow : Window
         _cameraCredentialStore = cameraCredentialStore;
 
         // La vista LibVLC se enlaza directamente al MediaPlayer desde MainWindow.xaml.
-        Loaded += (_, _) => ConfigureCameraContextMenu();
+        Loaded += (_, _) =>
+        {
+            ConfigureCameraContextMenu();
+            ConfigureHealthUi();
+        };
     }
 
     /// <summary>
