@@ -5,8 +5,6 @@ namespace CameraInspector.Network.Detection;
 
 /// <summary>
 /// Combina todas las señales independientes de detección sin perder evidencia previa.
-/// Los detectores pueden confirmar nuevas capacidades, pero nunca deben borrar una capacidad
-/// descubierta previamente por Ping/ARP, TCP, SSDP, VIVOTEK u otra capa.
 /// </summary>
 public sealed class ManufacturerResolver : IManufacturerResolver
 {
@@ -38,9 +36,17 @@ public sealed class ManufacturerResolver : IManufacturerResolver
             .Cast<ManufacturerDetectionResult>()
             .ToList();
 
+        foreach (var result in results)
+        {
+            device.AddEvidence(
+                result.DetectorName,
+                result.Confidence,
+                result.EvidenceDetails,
+                result.CameraEvidence);
+        }
+
         if (results.Count == 0)
         {
-            // No borrar evidencia de red que ya exista en el dispositivo.
             device.Status = HasAnyCameraEvidence(device)
                 ? DeviceStatus.Online
                 : DeviceStatus.Unknown;
@@ -60,11 +66,11 @@ public sealed class ManufacturerResolver : IManufacturerResolver
         if (!string.IsNullOrWhiteSpace(best.SerialNumber))
             device.SerialNumber = best.SerialNumber;
 
-        // Las evidencias son acumulativas: un detector que no vea ONVIF no invalida una detección ONVIF previa.
         device.OnvifSupported |= results.Any(result => result.OnvifSupported);
         device.RtspSupported |= results.Any(result => result.RtspSupported);
         device.HttpSupported |= results.Any(result => result.HttpSupported);
         device.HttpsSupported |= results.Any(result => result.HttpsSupported);
+        device.CameraEvidence |= results.Any(result => result.CameraEvidence);
 
         var onvifProfile = results
             .FirstOrDefault(result => result.OnvifSupported)?.OnvifProfile;
@@ -98,14 +104,8 @@ public sealed class ManufacturerResolver : IManufacturerResolver
     }
 
     private static bool HasAnyCameraEvidence(DiscoveredDevice device)
-        => device.OnvifSupported ||
+        => device.CameraEvidence ||
+           device.OnvifSupported ||
            device.RtspSupported ||
-           device.HttpSupported ||
-           device.HttpsSupported ||
-           string.Equals(device.Manufacturer, "VIVOTEK", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(device.Manufacturer, "Hikvision", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(device.Manufacturer, "Dahua", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(device.Manufacturer, "Axis", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(device.Manufacturer, "Uniview", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(device.Manufacturer, "Reolink", StringComparison.OrdinalIgnoreCase);
+           device.DetectionEvidence.Any(item => item.IsCameraEvidence);
 }
