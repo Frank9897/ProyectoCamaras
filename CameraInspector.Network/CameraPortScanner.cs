@@ -20,24 +20,37 @@ public sealed class CameraPortScanner
         IEnumerable<IPAddress> candidates,
         int timeoutMs = 300,
         int maxParallelism = 64,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<int>? ports = null)
     {
+        var portsToScan = ports is { Count: > 0 }
+            ? ports.Distinct().ToArray()
+            : CameraPorts;
+
         var found = new ConcurrentBag<CameraPortScanResult>();
 
         await Parallel.ForEachAsync(
             candidates.Distinct(),
             new ParallelOptions
             {
-                MaxDegreeOfParallelism = Math.Clamp(maxParallelism, 1, 96),
+                MaxDegreeOfParallelism = Math.Clamp(maxParallelism, 1, 128),
                 CancellationToken = cancellationToken
             },
             async (ip, token) =>
             {
-                foreach (var port in CameraPorts)
+                // Los puertos de un mismo host se prueban en paralelo para reducir drásticamente
+                // el tiempo perdido esperando timeouts secuenciales.
+                var checks = portsToScan.Select(async port =>
                 {
-                    token.ThrowIfCancellationRequested();
-                    if (await IsOpenAsync(ip, port, timeoutMs, token))
-                        found.Add(new CameraPortScanResult(ip, port));
+                    var open = await IsOpenAsync(ip, port, timeoutMs, token);
+                    return (port, open);
+                });
+
+                var results = await Task.WhenAll(checks);
+                foreach (var result in results)
+                {
+                    if (result.open)
+                        found.Add(new CameraPortScanResult(ip, result.port));
                 }
             });
 
@@ -59,7 +72,7 @@ public sealed class CameraPortScanner
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(Math.Clamp(timeoutMs, 100, 1500));
+            timeout.CancelAfter(Math.Clamp(timeoutMs, 75, 1500));
             await client.ConnectAsync(address, port, timeout.Token);
             return client.Connected;
         }
