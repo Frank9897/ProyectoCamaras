@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
 using CameraInspector.Core.Interfaces;
@@ -14,7 +15,7 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
 {
     private const int ShepherdDiscoveryPort = 5678;
     private const int LegacyDiscoveryPort = 10000;
-    private readonly TimeSpan _discoveryTimeout = TimeSpan.FromSeconds(1.2);
+    private readonly TimeSpan _discoveryTimeout = TimeSpan.FromSeconds(1.8);
 
     public async Task<IReadOnlyList<DiscoveredDevice>> DiscoverAsync(
         NetworkInterfaceInfo networkInterface,
@@ -22,30 +23,75 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
     {
         ArgumentNullException.ThrowIfNull(networkInterface);
 
+        // Una interfaz puede tener más de una IPv4 (por ejemplo, una dirección fija y una APIPA).
+        // Shepherd/IW2 se beneficia de enviar desde cada dirección disponible del adaptador físico.
+        var bindAddresses = GetInterfaceIpv4Addresses(networkInterface);
+        if (bindAddresses.Count == 0)
+            bindAddresses = [networkInterface.IpAddress];
+
+        var tasks = bindAddresses
+            .Distinct()
+            .Select(address => DiscoverFromAddressAsync(address, networkInterface, cancellationToken))
+            .ToList();
+
+        var batches = await Task.WhenAll(tasks);
         var results = new Dictionary<string, DiscoveredDevice>(StringComparer.OrdinalIgnoreCase);
-        var bindAddress = networkInterface.IpAddress;
+
+        foreach (var batch in batches)
+        {
+            foreach (var device in batch)
+            {
+                var key = device.MacAddress ?? device.IpAddress;
+                if (results.TryGetValue(key, out var existing))
+                    MergeEvidence(existing, device);
+                else
+                    results[key] = device;
+            }
+        }
+
+        return results.Values.ToList();
+    }
+
+    private async Task<IReadOnlyList<DiscoveredDevice>> DiscoverFromAddressAsync(
+        IPAddress bindAddress,
+        NetworkInterfaceInfo networkInterface,
+        CancellationToken cancellationToken)
+    {
+        var results = new Dictionary<string, DiscoveredDevice>(StringComparer.OrdinalIgnoreCase);
         var broadcastAddress = CalculateBroadcastAddress(bindAddress, networkInterface.SubnetMask);
-        var broadcasts = new List<IPAddress> { broadcastAddress, IPAddress.Broadcast };
+        var broadcasts = new List<IPAddress>
+        {
+            broadcastAddress,
+            IPAddress.Broadcast,
+            IPAddress.Parse("169.254.255.255")
+        };
 
         if (IsApipa(bindAddress))
             broadcasts.Add(IPAddress.Parse("169.254.255.255"));
 
-        using var socket = await CreateBoundSocketAsync(bindAddress, ShepherdDiscoveryPort, cancellationToken);
+        using var socket = CreateBoundSocket(bindAddress, ShepherdDiscoveryPort, cancellationToken);
         socket.EnableBroadcast = true;
-        var probe = BuildProbe();
 
+        // Shepherd usa UDP 5678 para el descubrimiento. Enviamos también al puerto
+        // de compatibilidad antiguo porque algunas generaciones de firmware lo soportan.
+        var probes = BuildProbes();
         foreach (var target in broadcasts.Distinct())
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             foreach (var targetPort in new[] { ShepherdDiscoveryPort, LegacyDiscoveryPort })
             {
-                try
+                foreach (var probe in probes)
                 {
-                    await socket.SendAsync(probe, probe.Length, new IPEndPoint(target, targetPort));
-                }
-                catch (SocketException)
-                {
+                    try
+                    {
+                        await socket.SendAsync(probe, probe.Length, new IPEndPoint(target, targetPort));
+                    }
+                    catch (SocketException)
+                    {
+                        // Un broadcast adicional puede no ser enrutable por esa interfaz;
+                        // no debe abortar los demás mecanismos de descubrimiento.
+                    }
                 }
             }
         }
@@ -89,26 +135,64 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
         return results.Values.ToList();
     }
 
-    private static Task<UdpClient> CreateBoundSocketAsync(
+    private static List<IPAddress> GetInterfaceIpv4Addresses(NetworkInterfaceInfo networkInterface)
+    {
+        try
+        {
+            var nic = NetworkInterface.GetAllNetworkInterfaces()
+                .FirstOrDefault(item => item.Id.Equals(networkInterface.InterfaceId, StringComparison.OrdinalIgnoreCase));
+
+            if (nic is null)
+                return [];
+
+            return nic.GetIPProperties()
+                .UnicastAddresses
+                .Where(item => item.Address.AddressFamily == AddressFamily.InterNetwork)
+                .Select(item => item.Address)
+                .Distinct()
+                .ToList();
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static UdpClient CreateBoundSocket(
         IPAddress bindAddress,
         int preferredPort,
         CancellationToken cancellationToken)
     {
         try
         {
-            return Task.FromResult(new UdpClient(new IPEndPoint(bindAddress, preferredPort)));
+            var socket = new UdpClient(new IPEndPoint(bindAddress, preferredPort));
+            socket.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.Broadcast, true);
+            return socket;
         }
         catch (SocketException)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(new UdpClient(new IPEndPoint(bindAddress, 0)));
+            var socket = new UdpClient(new IPEndPoint(bindAddress, 0));
+            socket.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.Broadcast, true);
+            return socket;
         }
     }
 
-    private static byte[] BuildProbe()
+    /// <summary>
+    /// Mantiene varios formatos de sondeo para cubrir distintas generaciones de VIVOTEK.
+    /// El protocolo exacto no se documenta públicamente por VIVOTEK; Shepherd confirma UDP 5678
+    /// como canal de discovery, por lo que evitamos depender de un único paquete experimental.
+    /// </summary>
+    private static IReadOnlyList<byte[]> BuildProbes()
     {
         var session = Guid.NewGuid().ToByteArray();
-        return new[] { (byte)0x01, session[0], session[1], session[2], (byte)0x03 };
+
+        return
+        [
+            new[] { (byte)0x01, session[0], session[1], session[2], (byte)0x03 },
+            new[] { (byte)0x01, session[0], session[1], session[2], session[3], (byte)0x03 },
+            Encoding.ASCII.GetBytes("VIVOTEK")
+        ];
     }
 
     private static IPAddress CalculateBroadcastAddress(IPAddress ipAddress, IPAddress subnetMask)
@@ -133,7 +217,10 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
     private static bool LooksLikeVivotekResponse(byte[] payload)
     {
         if (payload.Length < 11 || payload[0] != 0x02)
-            return false;
+        {
+            var text = Encoding.ASCII.GetString(payload);
+            return text.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase);
+        }
 
         return ExtractVivotekMac(payload) is not null ||
                Encoding.ASCII.GetString(payload).Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase);
