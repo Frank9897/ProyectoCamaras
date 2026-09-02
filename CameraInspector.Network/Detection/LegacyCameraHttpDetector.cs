@@ -64,11 +64,11 @@ public sealed class LegacyCameraHttpDetector : IManufacturerDetector
     {
         var response = await GetAsync(baseUri + "/ISAPI/System/deviceInfo", cancellationToken);
         if (response is null) return null;
-        if (response.Value.StatusCode is 401 or 403) return StrongEvidence("Hikvision", 0.95, ParsePort(baseUri));
-        if (!response.Value.IsSuccess) return null;
+        if (response.StatusCode is 401 or 403) return StrongEvidence("Hikvision", 0.95, ParsePort(baseUri));
+        if (!response.IsSuccess) return null;
         try
         {
-            var xml = XDocument.Parse(response.Value.Body);
+            var xml = XDocument.Parse(response.Body);
             return new ManufacturerDetectionResult
             {
                 DetectorName = "LegacyHttp:Hikvision", Confidence = 1.0, Manufacturer = "Hikvision",
@@ -84,9 +84,9 @@ public sealed class LegacyCameraHttpDetector : IManufacturerDetector
     {
         var response = await GetAsync(baseUri + "/cgi-bin/magicBox.cgi?action=getSystemInfo", cancellationToken);
         if (response is null) return null;
-        if (response.Value.StatusCode is 401 or 403) return StrongEvidence("Dahua", 0.95, ParsePort(baseUri));
-        if (!response.Value.IsSuccess) return null;
-        var values = ParseKeyValue(response.Value.Body);
+        if (response.StatusCode is 401 or 403) return StrongEvidence("Dahua", 0.95, ParsePort(baseUri));
+        if (!response.IsSuccess) return null;
+        var values = ParseKeyValue(response.Body);
         return new ManufacturerDetectionResult
         {
             DetectorName = "LegacyHttp:Dahua", Confidence = 1.0, Manufacturer = "Dahua",
@@ -101,9 +101,9 @@ public sealed class LegacyCameraHttpDetector : IManufacturerDetector
     {
         var response = await GetAsync(baseUri + "/axis-cgi/param.cgi?action=list&group=Properties.System", cancellationToken);
         if (response is null) return null;
-        if (response.Value.StatusCode is 401 or 403) return StrongEvidence("Axis", 0.95, ParsePort(baseUri));
-        if (!response.Value.IsSuccess) return null;
-        var body = response.Value.Body;
+        if (response.StatusCode is 401 or 403) return StrongEvidence("Axis", 0.95, ParsePort(baseUri));
+        if (!response.IsSuccess) return null;
+        var body = response.Body;
         if (!body.Contains("Properties.System", StringComparison.OrdinalIgnoreCase) &&
             !body.Contains("root.Properties", StringComparison.OrdinalIgnoreCase) &&
             !body.Contains("Axis", StringComparison.OrdinalIgnoreCase)) return null;
@@ -120,19 +120,19 @@ public sealed class LegacyCameraHttpDetector : IManufacturerDetector
     {
         var response = await GetAsync(baseUri + "/cgi-bin/anonymous/getparam.cgi?system.info", cancellationToken);
         if (response is null) return null;
-        if (response.Value.StatusCode is 401 or 403) return StrongEvidence("VIVOTEK", 0.98, ParsePort(baseUri));
-        if (!response.Value.IsSuccess)
+        if (response.StatusCode is 401 or 403) return StrongEvidence("VIVOTEK", 0.98, ParsePort(baseUri));
+        if (!response.IsSuccess)
         {
             response = await GetAsync(baseUri + "/cgi-bin/sysinfo.cgi", cancellationToken);
             if (response is null) return null;
-            if (response.Value.StatusCode is 401 or 403) return StrongEvidence("VIVOTEK", 0.98, ParsePort(baseUri));
-            if (!response.Value.IsSuccess) return null;
+            if (response.StatusCode is 401 or 403) return StrongEvidence("VIVOTEK", 0.98, ParsePort(baseUri));
+            if (!response.IsSuccess) return null;
         }
-        var values = ParseKeyValue(response.Value.Body);
+        var values = ParseKeyValue(response.Body);
         var model = GetFirst(values, "system.info_modelname", "modelname", "Model", "model");
         var firmware = GetFirst(values, "system.info_firmwareversion", "firmwareversion", "FirmwareVersion");
         if (string.IsNullOrWhiteSpace(model) && string.IsNullOrWhiteSpace(firmware) &&
-            !response.Value.Body.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase)) return null;
+            !response.Body.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase)) return null;
         return new ManufacturerDetectionResult
         {
             DetectorName = "LegacyHttp:VIVOTEK", Confidence = 1.0, Manufacturer = "VIVOTEK", Model = model,
@@ -144,11 +144,11 @@ public sealed class LegacyCameraHttpDetector : IManufacturerDetector
     {
         var response = await GetAsync(baseUri + "/cgi-bin/api.cgi?cmd=GetDevInfo&channel=0&rs=value", cancellationToken);
         if (response is null) return null;
-        if (response.Value.StatusCode is 401 or 403) return StrongEvidence("Reolink", 0.9, ParsePort(baseUri));
-        if (!response.Value.IsSuccess || string.IsNullOrWhiteSpace(response.Value.Body)) return null;
+        if (response.StatusCode is 401 or 403) return StrongEvidence("Reolink", 0.9, ParsePort(baseUri));
+        if (!response.IsSuccess || string.IsNullOrWhiteSpace(response.Body)) return null;
         try
         {
-            using var json = JsonDocument.Parse(response.Value.Body);
+            using var json = JsonDocument.Parse(response.Body);
             var root = json.RootElement;
             var info = root.ValueKind == JsonValueKind.Array && root.GetArrayLength() > 0 && root[0].TryGetProperty("value", out var value) ? value : root;
             return new ManufacturerDetectionResult
@@ -166,9 +166,9 @@ public sealed class LegacyCameraHttpDetector : IManufacturerDetector
     {
         var response = await GetAsync(baseUri + "/stw-cgi/system.cgi?msubmenu=deviceinfo&action=view", cancellationToken);
         if (response is null) return null;
-        if (response.Value.StatusCode is 401 or 403) return StrongEvidence("Hanwha", 0.95, ParsePort(baseUri));
-        if (!response.Value.IsSuccess) return null;
-        var body = response.Value.Body;
+        if (response.StatusCode is 401 or 403) return StrongEvidence("Hanwha", 0.95, ParsePort(baseUri));
+        if (!response.IsSuccess) return null;
+        var body = response.Body;
         if (!body.Contains("Model=", StringComparison.OrdinalIgnoreCase) &&
             !body.Contains("FirmwareVersion=", StringComparison.OrdinalIgnoreCase) &&
             !body.Contains("SUNAPI", StringComparison.OrdinalIgnoreCase)) return null;
@@ -186,16 +186,16 @@ public sealed class LegacyCameraHttpDetector : IManufacturerDetector
     {
         var response = await GetAsync(baseUri + "/LAPI/V1.0/System/DeviceBasicInfo", cancellationToken);
         if (response is null) return null;
-        if (response.Value.StatusCode is 401 or 403) return StrongEvidence("Uniview", 0.95, ParsePort(baseUri));
-        if (!response.Value.IsSuccess) return null;
-        if (!response.Value.Body.Contains("Device", StringComparison.OrdinalIgnoreCase) &&
-            !response.Value.Body.Contains("Model", StringComparison.OrdinalIgnoreCase) &&
-            !response.Value.Body.Contains("UNV", StringComparison.OrdinalIgnoreCase)) return null;
+        if (response.StatusCode is 401 or 403) return StrongEvidence("Uniview", 0.95, ParsePort(baseUri));
+        if (!response.IsSuccess) return null;
+        if (!response.Body.Contains("Device", StringComparison.OrdinalIgnoreCase) &&
+            !response.Body.Contains("Model", StringComparison.OrdinalIgnoreCase) &&
+            !response.Body.Contains("UNV", StringComparison.OrdinalIgnoreCase)) return null;
         return new ManufacturerDetectionResult
         {
             DetectorName = "LegacyHttp:Uniview", Confidence = 0.95, Manufacturer = "Uniview",
-            Model = TryExtractLoose(response.Value.Body, "Model", "model"),
-            FirmwareVersion = TryExtractLoose(response.Value.Body, "FirmwareVersion", "firmware"),
+            Model = TryExtractLoose(response.Body, "Model", "model"),
+            FirmwareVersion = TryExtractLoose(response.Body, "FirmwareVersion", "firmware"),
             HttpSupported = true, HttpPort = ParsePort(baseUri), RtspSupported = true, RtspPort = 554
         };
     }
@@ -204,9 +204,9 @@ public sealed class LegacyCameraHttpDetector : IManufacturerDetector
     {
         var response = await GetAsync(baseUri + "/control/control?list", cancellationToken);
         if (response is null) return null;
-        if (response.Value.StatusCode is 401 or 403) return StrongEvidence("MOBOTIX", 0.95, ParsePort(baseUri));
-        if (!response.Value.IsSuccess) return null;
-        var body = response.Value.Body;
+        if (response.StatusCode is 401 or 403) return StrongEvidence("MOBOTIX", 0.95, ParsePort(baseUri));
+        if (!response.IsSuccess) return null;
+        var body = response.Body;
         if (!body.Contains("MOBOTIX", StringComparison.OrdinalIgnoreCase) &&
             !body.Contains("recording", StringComparison.OrdinalIgnoreCase) &&
             !body.Contains("vptz", StringComparison.OrdinalIgnoreCase)) return null;
