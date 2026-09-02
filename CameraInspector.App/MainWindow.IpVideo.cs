@@ -13,6 +13,7 @@ namespace CameraInspector.App;
 public partial class MainWindow
 {
     private IpCameraVideoWindow? _ipCameraVideoWindow;
+    private bool _videoTabOpening;
 
     private void DeviceDetailTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -23,8 +24,15 @@ public partial class MainWindow
             return;
 
         if (!string.Equals(selectedTab.Header?.ToString(), "VIDEO", StringComparison.OrdinalIgnoreCase))
+        {
+            _videoTabOpening = false;
+            return;
+        }
+
+        if (_videoTabOpening)
             return;
 
+        _videoTabOpening = true;
         OpenIpCameraVideoWindow();
 
         // VIDEO actúa como acceso al módulo independiente y no consume espacio del detalle principal.
@@ -50,6 +58,7 @@ public partial class MainWindow
             ShowInformation(
                 "Seleccione una cámara IP en la lista antes de abrir el reproductor de video.",
                 "Camera Inspector — Video IP");
+            _videoTabOpening = false;
             return;
         }
 
@@ -64,6 +73,7 @@ public partial class MainWindow
             ShowInformation(
                 "El servicio de video IP no está disponible en la aplicación.",
                 "Camera Inspector — Video IP");
+            _videoTabOpening = false;
             return;
         }
 
@@ -72,7 +82,11 @@ public partial class MainWindow
             Owner = this,
             ShowInTaskbar = true
         };
-        _ipCameraVideoWindow.Closed += (_, _) => _ipCameraVideoWindow = null;
+        _ipCameraVideoWindow.Closed += (_, _) =>
+        {
+            _ipCameraVideoWindow = null;
+            _videoTabOpening = false;
+        };
         _ipCameraVideoWindow.Show();
     }
 }
