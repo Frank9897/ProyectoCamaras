@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
 using CameraInspector.App.ViewModels;
+using CameraInspector.Core.Models;
 
 namespace CameraInspector.App;
 
@@ -14,20 +15,6 @@ namespace CameraInspector.App;
 public partial class MainWindow
 {
     private bool _healthUiConfigured;
-
-    static MainWindow()
-    {
-        EventManager.RegisterClassHandler(
-            typeof(MainWindow),
-            FrameworkElement.LoadedEvent,
-            new RoutedEventHandler(OnMainWindowLoadedForHealth));
-    }
-
-    private static void OnMainWindowLoadedForHealth(object sender, RoutedEventArgs e)
-    {
-        if (sender is MainWindow window)
-            window.ConfigureHealthUi();
-    }
 
     private void ConfigureHealthUi()
     {
@@ -144,15 +131,15 @@ public partial class MainWindow
     {
         public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
         {
-            var state = value is Core.Models.CameraHealthState health ? health : Core.Models.CameraHealthState.Unknown;
+            var state = value is CameraHealthState health ? health : CameraHealthState.Unknown;
             return state switch
             {
-                Core.Models.CameraHealthState.Healthy => (Brush)Application.Current.FindResource("AccentBrush"),
-                Core.Models.CameraHealthState.AuthenticationRequired => (Brush)Application.Current.FindResource("WarnBrush"),
-                Core.Models.CameraHealthState.NoVideo => (Brush)Application.Current.FindResource("WarnBrush"),
-                Core.Models.CameraHealthState.CommunicationOnly => (Brush)Application.Current.FindResource("WarnBrush"),
-                Core.Models.CameraHealthState.NoResponse => (Brush)Application.Current.FindResource("ErrBrush"),
-                Core.Models.CameraHealthState.Degraded => (Brush)Application.Current.FindResource("WarnBrush"),
+                CameraHealthState.Healthy => (Brush)Application.Current.FindResource("AccentBrush"),
+                CameraHealthState.AuthenticationRequired => (Brush)Application.Current.FindResource("WarnBrush"),
+                CameraHealthState.NoVideo => (Brush)Application.Current.FindResource("WarnBrush"),
+                CameraHealthState.CommunicationOnly => (Brush)Application.Current.FindResource("WarnBrush"),
+                CameraHealthState.NoResponse => (Brush)Application.Current.FindResource("ErrBrush"),
+                CameraHealthState.Degraded => (Brush)Application.Current.FindResource("WarnBrush"),
                 _ => (Brush)Application.Current.FindResource("TextDimBrush")
             };
         }
