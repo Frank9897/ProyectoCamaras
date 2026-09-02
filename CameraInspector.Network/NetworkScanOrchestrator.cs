@@ -1,6 +1,7 @@
 using System.Net;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
+using CameraInspector.Network.Providers.Reolink;
 
 namespace CameraInspector.Network;
 
@@ -15,6 +16,7 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
     private readonly IArpResolver _arpResolver;
     private readonly IOnvifDiscoveryService _onvifDiscoveryService;
     private readonly IVivotekDiscoveryService _vivotekDiscoveryService;
+    private readonly ReolinkDiscoveryService _reolinkDiscoveryService;
     private readonly CameraPortScanner _cameraPortScanner;
     private readonly SsdpDiscoveryService _ssdpDiscoveryService;
     private readonly LegacyVendorDiscoveryService _legacyVendorDiscoveryService;
@@ -26,6 +28,7 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         IArpResolver arpResolver,
         IOnvifDiscoveryService onvifDiscoveryService,
         IVivotekDiscoveryService vivotekDiscoveryService,
+        ReolinkDiscoveryService reolinkDiscoveryService,
         CameraPortScanner cameraPortScanner,
         SsdpDiscoveryService ssdpDiscoveryService,
         LegacyVendorDiscoveryService legacyVendorDiscoveryService,
@@ -36,6 +39,7 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         _arpResolver = arpResolver;
         _onvifDiscoveryService = onvifDiscoveryService;
         _vivotekDiscoveryService = vivotekDiscoveryService;
+        _reolinkDiscoveryService = reolinkDiscoveryService;
         _cameraPortScanner = cameraPortScanner;
         _ssdpDiscoveryService = ssdpDiscoveryService;
         _legacyVendorDiscoveryService = legacyVendorDiscoveryService;
@@ -67,15 +71,17 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
 
         var onvifTask = SafeDiscoverAsync(() => _onvifDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
         var vivotekTask = SafeDiscoverAsync(() => _vivotekDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
+        var reolinkTask = SafeDiscoverAsync(() => _reolinkDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
         var ssdpTask = SafeDiscoverAsync(() => _ssdpDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
         var legacyVendorTask = SafeDiscoverAsync(() => _legacyVendorDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
         var mdnsTask = SafeDiscoverAsync(() => _mdnsDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
 
-        await Task.WhenAll(pingTask, onvifTask, vivotekTask, ssdpTask, legacyVendorTask, mdnsTask);
+        await Task.WhenAll(pingTask, onvifTask, vivotekTask, reolinkTask, ssdpTask, legacyVendorTask, mdnsTask);
 
         var responsive = await pingTask;
         var onvifResults = await onvifTask;
         var vivotekResults = await vivotekTask;
+        var reolinkResults = await reolinkTask;
         var ssdpResults = await ssdpTask;
         var legacyVendorResults = await legacyVendorTask;
         var mdnsResults = await mdnsTask;
@@ -87,6 +93,7 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
             .Concat(arpTable.Keys)
             .Concat(onvifResults.Select(GetIpFromOnvif).Where(ip => ip is not null).Cast<IPAddress>())
             .Concat(vivotekResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>())
+            .Concat(reolinkResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>())
             .Concat(ssdpResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>())
             .Concat(legacyVendorResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>())
             .Concat(mdnsResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>())
@@ -125,6 +132,7 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         }
 
         MergeDiscoverySource(devices, vivotekResults, "VIVOTEK Discovery", true, 0.99, "Shepherd/IW2");
+        MergeDiscoverySource(devices, reolinkResults, "Reolink LAN Discovery", true, 0.98, "UDP/2000 · respuesta UDP/3000");
         MergeDiscoverySource(devices, legacyVendorResults, null, true, 0.99, null);
         MergeDiscoverySource(devices, ssdpResults, "SSDP/UPnP", false, 0.35, null);
         MergeDiscoverySource(devices, mdnsResults, "mDNS/Bonjour", false, 0.3, null);
