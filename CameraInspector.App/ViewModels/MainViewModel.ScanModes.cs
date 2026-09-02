@@ -1,3 +1,4 @@
+using System.Net;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
 using CommunityToolkit.Mvvm.Input;
@@ -7,8 +8,16 @@ namespace CameraInspector.App.ViewModels;
 public sealed partial class MainViewModel
 {
     /// <summary>
+    /// IP opcional de la cámara que se quiere probar directamente.
+    /// Vacía significa discovery-only, sin sweep de subred.
+    /// </summary>
+    [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty]
+    private string _directCameraIp = string.Empty;
+
+    /// <summary>
     /// Ejecuta el modo de cámara directa sobre la interfaz actualmente seleccionada.
-    /// Solo utiliza mecanismos de descubrimiento; no genera un ping sweep de la subred.
+    /// Cuando se informa una IP, todo el escaneo activo queda limitado a ese único host.
+    /// Sin IP, solo se ejecutan los mecanismos de discovery sin barrido de subred.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanStartAlternativeScan))]
     private async Task ScanDirectCameraAsync(CancellationToken cancellationToken)
@@ -19,24 +28,46 @@ public sealed partial class MainViewModel
             return;
         }
 
+        IPAddress? targetAddress = null;
+        if (!string.IsNullOrWhiteSpace(DirectCameraIp))
+        {
+            if (!IPAddress.TryParse(DirectCameraIp.Trim(), out targetAddress) ||
+                targetAddress.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+            {
+                StatusText = "La IP de cámara directa no es válida. Ejemplo: 192.168.1.50 o 169.254.10.20.";
+                return;
+            }
+
+            DirectCameraIp = targetAddress.ToString();
+        }
+
         await PrepareAlternativeScanAsync();
 
         try
         {
-            StatusText = $"Detectando cámara directa por {SelectedInterface.Name} · sin barrido de subred...";
+            StatusText = targetAddress is null
+                ? $"Cámara directa · discovery por {SelectedInterface.Name} · sin sweep..."
+                : $"Cámara directa · objetivo {targetAddress} · probando host...";
 
             await foreach (var progress in _scanner.ScanAsync(
                                SelectedInterface,
                                cancellationToken: cancellationToken,
-                               mode: DiscoveryScanMode.DirectCamera))
+                               mode: DiscoveryScanMode.DirectCamera,
+                               directAddress: targetAddress))
             {
                 await ProcessScanProgressAsync(progress, cancellationToken);
-                StatusText = $"Cámara directa · dispositivos encontrados: {Devices.Count}";
+                StatusText = targetAddress is null
+                    ? $"Cámara directa · discovery · encontrados: {Devices.Count}"
+                    : $"Cámara directa · {targetAddress} · evidencia encontrada: {Devices.Count}";
             }
 
             StatusText = Devices.Count == 0
-                ? "Cámara directa: no se detectaron cámaras en la interfaz seleccionada."
-                : $"Cámara directa completa: {Devices.Count} cámara(s)/dispositivo(s) de imagen encontrado(s).";
+                ? targetAddress is null
+                    ? "Cámara directa: no se detectó ninguna cámara mediante discovery en la interfaz seleccionada."
+                    : $"Cámara directa: {targetAddress} no respondió como cámara ni expuso evidencia reconocible."
+                : targetAddress is null
+                    ? $"Discovery directo completo: {Devices.Count} cámara(s)/dispositivo(s) de imagen encontrado(s)."
+                    : $"Cámara directa completa: {targetAddress} · {Devices.Count} resultado(s).";
         }
         catch (OperationCanceledException)
         {
@@ -168,7 +199,6 @@ public sealed partial class MainViewModel
         if (progress.NewlyFound is null)
             return;
 
-        // device conserva la evidencia de red obtenida por el pipeline de discovery.
         var device = progress.NewlyFound;
 
         // Evitamos duplicar la misma IP cuando el escaneo total consulta varias interfaces.
@@ -178,11 +208,8 @@ public sealed partial class MainViewModel
             return;
         }
 
-        // viewModel expone el nuevo dispositivo a la interfaz WPF.
         var viewModel = new DeviceViewModel(device);
         _allDiscoveredDevices.Add(viewModel);
-
-        // La clasificación final conserva la regla existente: solo cámaras/candidatos de imagen llegan a la lista visible.
         await ResolveDeviceAsync(device, viewModel, cancellationToken);
     }
 
