@@ -1,23 +1,16 @@
 using CameraInspector.Core.Interfaces;
+using CameraInspector.Core.Models;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace CameraInspector.App.ViewModels;
 
 public sealed partial class MainViewModel
 {
-    public Task<object?> RequestCredentialsForOperationAsync()
-    {
-        return RequestCredentialsCoreAsync();
-    }
-
-    private async Task<object?> RequestCredentialsCoreAsync()
+    public async Task<(string Username, string Password)?> RequestCredentialsForOperationAsync()
     {
         var credentials = await GetCredentialsAsync();
-        return credentials is null
-            ? null
-            : new OperationCredentialSession(credentials.Username, credentials.Password);
+        return credentials is null ? null : (credentials.Username, credentials.Password);
     }
-
-    public sealed record OperationCredentialSession(string Username, string Password);
 
     public async Task RecheckSelectedHealthAsync()
     {
@@ -40,9 +33,9 @@ public sealed partial class MainViewModel
         device.LastHealthCheckAt = result.CheckedAt;
         device.Status = result.State switch
         {
-            Core.Models.CameraHealthState.Healthy => Core.Models.DeviceStatus.Online,
-            Core.Models.CameraHealthState.NoResponse => Core.Models.DeviceStatus.Error,
-            _ => Core.Models.DeviceStatus.Warning
+            CameraHealthState.Healthy => DeviceStatus.Online,
+            CameraHealthState.NoResponse => DeviceStatus.Error,
+            _ => DeviceStatus.Warning
         };
         SelectedDevice.RefreshHealth();
         SelectedDevice.Refresh();
