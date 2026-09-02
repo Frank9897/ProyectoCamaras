@@ -6,7 +6,7 @@ using CameraInspector.Core.Models;
 namespace CameraInspector.Network.Detection;
 
 /// <summary>
-/// Fingerprint mínimo de un servidor RTSP. Usa OPTIONS para confirmar RTSP y recuperar Server/Public.
+/// Fingerprint de un servidor RTSP. Una respuesta RTSP valida es evidencia fuerte de dispositivo de video.
 /// </summary>
 public sealed class RtspFingerprintDetector : IManufacturerDetector
 {
@@ -38,6 +38,9 @@ public sealed class RtspFingerprintDetector : IManufacturerDetector
                 DetectorName = Name,
                 Confidence = manufacturer is null ? 0.82 : 0.92,
                 CameraEvidence = true,
+                EvidenceDetails = string.IsNullOrWhiteSpace(server)
+                    ? $"RTSP/1.0 en TCP/{port}"
+                    : $"RTSP/1.0 en TCP/{port} · Server: {server}",
                 Manufacturer = manufacturer,
                 RtspSupported = true,
                 RtspPort = port,
