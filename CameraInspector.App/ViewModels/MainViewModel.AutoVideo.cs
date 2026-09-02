@@ -17,7 +17,6 @@ public sealed partial class MainViewModel
         var device = SelectedDevice.Device;
         StatusText = $"Probando video de {device.IpAddress}...";
 
-        // Primero probamos credenciales ya guardadas para no pedirlas innecesariamente.
         var savedCredentials = await LoadSavedCredentialSessionAsync(cancellationToken);
         if (savedCredentials is not null &&
             await TryResolveAndPlayMainStreamAsync(savedCredentials, cancellationToken))
@@ -26,7 +25,6 @@ public sealed partial class MainViewModel
             return true;
         }
 
-        // Una cámara recién restaurada o configurada puede publicar RTSP sin autenticación.
         var anonymous = new CredentialSession(string.Empty, string.Empty, null);
         if (await TryResolveAndPlayMainStreamAsync(anonymous, cancellationToken))
         {
@@ -34,7 +32,6 @@ public sealed partial class MainViewModel
             return true;
         }
 
-        // Si ninguno de los dos caminos funcionó, pedimos las credenciales dentro del flujo de VIDEO.
         StatusText =
             $"No se pudo iniciar el video automáticamente en {device.IpAddress}. " +
             "La cámara puede requerir usuario y contraseña.";
@@ -81,7 +78,6 @@ public sealed partial class MainViewModel
         }
         catch
         {
-            // Si el almacén seguro no está disponible, todavía podemos probar acceso anónimo.
             return null;
         }
     }
@@ -110,11 +106,10 @@ public sealed partial class MainViewModel
             ResolvedMainStream = stream;
             _videoPlayerService.Play(stream, credentials.Username, credentials.Password);
 
-            // Esperamos a que LibVLC confirme Playing o informe un error real.
             var player = _videoPlayerService.Player;
             var result = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            EventHandler? playingHandler = null;
-            EventHandler? errorHandler = null;
+            EventHandler<EventArgs>? playingHandler = null;
+            EventHandler<EventArgs>? errorHandler = null;
             playingHandler = (_, _) => result.TrySetResult(true);
             errorHandler = (_, _) => result.TrySetResult(false);
 
