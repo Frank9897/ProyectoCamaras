@@ -8,12 +8,6 @@ namespace CameraInspector.Core.Interfaces;
 /// </summary>
 public interface IOnvifNetworkConfigurationService
 {
-    Task<OnvifNetworkConfiguration?> GetConfigurationAsync(
-        DiscoveredDevice device,
-        string username,
-        string password,
-        CancellationToken cancellationToken = default);
-
     Task<string?> GetHostnameAsync(
         DiscoveredDevice device,
         string username,
