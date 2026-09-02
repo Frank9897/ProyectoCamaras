@@ -7,8 +7,8 @@ using CameraInspector.Core.Models;
 namespace CameraInspector.Network;
 
 /// <summary>
-/// Descubrimiento mDNS/DNS-SD para dispositivos Axis.
-/// Cubre el servicio legacy _axis-video y los servicios VAPIX modernos.
+/// Descubrimiento mDNS/DNS-SD para cámaras y servicios de video.
+/// Axis utiliza servicios _axis-video/VAPIX y otros fabricantes pueden anunciar HTTP/RTSP por Bonjour.
 /// </summary>
 public sealed class MdnsDiscoveryService
 {
@@ -18,7 +18,10 @@ public sealed class MdnsDiscoveryService
     {
         "_axis-video._tcp.local",
         "_vapix-http._tcp.local",
-        "_vapix-https._tcp.local"
+        "_vapix-https._tcp.local",
+        "_http._tcp.local",
+        "_https._tcp.local",
+        "_rtsp._tcp.local"
     };
 
     private readonly TimeSpan _timeout = TimeSpan.FromSeconds(2.5);
@@ -31,10 +34,27 @@ public sealed class MdnsDiscoveryService
 
         using var socket = new UdpClient(AddressFamily.InterNetwork);
         socket.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-        socket.Client.Bind(new IPEndPoint(networkInterface.IpAddress, 0));
+
         try
         {
-            socket.Client.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastInterface,
+            socket.Client.Bind(new IPEndPoint(IPAddress.Any, Port));
+            socket.Client.SetSocketOption(
+                SocketOptionLevel.IP,
+                SocketOptionName.AddMembership,
+                new MulticastOption(MulticastAddress, networkInterface.IpAddress));
+        }
+        catch (SocketException)
+        {
+            // Algunos servicios mDNS de Windows ya ocupan UDP/5353. Intentar el puerto local
+            // 5353 igualmente permite aprovechar respuestas unicast/de entorno disponibles.
+            socket.Client.Bind(new IPEndPoint(networkInterface.IpAddress, 0));
+        }
+
+        try
+        {
+            socket.Client.SetSocketOption(
+                SocketOptionLevel.IP,
+                SocketOptionName.MulticastInterface,
                 networkInterface.IpAddress.GetAddressBytes());
         }
         catch (SocketException)
@@ -70,9 +90,6 @@ public sealed class MdnsDiscoveryService
                 var packet = await receive;
                 foreach (var record in ParsePacket(packet.Buffer))
                 {
-                    if (!ServiceTypes.Any(type => record.ServiceType.Equals(type, StringComparison.OrdinalIgnoreCase)))
-                        continue;
-
                     var key = record.InstanceName ?? record.TargetName ?? packet.RemoteEndPoint.Address.ToString();
                     result[key] = result.TryGetValue(key, out var existing)
                         ? Merge(existing, record, packet.RemoteEndPoint.Address)
@@ -89,9 +106,9 @@ public sealed class MdnsDiscoveryService
             }
         }
 
-        return result.Values.Select(ToDevice)
-            .Where(device => device is not null)
-            .Cast<DiscoveredDevice>()
+        return result.Values
+            .Select(ToDevice)
+            .Where(device => !string.IsNullOrWhiteSpace(device.IpAddress))
             .GroupBy(device => device.IpAddress, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
             .ToList();
@@ -153,21 +170,40 @@ public sealed class MdnsDiscoveryService
             records.Add(record);
         }
 
-        var addresses = records.Where(r => r.Type == 1 && r.RDataLength == 4)
+        var addresses = records
+            .Where(r => r.Type == 1 && r.RDataLength == 4)
             .GroupBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => new IPAddress(data.Skip(g.Last().RDataOffsetInPacket).Take(4).ToArray()), StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(
+                g => g.Key,
+                g => new IPAddress(data.Skip(g.Last().RDataOffsetInPacket).Take(4).ToArray()),
+                StringComparer.OrdinalIgnoreCase);
 
         foreach (var ptr in records.Where(r => r.Type == 12))
         {
             var ptrOffset = ptr.RDataOffsetInPacket;
             if (!TryReadName(data, ref ptrOffset, out var instance)) continue;
-            var srv = records.FirstOrDefault(r => r.Type == 33 && r.Name.Equals(instance, StringComparison.OrdinalIgnoreCase));
-            var target = srv.Type == 33 ? ReadSrvTarget(data, srv.RDataOffsetInPacket, out var srvPort) : null;
+
+            var srv = records.FirstOrDefault(r =>
+                r.Type == 33 && r.Name.Equals(instance, StringComparison.OrdinalIgnoreCase));
+            var target = srv.Type == 33
+                ? ReadSrvTarget(data, srv.RDataOffsetInPacket, out var srvPort)
+                : null;
             if (srv.Type != 33) srvPort = null;
-            var ip = target is not null && addresses.TryGetValue(target, out var parsed) ? parsed : null;
-            var serviceType = ServiceTypes.FirstOrDefault(type => ptr.Name.Equals(type, StringComparison.OrdinalIgnoreCase));
+
+            var ip = target is not null && addresses.TryGetValue(target, out var parsed)
+                ? parsed
+                : null;
+            var serviceType = ServiceTypes.FirstOrDefault(type =>
+                ptr.Name.Equals(type, StringComparison.OrdinalIgnoreCase));
             if (serviceType is null) continue;
-            yield return new MdnsServiceRecord(serviceType, instance, target, ip, srvPort, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+
+            yield return new MdnsServiceRecord(
+                serviceType,
+                instance,
+                target,
+                ip,
+                srvPort,
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
         }
     }
 
@@ -180,6 +216,7 @@ public sealed class MdnsDiscoveryService
             !TrySkip(data, ref offset, 4) ||
             !TryReadUInt16(data, ref offset, out var length) ||
             offset + length > data.Length) return false;
+
         var rdataOffset = offset;
         offset += length;
         record = new DnsRecord(name, type, @class, rdataOffset, length);
@@ -202,6 +239,7 @@ public sealed class MdnsDiscoveryService
         var cursor = offset;
         var jumped = false;
         var safety = 0;
+
         while (cursor < data.Length && safety++ < 64)
         {
             var length = data[cursor++];
@@ -211,6 +249,7 @@ public sealed class MdnsDiscoveryService
                 name = string.Join('.', labels);
                 return true;
             }
+
             if ((length & 0xC0) == 0xC0)
             {
                 if (cursor >= data.Length) return false;
@@ -221,10 +260,12 @@ public sealed class MdnsDiscoveryService
                 jumped = true;
                 continue;
             }
+
             if (length > 63 || cursor + length > data.Length) return false;
             labels.Add(Encoding.ASCII.GetString(data, cursor, length));
             cursor += length;
         }
+
         return false;
     }
 
@@ -248,27 +289,48 @@ public sealed class MdnsDiscoveryService
         => a with
         {
             TargetName = a.TargetName ?? b.TargetName,
-            Address = a.Address ?? b.Address ?? source,
+            Address = a.Address ?? b.Address,
             Port = a.Port ?? b.Port,
-            Txt = a.Txt.Count > 0 ? a.Txt : b.Txt
+            Txt = a.Txt.Count > 0 ? a.Txt : b.Txt,
+            SourceAddress = a.SourceAddress ?? source
         };
 
     private static DiscoveredDevice ToDevice(MdnsServiceRecord record)
-        => new()
+    {
+        var isAxis = record.ServiceType.Equals("_axis-video._tcp.local", StringComparison.OrdinalIgnoreCase) ||
+                     record.ServiceType.StartsWith("_vapix-", StringComparison.OrdinalIgnoreCase) ||
+                     record.InstanceName?.Contains("Axis", StringComparison.OrdinalIgnoreCase) == true ||
+                     record.TargetName?.Contains("axis", StringComparison.OrdinalIgnoreCase) == true;
+
+        var isRtsp = record.ServiceType.Equals("_rtsp._tcp.local", StringComparison.OrdinalIgnoreCase);
+        var isHttps = record.ServiceType.Contains("https", StringComparison.OrdinalIgnoreCase);
+        var isHttp = record.ServiceType.Contains("http", StringComparison.OrdinalIgnoreCase) || isAxis;
+        var provider = isAxis ? "Axis VAPIX / Bonjour" : "mDNS/Bonjour";
+
+        var device = new DiscoveredDevice
         {
             IpAddress = record.Address?.ToString() ?? record.SourceAddress?.ToString() ?? string.Empty,
             Hostname = record.TargetName,
-            Manufacturer = "Axis",
-            Model = ExtractModel(record.InstanceName),
-            CameraEvidence = true,
-            HttpSupported = record.ServiceType.Contains("http", StringComparison.OrdinalIgnoreCase) || record.ServiceType.Contains("axis-video", StringComparison.OrdinalIgnoreCase),
-            HttpsSupported = record.ServiceType.Contains("https", StringComparison.OrdinalIgnoreCase),
-            HttpPort = record.Port,
-            RtspSupported = true,
-            RtspPort = 554,
-            AssignedProviderName = "Axis VAPIX",
+            Manufacturer = isAxis ? "Axis" : null,
+            Model = isAxis ? ExtractModel(record.InstanceName) : null,
+            CameraEvidence = isAxis || isRtsp,
+            HttpSupported = isHttp,
+            HttpsSupported = isHttps,
+            HttpPort = !isRtsp ? record.Port : null,
+            RtspSupported = isRtsp || isAxis,
+            RtspPort = isRtsp ? record.Port : isAxis ? 554 : null,
+            AssignedProviderName = provider,
             Status = DeviceStatus.Online
         };
+
+        device.AddEvidence(
+            isAxis ? "mDNS/Bonjour" : "mDNS/Bonjour",
+            isAxis || isRtsp ? 0.88 : 0.3,
+            isAxis ? $"servicio {record.ServiceType}" : $"servicio {record.ServiceType}",
+            isAxis || isRtsp);
+
+        return device;
+    }
 
     private static string? ExtractModel(string? instanceName)
     {
@@ -279,5 +341,12 @@ public sealed class MdnsDiscoveryService
     }
 
     private readonly record struct DnsRecord(string Name, ushort Type, ushort Class, int RDataOffsetInPacket, int RDataLength);
-    private sealed record MdnsServiceRecord(string ServiceType, string? InstanceName, string? TargetName, IPAddress? Address, int? Port, Dictionary<string, string> Txt, IPAddress? SourceAddress = null);
+    private sealed record MdnsServiceRecord(
+        string ServiceType,
+        string? InstanceName,
+        string? TargetName,
+        IPAddress? Address,
+        int? Port,
+        Dictionary<string, string> Txt,
+        IPAddress? SourceAddress = null);
 }
