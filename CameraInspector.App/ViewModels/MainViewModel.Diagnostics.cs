@@ -30,11 +30,11 @@ public sealed partial class MainViewModel
         DiagnosticResults.Clear();
 
         var device = SelectedDevice.Device;
+        var cameraId = SelectedDevice.CameraId;
         StatusText = $"Diagnóstico: verificando comunicación y servicios de {device.IpAddress}...";
 
         try
         {
-            // Primero comprobamos salud sin solicitar usuario/contraseña.
             await RecheckSelectedHealthAsync();
 
             var results = await _diagnosticService.RunAsync(
@@ -46,10 +46,10 @@ public sealed partial class MainViewModel
             foreach (var result in results)
                 DiagnosticResults.Add(result);
 
-            if (device.CameraId is int cameraId)
+            if (cameraId is int persistedCameraId)
             {
-                await _diagnosticHistoryStore.SaveAsync(cameraId, results);
-                await RefreshHistorySilentlyAsync(cameraId);
+                await _diagnosticHistoryStore.SaveAsync(persistedCameraId, results);
+                await RefreshHistorySilentlyAsync(persistedCameraId);
             }
 
             var supported = results.Count(x => !x.NotSupported);
