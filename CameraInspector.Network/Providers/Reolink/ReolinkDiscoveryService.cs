@@ -13,7 +13,7 @@ namespace CameraInspector.Network.Providers.Reolink;
 public sealed class ReolinkDiscoveryService
 {
     private static readonly byte[] Probe = { 0xAA, 0xAA, 0x00, 0x00 };
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(2.5);
+    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(1.2);
 
     public async Task<IReadOnlyList<DiscoveredDevice>> DiscoverAsync(
         NetworkInterfaceInfo networkInterface,
@@ -39,7 +39,6 @@ public sealed class ReolinkDiscoveryService
             }
             catch (SocketException)
             {
-                // Una ruta de broadcast puede no estar disponible; la otra puede funcionar.
             }
         }
 
