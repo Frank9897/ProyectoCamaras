@@ -29,6 +29,12 @@ public partial class MainWindow
             return;
         }
 
+        // VIDEO debe abrirse únicamente por una selección interactiva del técnico.
+        // Evitamos reabrirlo cuando WPF restaura foco, cambia el DataContext o modifica la selección
+        // de forma programática después de cerrar la ventana independiente.
+        if (!selectedTab.IsMouseDirectlyOver)
+            return;
+
         if (_videoTabOpening)
             return;
 
