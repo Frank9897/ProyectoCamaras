@@ -4,25 +4,6 @@ namespace CameraInspector.App.ViewModels;
 
 public sealed partial class MainViewModel
 {
-    private bool _authenticationRequired;
-
-    /// <summary>
-    /// Indica si la cámara necesita autenticación para iniciar el video.
-    /// La ventana de video utiliza este estado para habilitar el acceso a credenciales.
-    /// </summary>
-    public bool AuthenticationRequired
-    {
-        get => _authenticationRequired;
-        private set
-        {
-            if (_authenticationRequired == value)
-                return;
-
-            _authenticationRequired = value;
-            OnPropertyChanged();
-        }
-    }
-
     /// <summary>
     /// Intenta abrir automáticamente el video al entrar a la ventana independiente.
     /// Primero usa credenciales guardadas, luego prueba sin credenciales y finalmente
