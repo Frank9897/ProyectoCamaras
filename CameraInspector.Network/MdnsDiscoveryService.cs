@@ -185,10 +185,11 @@ public sealed class MdnsDiscoveryService
 
             var srv = records.FirstOrDefault(r =>
                 r.Type == 33 && r.Name.Equals(instance, StringComparison.OrdinalIgnoreCase));
-            var target = srv.Type == 33
-                ? ReadSrvTarget(data, srv.RDataOffsetInPacket, out var srvPort)
-                : null;
-            if (srv.Type != 33) srvPort = null;
+
+            int? srvPort = null;
+            string? target = null;
+            if (srv.Type == 33)
+                target = ReadSrvTarget(data, srv.RDataOffsetInPacket, out srvPort);
 
             var ip = target is not null && addresses.TryGetValue(target, out var parsed)
                 ? parsed
@@ -324,9 +325,9 @@ public sealed class MdnsDiscoveryService
         };
 
         device.AddEvidence(
-            isAxis ? "mDNS/Bonjour" : "mDNS/Bonjour",
+            "mDNS/Bonjour",
             isAxis || isRtsp ? 0.88 : 0.3,
-            isAxis ? $"servicio {record.ServiceType}" : $"servicio {record.ServiceType}",
+            $"servicio {record.ServiceType}",
             isAxis || isRtsp);
 
         return device;
