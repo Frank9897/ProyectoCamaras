@@ -34,6 +34,11 @@ public partial class MainWindow
         }));
     }
 
+    private void OpenIpVideoFromPanel_Click(object sender, RoutedEventArgs e)
+    {
+        OpenIpCameraVideoWindow();
+    }
+
     private void OpenIpCameraVideoWindow()
     {
         if (DataContext is not MainViewModel viewModel)
