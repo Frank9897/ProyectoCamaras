@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 using CameraInspector.App.ViewModels;
 
 namespace CameraInspector.App;
@@ -139,21 +138,9 @@ public partial class IpCameraVideoWindow
                 $"No se pudo iniciar el video de {ip}. La cámara puede requerir usuario y contraseña, RTSP habilitado o una ruta de stream compatible. " +
                 "Puede abrir CREDENCIALES y volver a intentar.";
 
-            viewModel.PropertyChanged -= AuthenticationViewModel_PropertyChanged;
-            viewModel.PropertyChanged += AuthenticationViewModel_PropertyChanged;
             RefreshCredentialsButton();
             RefreshButtons();
         }));
-    }
-
-    private void RefreshCredentialsButton()
-    {
-        if (_credentialsButton is null)
-            return;
-
-        _credentialsButton.IsEnabled = DataContext is MainViewModel viewModel
-                                       && viewModel.SelectedDevice is not null
-                                       && viewModel.AuthenticationRequired;
     }
 
     private void DetachAuthenticationHandlers()
@@ -169,25 +156,5 @@ public partial class IpCameraVideoWindow
             _authenticationViewModel.PropertyChanged -= AuthenticationViewModel_PropertyChanged;
             _authenticationViewModel = null;
         }
-    }
-
-    private static Button? FindButtonByContent(DependencyObject root, string expectedContent)
-    {
-        var childrenCount = VisualTreeHelper.GetChildrenCount(root);
-        for (var index = 0; index < childrenCount; index++)
-        {
-            var child = VisualTreeHelper.GetChild(root, index);
-            if (child is Button button &&
-                string.Equals(button.Content?.ToString(), expectedContent, StringComparison.OrdinalIgnoreCase))
-            {
-                return button;
-            }
-
-            var nested = FindButtonByContent(child, expectedContent);
-            if (nested is not null)
-                return nested;
-        }
-
-        return null;
     }
 }
