@@ -28,7 +28,14 @@ public sealed partial class MainViewModel : ObservableObject
 
     [ObservableProperty] private string _statusText = "Listo para escanear.";
     [ObservableProperty] private bool _isScanning;
-    [ObservableProperty] private bool _isDiagnosing;
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(GetMainStreamUriCommand))]
+    [NotifyCanExecuteChangedFor(nameof(GetSubStreamUriCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RunDiagnosticsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCredentialsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DeleteCredentialsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RefreshHistoryCommand))]
+    private bool _isDiagnosing;
     [ObservableProperty] private NetworkInterfaceInfo? _selectedInterface;
 
     [ObservableProperty]
@@ -37,6 +44,7 @@ public sealed partial class MainViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(RunDiagnosticsCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveCredentialsCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeleteCredentialsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RefreshHistoryCommand))]
     private DeviceViewModel? _selectedDevice;
 
     [ObservableProperty] private CameraStreamInfo? _resolvedMainStream;
