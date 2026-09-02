@@ -75,7 +75,6 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
             }
             else if (directMode)
             {
-                // Sin IP no hacemos un sweep de subred. Discovery + ARP se utilizan como fuentes rápidas.
                 candidates = new List<IPAddress>();
             }
             else
@@ -92,54 +91,97 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
             ? Task.FromResult<IReadOnlyList<IPAddress>>(Array.Empty<IPAddress>())
             : _pingScanner.ScanAsync(candidates, cancellationToken: cancellationToken);
 
-        var onvifTask = SafeDiscoverAsync(() => _onvifDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
-        var vivotekTask = SafeDiscoverAsync(() => _vivotekDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
-        var reolinkTask = SafeDiscoverAsync(() => _reolinkDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
-        var ssdpTask = SafeDiscoverAsync(() => _ssdpDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
-        var legacyVendorTask = SafeDiscoverAsync(() => _legacyVendorDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
-        var mdnsTask = SafeDiscoverAsync(() => _mdnsDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
-
-        // Las fuentes siguen ejecutándose en paralelo. No añadimos esperas artificiales entre protocolos.
-        await Task.WhenAll(pingTask, onvifTask, vivotekTask, reolinkTask, ssdpTask, legacyVendorTask, mdnsTask);
-
-        var responsive = await pingTask;
-        var onvifResults = await onvifTask;
-        var vivotekResults = await vivotekTask;
-        var reolinkResults = await reolinkTask;
-        var ssdpResults = await ssdpTask;
-        var legacyVendorResults = await legacyVendorTask;
-        var mdnsResults = await mdnsTask;
-
-        if (hasDirectTarget)
+        // Todos los protocolos arrancan juntos, pero la UI recibe cada lote apenas termina.
+        var discoveryTasks = new List<Task<IReadOnlyList<DiscoveredDevice>>>
         {
-            onvifResults = FilterDirect(onvifResults, directAddress!, GetIpFromOnvif);
-            vivotekResults = FilterDirect(vivotekResults, directAddress!, ToIp);
-            reolinkResults = FilterDirect(reolinkResults, directAddress!, ToIp);
-            ssdpResults = FilterDirect(ssdpResults, directAddress!, ToIp);
-            legacyVendorResults = FilterDirect(legacyVendorResults, directAddress!, ToIp);
-            mdnsResults = FilterDirect(mdnsResults, directAddress!, ToIp);
-            responsive = responsive.Where(ip => ip.Equals(directAddress)).ToArray();
+            DiscoverOnvifAsync(networkInterface, cancellationToken),
+            SafeDiscoverAsync(() => _vivotekDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken),
+            SafeDiscoverAsync(() => _reolinkDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken),
+            SafeDiscoverAsync(() => _ssdpDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken),
+            SafeDiscoverAsync(() => _legacyVendorDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken),
+            SafeDiscoverAsync(() => _mdnsDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken)
+        };
+
+        var arpTable = _arpResolver.GetArpTable();
+        var devices = new Dictionary<string, DiscoveredDevice>(StringComparer.OrdinalIgnoreCase);
+        var emittedIps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var discoveredCount = 0;
+
+        // Ping no necesita bloquear al discovery. En modo directo con IP solo interesa el objetivo.
+        var responsive = await pingTask;
+        foreach (var ip in responsive)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (hasDirectTarget && !ip.Equals(directAddress)) continue;
+
+            var device = GetOrCreate(devices, ip.ToString());
+            device.Status = DeviceStatus.Online;
+            device.AddEvidence("Ping", 0.05, "ICMP respondió", false);
+            if (arpTable.TryGetValue(ip, out var mac)) device.MacAddress ??= mac;
         }
 
-        // ARP es inmediato y evita el delay fijo de 150 ms que ralentizaba cada ejecución.
-        var arpTable = _arpResolver.GetArpTable();
+        // Esperamos a que cada protocolo termine por separado y publicamos inmediatamente.
+        var pending = discoveryTasks.ToList();
+        while (pending.Count > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var completed = await Task.WhenAny(pending);
+            pending.Remove(completed);
+            var batch = await completed;
 
+            foreach (var source in batch)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!IPAddress.TryParse(source.IpAddress, out var ip)) continue;
+                if (hasDirectTarget && !ip.Equals(directAddress)) continue;
+
+                var device = GetOrCreate(devices, ip.ToString());
+                MergeSourceIntoDevice(device, source);
+                if (arpTable.TryGetValue(ip, out var mac)) device.MacAddress ??= mac;
+
+                if (!emittedIps.Add(device.IpAddress))
+                    continue;
+
+                device.LastSeenAt = DateTimeOffset.UtcNow;
+                discoveredCount++;
+                yield return Report(new ScanProgress(discoveredCount, 0, device), progress);
+            }
+        }
+
+        // ARP aporta candidatos para cámaras que no contestan discovery.
         var arpCandidates = hasDirectTarget
             ? arpTable.Keys.Where(ip => ip.Equals(directAddress!))
-            : directMode
-                ? arpTable.Keys
-                : arpTable.Keys;
+            : arpTable.Keys;
 
-        var discoveryCandidates = onvifResults.Select(GetIpFromOnvif).Where(ip => ip is not null).Cast<IPAddress>()
-            .Concat(vivotekResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>())
-            .Concat(reolinkResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>())
-            .Concat(ssdpResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>())
-            .Concat(legacyVendorResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>())
-            .Concat(mdnsResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>());
+        foreach (var ip in arpCandidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!emittedIps.Add(ip.ToString()))
+                continue;
+
+            var device = GetOrCreate(devices, ip.ToString());
+            device.Status = DeviceStatus.Online;
+            if (arpTable.TryGetValue(ip, out var mac)) device.MacAddress ??= mac;
+            device.AddEvidence("ARP", 0.08, "host presente en caché ARP", false);
+
+            if (directMode)
+            {
+                device.LastSeenAt = DateTimeOffset.UtcNow;
+                discoveredCount++;
+                yield return Report(new ScanProgress(discoveredCount, 0, device), progress);
+            }
+        }
+
+        var discoveryCandidates = devices.Values
+            .Select(device => IPAddress.TryParse(device.IpAddress, out var ip) ? ip : null)
+            .Where(ip => ip is not null)
+            .Cast<IPAddress>()
+            .Distinct()
+            .ToList();
 
         var portCandidates = hasDirectTarget
-            ? candidates
-                .Concat(discoveryCandidates)
+            ? discoveryCandidates
+                .Append(directAddress!)
                 .Where(address => address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
                 .Distinct()
                 .ToList()
@@ -158,8 +200,6 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         IReadOnlyList<CameraPortScanResult> portResults;
         if (portCandidates.Count == 0 && directMode)
         {
-            // No hubo discovery: usamos solo la tabla ARP y cuatro puertos de alta señal.
-            // Sigue sin convertirse en un escaneo completo de subred.
             portResults = arpCandidates.Any()
                 ? await _cameraPortScanner.ScanAsync(
                     arpCandidates,
@@ -185,70 +225,79 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
                         cancellationToken: cancellationToken);
         }
 
-        var devices = new Dictionary<string, DiscoveredDevice>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var ip in responsive)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var device = GetOrCreate(devices, ip.ToString());
-            device.Status = DeviceStatus.Online;
-            device.AddEvidence("Ping", 0.05, "ICMP respondió", false);
-            if (arpTable.TryGetValue(ip, out var mac)) device.MacAddress ??= mac;
-        }
-
-        foreach (var result in onvifResults)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var ip = GetIpFromOnvif(result);
-            if (ip is null) continue;
-            var device = GetOrCreate(devices, ip.ToString());
-            device.OnvifSupported = true;
-            device.OnvifDeviceServiceXAddr = result.DeviceServiceXAddr;
-            device.OnvifProfile = "detectado por WS-Discovery";
-            device.CameraEvidence = true;
-            device.Status = DeviceStatus.Online;
-            device.AddEvidence("WS-Discovery", 0.98, "respuesta ONVIF", true);
-            if (arpTable.TryGetValue(ip, out var mac)) device.MacAddress ??= mac;
-        }
-
-        MergeDiscoverySource(devices, vivotekResults, "VIVOTEK Discovery", true, 0.99, "Shepherd/IW2");
-        MergeDiscoverySource(devices, reolinkResults, "Reolink LAN Discovery", true, 0.98, "UDP/2000 · respuesta UDP/3000");
-        MergeDiscoverySource(devices, legacyVendorResults, null, true, 0.99, null);
-        MergeDiscoverySource(devices, ssdpResults, "SSDP/UPnP", false, 0.35, null);
-        MergeDiscoverySource(devices, mdnsResults, "mDNS/Bonjour", false, 0.3, null);
-
         foreach (var portResult in portResults)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var device = GetOrCreate(devices, portResult.IpAddress.ToString());
             if (arpTable.TryGetValue(portResult.IpAddress, out var mac)) device.MacAddress ??= mac;
             ApplyPortEvidence(device, portResult);
-        }
 
-        var ordered = devices.Values
-            .Where(device => device.IpAddress.Length > 0)
-            .Where(device => !hasDirectTarget || string.Equals(device.IpAddress, directAddress!.ToString(), StringComparison.OrdinalIgnoreCase))
-            .OrderBy(device => device.IpAddress, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+            // Un puerto puede ser la primera evidencia fuerte de una cámara.
+            if (!emittedIps.Add(device.IpAddress))
+                continue;
 
-        var total = Math.Max(candidates.Count, ordered.Count);
-        for (var index = 0; index < ordered.Count; index++)
-        {
-            var device = ordered[index];
-            cancellationToken.ThrowIfCancellationRequested();
             device.LastSeenAt = DateTimeOffset.UtcNow;
-            yield return Report(new ScanProgress(index + 1, total, device), progress);
+            discoveredCount++;
+            yield return Report(new ScanProgress(discoveredCount, 0, device), progress);
         }
 
-        if (ordered.Count == 0)
-            yield return new ScanProgress(total, total, null);
+        if (discoveredCount == 0)
+            yield return new ScanProgress(0, Math.Max(candidates.Count, 0), null);
     }
 
-    private static IReadOnlyList<T> FilterDirect<T>(
-        IReadOnlyList<T> source,
-        IPAddress target,
-        Func<T, IPAddress?> ipSelector)
-        => source.Where(item => ipSelector(item)?.Equals(target) == true).ToArray();
+    private async Task<IReadOnlyList<DiscoveredDevice>> DiscoverOnvifAsync(
+        NetworkInterfaceInfo networkInterface,
+        CancellationToken cancellationToken)
+    {
+        var results = await SafeDiscoverAsync(
+            () => _onvifDiscoveryService.DiscoverAsync(networkInterface, cancellationToken),
+            cancellationToken);
+
+        var devices = new List<DiscoveredDevice>(results.Count);
+        foreach (var result in results)
+        {
+            var ip = GetIpFromOnvif(result);
+            if (ip is null) continue;
+
+            var device = new DiscoveredDevice
+            {
+                IpAddress = ip.ToString(),
+                OnvifSupported = true,
+                OnvifDeviceServiceXAddr = result.DeviceServiceXAddr,
+                OnvifProfile = "detectado por WS-Discovery",
+                CameraEvidence = true,
+                Status = DeviceStatus.Online
+            };
+            device.AddEvidence("WS-Discovery", 0.98, "respuesta ONVIF", true);
+            devices.Add(device);
+        }
+        return devices;
+    }
+
+    private static void MergeSourceIntoDevice(DiscoveredDevice target, DiscoveredDevice source)
+    {
+        target.MacAddress ??= source.MacAddress;
+        target.Hostname ??= source.Hostname;
+        target.Manufacturer ??= source.Manufacturer;
+        target.Model ??= source.Model;
+        target.FirmwareVersion ??= source.FirmwareVersion;
+        target.SerialNumber ??= source.SerialNumber;
+        target.AssignedProviderName ??= source.AssignedProviderName;
+        target.OnvifSupported |= source.OnvifSupported;
+        target.RtspSupported |= source.RtspSupported;
+        target.HttpSupported |= source.HttpSupported;
+        target.HttpsSupported |= source.HttpsSupported;
+        target.HttpPort ??= source.HttpPort;
+        target.RtspPort ??= source.RtspPort;
+        target.CameraEvidence |= source.CameraEvidence;
+        target.OnvifDeviceServiceXAddr ??= source.OnvifDeviceServiceXAddr;
+        target.OnvifProfile ??= source.OnvifProfile;
+
+        foreach (var evidence in source.DetectionEvidence)
+            target.AddEvidence(evidence.Method, evidence.Confidence, evidence.Details, evidence.IsCameraEvidence);
+
+        target.Status = DeviceStatus.Online;
+    }
 
     private static DiscoveredDevice GetOrCreate(Dictionary<string, DiscoveredDevice> devices, string ipText)
     {
@@ -258,46 +307,6 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
             devices[ipText] = device;
         }
         return device;
-    }
-
-    private static void MergeDiscoverySource(
-        Dictionary<string, DiscoveredDevice> devices,
-        IEnumerable<DiscoveredDevice> sourceResults,
-        string? evidenceMethod,
-        bool defaultCameraEvidence,
-        double confidence,
-        string? defaultDetails)
-    {
-        foreach (var source in sourceResults)
-        {
-            if (!IPAddress.TryParse(source.IpAddress, out _)) continue;
-            var target = GetOrCreate(devices, source.IpAddress);
-
-            target.MacAddress ??= source.MacAddress;
-            target.Hostname ??= source.Hostname;
-            target.Manufacturer ??= source.Manufacturer;
-            target.Model ??= source.Model;
-            target.FirmwareVersion ??= source.FirmwareVersion;
-            target.SerialNumber ??= source.SerialNumber;
-            target.AssignedProviderName ??= source.AssignedProviderName;
-            target.OnvifSupported |= source.OnvifSupported;
-            target.RtspSupported |= source.RtspSupported;
-            target.HttpSupported |= source.HttpSupported;
-            target.HttpsSupported |= source.HttpsSupported;
-            target.HttpPort ??= source.HttpPort;
-            target.RtspPort ??= source.RtspPort;
-            target.CameraEvidence |= source.CameraEvidence || defaultCameraEvidence;
-            target.OnvifDeviceServiceXAddr ??= source.OnvifDeviceServiceXAddr;
-            target.OnvifProfile ??= source.OnvifProfile;
-
-            foreach (var evidence in source.DetectionEvidence)
-                target.AddEvidence(evidence.Method, evidence.Confidence, evidence.Details, evidence.IsCameraEvidence);
-
-            if (!string.IsNullOrWhiteSpace(evidenceMethod))
-                target.AddEvidence(evidenceMethod, confidence, defaultDetails ?? source.AssignedProviderName ?? source.Manufacturer, defaultCameraEvidence);
-
-            target.Status = DeviceStatus.Online;
-        }
     }
 
     private static ScanProgress Report(ScanProgress update, IProgress<ScanProgress>? progress)
@@ -320,9 +329,6 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         if (!Uri.TryCreate(result.DeviceServiceXAddr, UriKind.Absolute, out var uri)) return null;
         return IPAddress.TryParse(uri.Host, out var ip) ? ip : null;
     }
-
-    private static IPAddress? ToIp(DiscoveredDevice device)
-        => IPAddress.TryParse(device.IpAddress, out var ip) ? ip : null;
 
     private static void ApplyPortEvidence(DiscoveredDevice device, CameraPortScanResult portResult)
     {
