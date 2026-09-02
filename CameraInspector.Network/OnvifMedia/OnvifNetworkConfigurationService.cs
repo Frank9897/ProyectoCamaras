@@ -200,7 +200,8 @@ public sealed class OnvifNetworkConfigurationService : IOnvifNetworkConfiguratio
             "<tds:GetHostname/>",
             WsSecurityHeaderBuilder.Build(username, password),
             cancellationToken);
-        return string.IsNullOrWhiteSpace(response)
+
+        return response is null
             ? null
             : OnvifSoapClient.FirstValue(response, "Name");
     }
