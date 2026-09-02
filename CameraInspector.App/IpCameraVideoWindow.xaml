@@ -59,6 +59,9 @@
                         <TextBlock Text="OPERACIONES" Margin="0,14,0,7" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
                         <WrapPanel>
                             <Button Content="CONFIG. RED" Click="NetworkButton_Click" Width="120" Height="33" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
+                            <Button Content="IMAGEN" Click="ImagingButton_Click" Width="80" Height="33" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
+                            <Button Content="EVENTOS" Click="EventsButton_Click" Width="85" Height="33" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
+                            <Button Content="PROPIETARIO" Click="ProviderButton_Click" Width="105" Height="33" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
                             <Button Content="ABRIR WEB" Click="OpenWebButton_Click" Width="105" Height="33" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
                             <Button Content="COPIAR IP" Click="CopyIpButton_Click" Width="90" Height="33" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
                         </WrapPanel>
