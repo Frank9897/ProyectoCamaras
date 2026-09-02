@@ -15,6 +15,7 @@ public partial class IpCameraVideoWindow : Window
 {
     private readonly MainViewModel _viewModel;
     private readonly IVideoPlayerService _videoPlayerService;
+    private bool _automaticVideoAttemptStarted;
 
     public IpCameraVideoWindow(
         MainViewModel viewModel,
@@ -31,7 +32,33 @@ public partial class IpCameraVideoWindow : Window
 
         VideoSurface.MediaPlayer = _videoPlayerService.Player;
         Closed += IpCameraVideoWindow_Closed;
-        Loaded += (_, _) => RefreshButtons();
+        Loaded += IpCameraVideoWindow_Loaded;
+    }
+
+    private async void IpCameraVideoWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        RefreshButtons();
+
+        if (_automaticVideoAttemptStarted || _viewModel.SelectedDevice is null)
+            return;
+
+        _automaticVideoAttemptStarted = true;
+        try
+        {
+            await _viewModel.TryStartIpVideoAutomaticallyAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            _viewModel.StatusText = "Inicio automático del video cancelado.";
+        }
+        catch (Exception ex)
+        {
+            _viewModel.StatusText = $"No se pudo iniciar automáticamente el video: {ex.Message}";
+        }
+        finally
+        {
+            RefreshButtons();
+        }
     }
 
     private void IpCameraVideoWindow_Closed(object? sender, EventArgs e)
