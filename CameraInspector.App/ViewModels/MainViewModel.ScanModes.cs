@@ -9,15 +9,18 @@ public sealed partial class MainViewModel
 {
     /// <summary>
     /// IP opcional de la cámara que se quiere probar directamente.
-    /// Vacía significa discovery-only, sin sweep de subred.
+    /// Vacía significa descubrimiento directo sin conocer previamente la IP.
     /// </summary>
     [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty]
     private string _directCameraIp = string.Empty;
 
     /// <summary>
-    /// Ejecuta el modo de cámara directa sobre la interfaz actualmente seleccionada.
-    /// Cuando se informa una IP, todo el escaneo activo queda limitado a ese único host.
-    /// Sin IP, solo se ejecutan los mecanismos de discovery sin barrido de subred.
+    /// Ejecuta el modo de cámara directa.
+    ///
+    /// Sin IP: prioriza los mecanismos de discovery de la interfaz seleccionada y no hace
+    /// un sweep de toda la subred.
+    ///
+    /// Con IP: limita las pruebas activas a ese único host.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanStartAlternativeScan))]
     private async Task ScanDirectCameraAsync(CancellationToken cancellationToken)
@@ -46,7 +49,7 @@ public sealed partial class MainViewModel
         try
         {
             StatusText = targetAddress is null
-                ? $"Cámara directa · discovery por {SelectedInterface.Name} · sin sweep..."
+                ? $"Cámara directa · buscando dispositivos por discovery en {SelectedInterface.Name} · no hace falta conocer la IP..."
                 : $"Cámara directa · objetivo {targetAddress} · probando host...";
 
             await foreach (var progress in _scanner.ScanAsync(
@@ -56,18 +59,34 @@ public sealed partial class MainViewModel
                                directAddress: targetAddress))
             {
                 await ProcessScanProgressAsync(progress, cancellationToken);
+
                 StatusText = targetAddress is null
-                    ? $"Cámara directa · discovery · encontrados: {Devices.Count}"
+                    ? $"Cámara directa · discovery · cámaras detectadas: {Devices.Count}"
                     : $"Cámara directa · {targetAddress} · evidencia encontrada: {Devices.Count}";
             }
 
-            StatusText = Devices.Count == 0
-                ? targetAddress is null
-                    ? "Cámara directa: no se detectó ninguna cámara mediante discovery en la interfaz seleccionada."
-                    : $"Cámara directa: {targetAddress} no respondió como cámara ni expuso evidencia reconocible."
-                : targetAddress is null
-                    ? $"Discovery directo completo: {Devices.Count} cámara(s)/dispositivo(s) de imagen encontrado(s)."
+            if (targetAddress is null)
+            {
+                if (Devices.Count == 0)
+                {
+                    StatusText = "Cámara directa: no se detectó ninguna cámara. Verificá enlace Ethernet, PoE y que la cámara soporte algún mecanismo de discovery.";
+                }
+                else if (Devices.Count == 1)
+                {
+                    SelectedDevice ??= Devices[0];
+                    StatusText = $"Cámara detectada: {Devices[0].Manufacturer ?? "fabricante desconocido"} · {Devices[0].IpAddress}. Revisá CREDENCIALES para autenticarla si corresponde.";
+                }
+                else
+                {
+                    StatusText = $"Discovery directo completo: {Devices.Count} cámaras/dispositivos encontrados. Seleccioná uno para ingresar credenciales o probar video.";
+                }
+            }
+            else
+            {
+                StatusText = Devices.Count == 0
+                    ? $"Cámara directa: {targetAddress} no respondió como cámara ni expuso evidencia reconocible."
                     : $"Cámara directa completa: {targetAddress} · {Devices.Count} resultado(s).";
+            }
         }
         catch (OperationCanceledException)
         {
@@ -211,6 +230,11 @@ public sealed partial class MainViewModel
         var viewModel = new DeviceViewModel(device);
         _allDiscoveredDevices.Add(viewModel);
         await ResolveDeviceAsync(device, viewModel, cancellationToken);
+
+        // En discovery directo, cuando aparece una única cámara la dejamos seleccionada automáticamente
+        // para que el flujo siguiente sea simplemente: detectar -> credenciales -> video/diagnóstico.
+        if (SelectedDevice is null && Devices.Count == 1 && Devices.Contains(viewModel))
+            SelectedDevice = viewModel;
     }
 
     /// <summary>
