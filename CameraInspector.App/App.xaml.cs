@@ -24,7 +24,30 @@ public partial class App : Application
     private IHost? _host;
     private bool _isShuttingDown;
     public static IServiceProvider? Services { get; private set; }
-    private static string ErrorLogPath => Path.Combine(AppContext.BaseDirectory, "CameraInspector_error.txt");
+
+    // En una publicación single-file AppContext.BaseDirectory puede apuntar al directorio
+    // temporal donde .NET extrae componentes nativos. El log debe quedar junto al EXE real.
+    private static string ErrorLogPath
+    {
+        get
+        {
+            try
+            {
+                var processPath = Environment.ProcessPath;
+                var executableDirectory = string.IsNullOrWhiteSpace(processPath)
+                    ? null
+                    : Path.GetDirectoryName(processPath);
+
+                return Path.Combine(
+                    executableDirectory ?? AppContext.BaseDirectory,
+                    "CameraInspector_error.txt");
+            }
+            catch
+            {
+                return Path.Combine(AppContext.BaseDirectory, "CameraInspector_error.txt");
+            }
+        }
+    }
 
     public App()
     {
@@ -133,7 +156,9 @@ public partial class App : Application
                 .AppendLine($"OS: {Environment.OSVersion}")
                 .AppendLine($"64-bit OS: {Environment.Is64BitOperatingSystem}")
                 .AppendLine($"64-bit proceso: {Environment.Is64BitProcess}")
-                .AppendLine($"BaseDirectory: {AppContext.BaseDirectory}")
+                .AppendLine($"Proceso: {Environment.ProcessPath ?? "desconocido"}")
+                .AppendLine($"BaseDirectory .NET: {AppContext.BaseDirectory}")
+                .AppendLine($"Log: {ErrorLogPath}")
                 .AppendLine();
             sb.AppendLine(error is Exception exception ? exception.ToString() : error?.ToString() ?? "Error desconocido.");
             File.AppendAllText(ErrorLogPath, sb.ToString() + Environment.NewLine, Encoding.UTF8);
