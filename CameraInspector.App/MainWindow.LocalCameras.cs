@@ -13,7 +13,10 @@ namespace CameraInspector.App;
 /// </summary>
 public partial class MainWindow
 {
+    // _embeddedLocalCameraWindow conserva la vista de cámaras UVC mientras permanece alojada en la pestaña principal.
     private LocalCamerasWindow? _embeddedLocalCameraWindow;
+
+    // _moduleNavigationBuilt impide reconstruir la navegación cuando WPF dispara Loaded más de una vez.
     private bool _moduleNavigationBuilt;
 
     static MainWindow()
@@ -53,7 +56,7 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Constrói uma navegação real de módulos alrededor de la interfaz existente.
+    /// Construye una navegación real de módulos alrededor de la interfaz existente.
     /// No reubica hijos internos del Grid original; aloja el Grid completo dentro del módulo RED/IP.
     /// </summary>
     private void BuildModuleNavigation()
@@ -104,7 +107,8 @@ public partial class MainWindow
 
     /// <summary>
     /// Envuelve la pantalla de RED/IP existente con una consola de modos de descubrimiento.
-    /// En cámara directa permite fijar un único host, incluyendo IPs APIPA (169.254.0.0/16).
+    /// Cámara directa puede descubrir la cámara sin conocer su IP mediante los protocolos de discovery
+    /// disponibles en la interfaz; la IP es opcional para una prueba dirigida.
     /// </summary>
     private Grid CreateNetworkModuleContent(Grid originalContent)
     {
@@ -127,7 +131,7 @@ public partial class MainWindow
         };
 
         var modeLayout = new Grid();
-        modeLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(245) });
+        modeLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(255) });
         modeLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
         var titlePanel = new StackPanel
@@ -136,7 +140,7 @@ public partial class MainWindow
         };
         titlePanel.Children.Add(new TextBlock
         {
-            Text = "MODO DE DESCUBRIMIENTO",
+            Text = "CÁMARA DIRECTA",
             FontFamily = new FontFamily("Consolas"),
             FontSize = 12,
             FontWeight = FontWeights.Bold,
@@ -144,8 +148,14 @@ public partial class MainWindow
         });
         titlePanel.Children.Add(new TextBlock
         {
-            Text = "Directa admite IP fija o discovery sin sweep.",
+            Text = "IP opcional · primero discovery, después acceso.",
             Margin = new Thickness(0, 3, 0, 0),
+            Foreground = (Brush)FindResource("TextDimBrush")
+        });
+        titlePanel.Children.Add(new TextBlock
+        {
+            Text = "Ideal para cámara Ethernet directa o APIPA.",
+            Margin = new Thickness(0, 2, 0, 0),
             Foreground = (Brush)FindResource("TextDimBrush")
         });
         Grid.SetColumn(titlePanel, 0);
@@ -176,7 +186,7 @@ public partial class MainWindow
             Height = 32,
             Padding = new Thickness(7, 5, 7, 4),
             FontFamily = new FontFamily("Consolas"),
-            ToolTip = "IP de la cámara. Ej.: 192.168.1.50 o 169.254.10.20. Vacío = solo discovery."
+            ToolTip = "Opcional. Vacío = descubrir sin conocer la IP. Ej.: 192.168.1.50 o 169.254.10.20."
         };
         targetTextBox.SetBinding(
             TextBox.TextProperty,
@@ -189,15 +199,27 @@ public partial class MainWindow
 
         var directButton = new Button
         {
-            Content = "CÁMARA DIRECTA",
+            Content = "DETECTAR CÁMARA",
             Width = 145,
             Height = 38,
             Margin = new Thickness(8, 0, 0, 0),
             Style = (Style)FindResource("PrimaryButton"),
-            ToolTip = "Probar únicamente la IP objetivo. No hace ping sweep de la subred."
+            ToolTip = "Sin IP: utiliza discovery. Con IP: limita las pruebas al host indicado."
         };
         directButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("ScanDirectCameraCommand"));
         controlsPanel.Children.Add(directButton);
+
+        var credentialsButton = new Button
+        {
+            Content = "CREDENCIALES",
+            Width = 115,
+            Height = 38,
+            Margin = new Thickness(6, 0, 0, 0),
+            Style = (Style)FindResource("SecondaryButton"),
+            ToolTip = "Con una cámara seleccionada, ingresar o actualizar usuario y contraseña."
+        };
+        credentialsButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("SaveCredentialsCommand"));
+        controlsPanel.Children.Add(credentialsButton);
 
         var subnetButton = new Button
         {
