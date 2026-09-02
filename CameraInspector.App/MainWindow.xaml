@@ -22,10 +22,7 @@
 
         <!-- CABECERA compacta para reservar más espacio al contenido técnico. -->
         <Grid Grid.Row="0" Margin="0,0,0,8">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                 <TextBlock Text="CAMERA INSPECTOR" FontFamily="Consolas" FontSize="18" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
                 <TextBlock Text="  //  DESCUBRIMIENTO · DIAGNÓSTICO · VIDEO · INVENTARIO" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}" Margin="12,4,0,0"/>
@@ -41,15 +38,15 @@
             <TextBlock Text="{Binding StatusText}" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
         </Border>
 
-        <!-- LISTA: una fila por IP, ya fusionada desde todas las fuentes de descubrimiento. -->
+        <!-- LISTA: una fila por IP, fusionada desde todas las fuentes. -->
         <Border Grid.Row="2" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="5">
             <DataGrid ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" IsReadOnly="True" AutoGenerateColumns="False" HeadersVisibility="Column" CanUserAddRows="False" CanUserResizeRows="False" CanUserSortColumns="True" RowHeight="27" ColumnHeaderHeight="29" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" BorderThickness="0">
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="ESTADO" Binding="{Binding Status}" Width="80"/>
                     <DataGridTextColumn Header="IP" Binding="{Binding IpAddress}" Width="115"/>
                     <DataGridTextColumn Header="MAC" Binding="{Binding MacAddress}" Width="140"/>
-                    <DataGridTextColumn Header="FABRICANTE" Binding="{Binding Manufacturer}" Width="115"/>
-                    <DataGridTextColumn Header="MODELO" Binding="{Binding Model}" Width="125"/>
+                    <DataGridTextColumn Header="FABRICANTE" Binding="{Binding Manufacturer}" Width="120"/>
+                    <DataGridTextColumn Header="MODELO" Binding="{Binding Model}" Width="130"/>
                     <DataGridTextColumn Header="FIRMWARE" Binding="{Binding Firmware}" Width="95"/>
                     <DataGridTextColumn Header="EVIDENCIA" Binding="{Binding DetectionReason}" Width="220"/>
                     <DataGridTextColumn Header="ONVIF" Binding="{Binding OnvifSupported}" Width="60"/>
@@ -63,10 +60,7 @@
         <!-- DETALLE: ocupa todo el espacio restante de la ventana. -->
         <Border Grid.Row="3" Margin="0,8,0,0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="5">
             <Grid DataContext="{Binding SelectedDevice}">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                 <Grid Grid.Row="0" Margin="11,8,11,6">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0" Orientation="Horizontal">
@@ -100,7 +94,7 @@
                                     <TextBlock Text="{Binding DetectionDetails}" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap"/>
                                 </Border>
 
-                                <TextBlock Text="CAPACIDADES" Margin="0,14,0,7" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontWeight="Bold"/>
+                                <TextBlock Text="CAPACIDADES ONVIF" Margin="0,14,0,7" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontWeight="Bold"/>
                                 <WrapPanel>
                                     <Border Padding="8,4" Margin="0,0,6,6" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" Background="{StaticResource Panel2Brush}"><TextBlock><Run Text="ONVIF  "/><Run Text="{Binding OnvifSupported}" FontFamily="Consolas"/></TextBlock></Border>
                                     <Border Padding="8,4" Margin="0,0,6,6" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" Background="{StaticResource Panel2Brush}"><TextBlock><Run Text="MEDIA  "/><Run Text="{Binding HasMediaService}" FontFamily="Consolas"/></TextBlock></Border>
@@ -124,7 +118,6 @@
                         </ScrollViewer>
                     </TabItem>
 
-                    <!-- El resto de pestañas se mantiene en el archivo original y continúa debajo. -->
                     <TabItem Header="CREDENCIALES">
                         <ScrollViewer VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled">
                             <StackPanel Margin="12">
@@ -132,20 +125,52 @@
                                 <TextBlock Margin="0,9,0,0" TextWrapping="Wrap" Foreground="{StaticResource TextDimBrush}" Text="La contraseña se almacena únicamente en Windows Credential Manager. SQLite conserva solo el usuario y la referencia al secreto."/>
                                 <Grid Margin="0,14,0,0">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                                     <TextBlock Grid.Row="0" Grid.Column="0" Text="CREDENCIALES" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding HasSavedCredentials}" FontFamily="Consolas"/>
                                     <TextBlock Grid.Row="1" Grid.Column="0" Text="USUARIO" Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SavedCredentialUsername}" Margin="0,6,0,0" FontFamily="Consolas"/>
-                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="ÚLT. VERIFICACIÓN" Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="ÚLT. VERIFICACIÓN" Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SavedCredentialLastVerifiedAt}" Margin="0,6,0,0" FontFamily="Consolas"/>
+                                    <CheckBox Grid.Row="3" Grid.Column="1" Content="Usar credenciales guardadas automáticamente" IsChecked="{Binding UseSavedCredentials}" Margin="0,9,0,0"/>
                                 </Grid>
                             </StackPanel>
                         </ScrollViewer>
+                    </TabItem>
+
+                    <TabItem Header="VIDEO">
+                        <Grid Margin="10">
+                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+                                <Button Content="▶ MAIN STREAM" Command="{Binding DataContext.GetMainStreamUriCommand, RelativeSource={RelativeSource AncestorType=Window}}" Margin="0,0,6,0" Style="{StaticResource PrimaryButton}"/>
+                                <Button Content="▶ SUB STREAM" Command="{Binding DataContext.GetSubStreamUriCommand, RelativeSource={RelativeSource AncestorType=Window}}" Margin="0,0,6,0}"/>
+                                <Button Content="■ DETENER" Command="{Binding DataContext.StopVideoCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                            </StackPanel>
+                            <vlc:VideoView Grid.Row="1" MediaPlayer="{Binding DataContext.VideoPlayer, RelativeSource={RelativeSource AncestorType=Window}}" Background="Black"/>
+                            <TextBlock Grid.Row="2" Text="{Binding DataContext.StatusText, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{StaticResource TextDimBrush}" FontFamily="Consolas" Margin="0,8,0,0"/>
+                        </Grid>
+                    </TabItem>
+
+                    <TabItem Header="DIAGNÓSTICO">
+                        <Grid Margin="10">
+                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                            <Button Grid.Row="0" Content="⚙ EJECUTAR DIAGNÓSTICO" Command="{Binding DataContext.RunDiagnosticsCommand, RelativeSource={RelativeSource AncestorType=Window}}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left"/>
+                            <DataGrid Grid.Row="1" Margin="0,8,0,0" ItemsSource="{Binding DataContext.DiagnosticResults, RelativeSource={RelativeSource AncestorType=Window}}" IsReadOnly="True" AutoGenerateColumns="True"/>
+                            <TextBlock Grid.Row="2" Text="Las pruebas requieren credenciales válidas cuando el servicio las solicita." Foreground="{StaticResource TextDimBrush}" Margin="0,8,0,0"/>
+                        </Grid>
+                    </TabItem>
+
+                    <TabItem Header="HISTORIAL">
+                        <Grid Margin="10">
+                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                            <Button Grid.Row="0" Content="↻ ACTUALIZAR" Command="{Binding DataContext.RefreshHistoryCommand, RelativeSource={RelativeSource AncestorType=Window}}" HorizontalAlignment="Left"/>
+                            <DataGrid Grid.Row="1" Margin="0,8,0,0" ItemsSource="{Binding DataContext.DiagnosticHistory, RelativeSource={RelativeSource AncestorType=Window}}" IsReadOnly="True" AutoGenerateColumns="True"/>
+                        </Grid>
                     </TabItem>
                 </TabControl>
             </Grid>
         </Border>
 
         <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,7,0,0">
-            <TextBlock Text="Camera Inspector · detección multi-evidencia" Foreground="{StaticResource TextDimBrush}" FontFamily="Consolas" FontSize="10"/>
+            <Button Content="▣ GUARDAR CREDENCIALES" Command="{Binding SaveCredentialsCommand}" Margin="0,0,6,0"/>
+            <Button Content="✕ ELIMINAR CREDENCIALES" Command="{Binding DeleteCredentialsCommand}"/>
         </StackPanel>
     </Grid>
 </Window>
