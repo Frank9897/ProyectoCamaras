@@ -4,39 +4,28 @@
         xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
         Title="Camera Inspector — Video IP"
         Width="1180"
-        Height="780"
+        Height="800"
         MinWidth="980"
-        MinHeight="650"
+        MinHeight="660"
         Background="{StaticResource BgBrush}"
         Foreground="{StaticResource TextBrush}"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         WindowStartupLocation="CenterOwner">
     <Grid Margin="12">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
 
         <Border Grid.Row="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="5" Padding="12" Margin="0,0,0,10">
             <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <StackPanel>
                     <TextBlock Text="VIDEO / CÁMARA IP" FontFamily="Consolas" FontSize="15" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
-                    <TextBlock Margin="0,4,0,0" Foreground="{StaticResource TextBrush}">
-                        <Run Text="IP: "/><Run Text="{Binding SelectedDevice.IpAddress}" FontFamily="Consolas"/>
-                    </TextBlock>
-                    <TextBlock Margin="0,2,0,0" Foreground="{StaticResource TextDimBrush}">
-                        <Run Text="Fabricante: "/><Run Text="{Binding SelectedDevice.Manufacturer}"/><Run Text="  ·  Modelo: "/><Run Text="{Binding SelectedDevice.Model}"/>
-                    </TextBlock>
+                    <TextBlock Margin="0,4,0,0" Foreground="{StaticResource TextBrush}"><Run Text="IP: "/><Run Text="{Binding SelectedDevice.IpAddress}" FontFamily="Consolas"/></TextBlock>
+                    <TextBlock Margin="0,2,0,0" Foreground="{StaticResource TextDimBrush}"><Run Text="Fabricante: "/><Run Text="{Binding SelectedDevice.Manufacturer}"/><Run Text="  ·  Modelo: "/><Run Text="{Binding SelectedDevice.Model}"/></TextBlock>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <Border Background="{StaticResource AccentSoftBrush}" BorderBrush="{StaticResource BorderAccentBrush}" BorderThickness="1" CornerRadius="3" Padding="12,7">
-                        <StackPanel Orientation="Horizontal">
-                            <Ellipse Width="8" Height="8" Fill="{StaticResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,7,0"/>
-                            <TextBlock Text="REPRODUCTOR IP" FontFamily="Consolas" FontSize="10" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
-                        </StackPanel>
+                        <StackPanel Orientation="Horizontal"><Ellipse Width="8" Height="8" Fill="{StaticResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,7,0"/><TextBlock Text="REPRODUCTOR IP" FontFamily="Consolas" FontSize="10" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/></StackPanel>
                     </Border>
                     <Button x:Name="HealthButton" Content="↻ COMPROBAR SALUD" Click="HealthButton_Click" Width="155" Height="34" Margin="8,0,0,0" Style="{StaticResource SecondaryButton}"/>
                 </StackPanel>
@@ -44,7 +33,7 @@
         </Border>
 
         <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="285"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="300"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
 
             <Border Grid.Column="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="5" Padding="12">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -74,7 +63,20 @@
                             <Button Content="COPIAR IP" Click="CopyIpButton_Click" Width="90" Height="33" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
                         </WrapPanel>
 
-                        <TextBlock Text="STREAMS" Margin="0,9,0,7" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+                        <TextBlock Text="PTZ" Margin="0,9,0,7" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+                        <Grid HorizontalAlignment="Center">
+                            <Grid.RowDefinitions><RowDefinition Height="32"/><RowDefinition Height="32"/><RowDefinition Height="32"/><RowDefinition Height="32"/></Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="58"/><ColumnDefinition Width="58"/><ColumnDefinition Width="58"/></Grid.ColumnDefinitions>
+                            <Button Grid.Row="0" Grid.Column="1" Content="▲" Click="PtzUp_Click" Style="{StaticResource SecondaryButton}" Margin="2"/>
+                            <Button Grid.Row="1" Grid.Column="0" Content="◀" Click="PtzLeft_Click" Style="{StaticResource SecondaryButton}" Margin="2"/>
+                            <Button Grid.Row="1" Grid.Column="1" Content="■" Click="PtzStop_Click" Style="{StaticResource SecondaryButton}" Margin="2"/>
+                            <Button Grid.Row="1" Grid.Column="2" Content="▶" Click="PtzRight_Click" Style="{StaticResource SecondaryButton}" Margin="2"/>
+                            <Button Grid.Row="2" Grid.Column="1" Content="▼" Click="PtzDown_Click" Style="{StaticResource SecondaryButton}" Margin="2"/>
+                            <Button Grid.Row="3" Grid.Column="0" Content="ZOOM −" Click="PtzZoomOut_Click" Style="{StaticResource SecondaryButton}" Margin="2"/>
+                            <Button Grid.Row="3" Grid.Column="2" Content="ZOOM +" Click="PtzZoomIn_Click" Style="{StaticResource SecondaryButton}" Margin="2"/>
+                        </Grid>
+
+                        <TextBlock Text="STREAMS" Margin="0,14,0,7" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
                         <Border Padding="10" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
                             <StackPanel>
                                 <TextBlock Text="MAIN STREAM" Foreground="{StaticResource TextDimBrush}" FontSize="10" FontWeight="Bold"/>
