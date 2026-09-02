@@ -45,7 +45,7 @@ public sealed class CameraPortScanner
             .GroupBy(item => item.IpAddress)
             .Select(group => new CameraPortScanResult(
                 group.Key,
-                group.Select(item => item.Port).Distinct().OrderBy(port => port).ToArray()))
+                group.SelectMany(item => item.Ports).Distinct().OrderBy(port => port).ToArray()))
             .ToList();
     }
 
