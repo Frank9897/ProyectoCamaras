@@ -49,7 +49,7 @@ public sealed partial class MainViewModel
         try
         {
             StatusText = targetAddress is null
-                ? $"Cámara directa · buscando dispositivos por discovery en {SelectedInterface.Name} · no hace falta conocer la IP..."
+                ? $"Cámara directa · buscando dispositivos por discovery en {SelectedInterface.Name}..."
                 : $"Cámara directa · objetivo {targetAddress} · probando host...";
 
             await foreach (var progress in _scanner.ScanAsync(
@@ -208,33 +208,81 @@ public sealed partial class MainViewModel
     }
 
     /// <summary>
-    /// Procesa un resultado de descubrimiento utilizando exactamente la misma resolución de fabricante/ONVIF
-    /// que el escaneo existente. Así no creamos una segunda lógica para clasificar cámaras.
+    /// Publica inmediatamente la evidencia descubierta. El enriquecimiento del dispositivo
+    /// continúa en segundo plano y ya no bloquea la aparición del resultado en la UI.
     /// </summary>
-    private async Task ProcessScanProgressAsync(
+    private Task ProcessScanProgressAsync(
         ScanProgress progress,
         CancellationToken cancellationToken)
     {
         if (progress.NewlyFound is null)
-            return;
+            return Task.CompletedTask;
 
         var device = progress.NewlyFound;
 
-        // Evitamos duplicar la misma IP cuando el escaneo total consulta varias interfaces.
         if (_allDiscoveredDevices.Any(existing =>
                 string.Equals(existing.IpAddress, device.IpAddress, StringComparison.OrdinalIgnoreCase)))
         {
-            return;
+            return Task.CompletedTask;
         }
 
         var viewModel = new DeviceViewModel(device);
         _allDiscoveredDevices.Add(viewModel);
-        await ResolveDeviceAsync(device, viewModel, cancellationToken);
 
-        // En discovery directo, cuando aparece una única cámara la dejamos seleccionada automáticamente
-        // para que el flujo siguiente sea simplemente: detectar -> credenciales -> video/diagnóstico.
+        // Las fuentes de discovery ya entregan evidencia suficiente para mostrar el equipo.
+        var cameraCandidate = device.CameraEvidence ||
+                              device.OnvifSupported ||
+                              device.RtspSupported ||
+                              device.DetectionEvidence.Any(item => item.IsCameraEvidence);
+
+        if (cameraCandidate && !Devices.Contains(viewModel))
+            Devices.Add(viewModel);
+
         if (SelectedDevice is null && Devices.Count == 1 && Devices.Contains(viewModel))
             SelectedDevice = viewModel;
+
+        // No esperamos fabricante/ONVIF/inventario. El usuario ve el dispositivo inmediatamente.
+        _ = EnrichDiscoveredDeviceAsync(device, viewModel, cancellationToken);
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Enriquece una cámara descubierta sin bloquear el pipeline de discovery.
+    /// Las consultas ONVIF pesadas quedan para las operaciones específicas del dispositivo.
+    /// </summary>
+    private async Task EnrichDiscoveredDeviceAsync(
+        DiscoveredDevice device,
+        DeviceViewModel viewModel,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _manufacturerResolver.ResolveAsync(device, cancellationToken);
+            viewModel.Refresh();
+
+            var cameraCandidate = device.CameraEvidence ||
+                                  device.OnvifSupported ||
+                                  device.RtspSupported ||
+                                  device.DetectionEvidence.Any(item => item.IsCameraEvidence);
+
+            if (!cameraCandidate)
+                return;
+
+            if (!Devices.Contains(viewModel))
+                Devices.Add(viewModel);
+
+            var cameraId = await _inventoryStore.UpsertAsync(device, cancellationToken);
+            viewModel.SetCameraId(cameraId);
+        }
+        catch (OperationCanceledException)
+        {
+            // El cierre/cancelación del escaneo no debe producir errores visibles.
+        }
+        catch
+        {
+            // La evidencia descubierta sigue siendo válida aunque el enriquecimiento falle.
+        }
     }
 
     /// <summary>
