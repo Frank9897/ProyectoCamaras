@@ -23,8 +23,6 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
     {
         ArgumentNullException.ThrowIfNull(networkInterface);
 
-        // Una interfaz puede tener más de una IPv4 (por ejemplo, una dirección fija y una APIPA).
-        // Shepherd/IW2 se beneficia de enviar desde cada dirección disponible del adaptador físico.
         var bindAddresses = GetInterfaceIpv4Addresses(networkInterface);
         if (bindAddresses.Count == 0)
             bindAddresses = [networkInterface.IpAddress];
@@ -89,8 +87,6 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
                     }
                     catch (SocketException)
                     {
-                        // Un broadcast adicional puede no ser enrutable por esa interfaz;
-                        // no debe abortar los demás mecanismos de descubrimiento.
                     }
                 }
             }
@@ -178,11 +174,6 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
         }
     }
 
-    /// <summary>
-    /// Mantiene varios formatos de sondeo para cubrir distintas generaciones de VIVOTEK.
-    /// El protocolo exacto no se documenta públicamente por VIVOTEK; Shepherd confirma UDP 5678
-    /// como canal de discovery, por lo que evitamos depender de un único paquete experimental.
-    /// </summary>
     private static IReadOnlyList<byte[]> BuildProbes()
     {
         var session = Guid.NewGuid().ToByteArray();
@@ -232,7 +223,7 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
         var mac = ExtractVivotekMac(payload);
         var model = ExtractModel(payload);
 
-        return new DiscoveredDevice
+        var device = new DiscoveredDevice
         {
             IpAddress = advertisedIp.ToString(),
             MacAddress = mac,
@@ -246,6 +237,14 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
             RtspSupported = true,
             RtspPort = 554
         };
+
+        device.AddEvidence(
+            "VIVOTEK Discovery",
+            0.99,
+            "respuesta del mecanismo propietario VIVOTEK",
+            true);
+
+        return device;
     }
 
     private static string? ExtractVivotekMac(byte[] payload)
@@ -312,5 +311,8 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
         target.HttpPort ??= source.HttpPort;
         target.RtspPort ??= source.RtspPort;
         target.Status = DeviceStatus.Online;
+
+        foreach (var evidence in source.DetectionEvidence)
+            target.AddEvidence(evidence.Method, evidence.Confidence, evidence.Details, evidence.IsCameraEvidence);
     }
 }
