@@ -9,6 +9,7 @@ using CameraInspector.Network;
 using CameraInspector.Network.OnvifDiscovery;
 using CameraInspector.Network.Providers;
 using CameraInspector.Network.Providers.Hikvision;
+using CameraInspector.Network.Providers.Reolink;
 using CameraInspector.Network.Providers.Vivotek;
 using CameraInspector.Persistence;
 using CameraInspector.Video;
@@ -58,6 +59,7 @@ public partial class App : Application
                     services.AddSingleton<IArpResolver, ArpResolver>();
                     services.AddSingleton<IOnvifDiscoveryService, WsDiscoveryOnvifService>();
                     services.AddSingleton<IVivotekDiscoveryService, VivotekDiscoveryService>();
+                    services.AddSingleton<ReolinkDiscoveryService>();
                     services.AddSingleton<CameraPortScanner>();
                     services.AddSingleton<SsdpDiscoveryService>();
                     services.AddSingleton<LegacyVendorDiscoveryService>();
