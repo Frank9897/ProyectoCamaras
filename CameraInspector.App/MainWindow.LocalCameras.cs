@@ -2,6 +2,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using CameraInspector.Core.Interfaces;
+using CameraInspector.App.ViewModels;
 using CameraInspector.Video;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -13,24 +15,15 @@ namespace CameraInspector.App;
 /// </summary>
 public partial class MainWindow
 {
-    // _embeddedLocalCameraWindow conserva la vista de cámaras UVC mientras permanece alojada en la pestaña principal.
     private LocalCamerasWindow? _embeddedLocalCameraWindow;
-
-    // _moduleNavigationBuilt impide reconstruir la navegación cuando WPF dispara Loaded más de una vez.
     private bool _moduleNavigationBuilt;
 
     private static void OnDataGridPreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (sender is not DataGrid dataGrid)
-            return;
-
-        if (e.OriginalSource is not DependencyObject source)
-            return;
-
+        if (sender is not DataGrid dataGrid) return;
+        if (e.OriginalSource is not DependencyObject source) return;
         var row = FindVisualParent<DataGridRow>(source);
-        if (row?.Item is null)
-            return;
-
+        if (row?.Item is null) return;
         dataGrid.SelectedItem = row.Item;
         row.IsSelected = true;
         dataGrid.Focus();
@@ -38,21 +31,13 @@ public partial class MainWindow
 
     private static void OnMainWindowLoadedForModules(object sender, RoutedEventArgs e)
     {
-        if (sender is MainWindow window)
-            window.BuildModuleNavigation();
+        if (sender is MainWindow window) window.BuildModuleNavigation();
     }
 
-    /// <summary>
-    /// Construye una navegación real de módulos alrededor de la interfaz existente.
-    /// No reubica hijos internos del Grid original; aloja el Grid completo dentro del módulo RED/IP.
-    /// </summary>
     private void BuildModuleNavigation()
     {
-        if (_moduleNavigationBuilt)
-            return;
-
-        if (Content is not Grid originalContent)
-            return;
+        if (_moduleNavigationBuilt) return;
+        if (Content is not Grid originalContent) return;
 
         _moduleNavigationBuilt = true;
         Content = null;
@@ -68,42 +53,27 @@ public partial class MainWindow
             VerticalContentAlignment = VerticalAlignment.Stretch
         };
 
-        var redTab = new TabItem
+        modules.Items.Add(new TabItem
         {
             Header = "RED / IP",
             Content = CreateNetworkModuleContent(originalContent)
-        };
-
-        var usbTab = CreateUsbModuleTab();
-
-        var nvrTab = new TabItem
+        });
+        modules.Items.Add(CreateUsbModuleTab());
+        modules.Items.Add(new TabItem
         {
             Header = "NVR / DVR",
             Content = CreatePendingModuleContent(
                 "MÓDULO NVR / DVR",
                 "Módulo reservado para descubrimiento de grabadores y administración de canales NVR/DVR.")
-        };
+        });
 
-        modules.Items.Add(redTab);
-        modules.Items.Add(usbTab);
-        modules.Items.Add(nvrTab);
         modules.SelectedIndex = 0;
-
         Content = modules;
     }
 
-    /// <summary>
-    /// Envuelve la pantalla de RED/IP existente con una consola de modos de descubrimiento.
-    /// Cámara directa puede descubrir la cámara sin conocer su IP mediante los protocolos de discovery
-    /// disponibles en la interfaz; la IP es opcional para una prueba dirigida.
-    /// </summary>
     private Grid CreateNetworkModuleContent(Grid originalContent)
     {
-        var networkModule = new Grid
-        {
-            Background = (Brush)FindResource("BgBrush")
-        };
-
+        var networkModule = new Grid { Background = (Brush)FindResource("BgBrush") };
         networkModule.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         networkModule.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
@@ -121,10 +91,7 @@ public partial class MainWindow
         modeLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(255) });
         modeLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-        var titlePanel = new StackPanel
-        {
-            VerticalAlignment = VerticalAlignment.Center
-        };
+        var titlePanel = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         titlePanel.Children.Add(new TextBlock
         {
             Text = "CÁMARA DIRECTA",
@@ -155,7 +122,7 @@ public partial class MainWindow
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        var targetLabel = new TextBlock
+        controlsPanel.Children.Add(new TextBlock
         {
             Text = "IP OBJETIVO",
             FontFamily = new FontFamily("Consolas"),
@@ -164,8 +131,7 @@ public partial class MainWindow
             Foreground = (Brush)FindResource("TextDimBrush"),
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 7, 0)
-        };
-        controlsPanel.Children.Add(targetLabel);
+        });
 
         var targetTextBox = new TextBox
         {
@@ -175,13 +141,11 @@ public partial class MainWindow
             FontFamily = new FontFamily("Consolas"),
             ToolTip = "Opcional. Vacío = descubrir sin conocer la IP. Ej.: 192.168.1.50 o 169.254.10.20."
         };
-        targetTextBox.SetBinding(
-            TextBox.TextProperty,
-            new System.Windows.Data.Binding("DirectCameraIp")
-            {
-                Mode = System.Windows.Data.BindingMode.TwoWay,
-                UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged
-            });
+        targetTextBox.SetBinding(TextBox.TextProperty, new System.Windows.Data.Binding("DirectCameraIp")
+        {
+            Mode = System.Windows.Data.BindingMode.TwoWay,
+            UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged
+        });
         controlsPanel.Children.Add(targetTextBox);
 
         var directButton = new Button
@@ -207,6 +171,19 @@ public partial class MainWindow
         };
         credentialsButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("SaveCredentialsCommand"));
         controlsPanel.Children.Add(credentialsButton);
+
+        var networkConfigButton = new Button
+        {
+            Content = "CONFIG. RED",
+            Width = 110,
+            Height = 38,
+            Margin = new Thickness(6, 0, 0, 0),
+            Style = (Style)FindResource("SecondaryButton"),
+            ToolTip = "Administrar IPv4, gateway, nombre, reinicio y restablecimiento de fábrica."
+        };
+        networkConfigButton.Click += NetworkConfigurationButton_Click;
+        networkConfigButton.SetBinding(Button.IsEnabledProperty, new System.Windows.Data.Binding("SelectedDevice.OnvifSupported"));
+        controlsPanel.Children.Add(networkConfigButton);
 
         var subnetButton = new Button
         {
@@ -240,17 +217,48 @@ public partial class MainWindow
 
         Grid.SetRow(originalContent, 1);
         networkModule.Children.Add(originalContent);
-
         return networkModule;
     }
 
-    /// <summary>
-    /// Crea el módulo USB/UVC usando la instancia singleton del servicio local.
-    /// </summary>
+    private void NetworkConfigurationButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ViewModels.MainViewModel mainViewModel || mainViewModel.SelectedDevice is null)
+            return;
+
+        if (!mainViewModel.SelectedDevice.OnvifSupported)
+        {
+            ShowInformation(
+                "La configuración de red editable requiere que la cámara exponga ONVIF.",
+                "Camera Inspector — Configuración de red");
+            return;
+        }
+
+        var onvif = App.Services?.GetService<IOnvifDeviceService>();
+        var credentials = App.Services?.GetService<ICredentialStore>();
+        var cameraCredentials = App.Services?.GetService<ICameraCredentialStore>();
+        if (onvif is null || credentials is null || cameraCredentials is null)
+        {
+            ShowInformation(
+                "No están disponibles los servicios necesarios para configurar la cámara.",
+                "Camera Inspector — Configuración de red");
+            return;
+        }
+
+        var window = new NetworkConfigurationWindow(
+            mainViewModel.SelectedDevice,
+            onvif,
+            credentials,
+            cameraCredentials)
+        {
+            Owner = this,
+            ShowInTaskbar = true
+        };
+        window.ShowDialog();
+    }
+
     private TabItem CreateUsbModuleTab()
     {
         var service = App.Services?.GetService<LocalCameraService>();
-
         if (service is null)
         {
             return new TabItem
@@ -262,11 +270,7 @@ public partial class MainWindow
             };
         }
 
-        _embeddedLocalCameraWindow = new LocalCamerasWindow(service)
-        {
-            ShowInTaskbar = false
-        };
-
+        _embeddedLocalCameraWindow = new LocalCamerasWindow(service) { ShowInTaskbar = false };
         var embeddedContent = _embeddedLocalCameraWindow.Content as UIElement;
         if (embeddedContent is null)
         {
@@ -281,17 +285,9 @@ public partial class MainWindow
 
         _embeddedLocalCameraWindow.Content = null;
         _embeddedLocalCameraWindow.RefreshEmbedded();
-
-        return new TabItem
-        {
-            Header = "CÁMARAS USB / UVC",
-            Content = embeddedContent
-        };
+        return new TabItem { Header = "CÁMARAS USB / UVC", Content = embeddedContent };
     }
 
-    /// <summary>
-    /// Crea el panel informativo de un módulo reservado para una fase posterior.
-    /// </summary>
     private Border CreatePendingModuleContent(string title, string description)
     {
         return new Border
@@ -331,12 +327,9 @@ public partial class MainWindow
         var current = element;
         while (current is not null)
         {
-            if (current is T typed)
-                return typed;
-
+            if (current is T typed) return typed;
             current = VisualTreeHelper.GetParent(current);
         }
-
         return null;
     }
 }
