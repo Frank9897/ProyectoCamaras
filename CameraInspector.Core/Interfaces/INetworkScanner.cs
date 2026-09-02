@@ -1,3 +1,4 @@
+using System.Net;
 using CameraInspector.Core.Models;
 
 namespace CameraInspector.Core.Interfaces;
@@ -18,5 +19,6 @@ public interface INetworkScanner
         NetworkInterfaceInfo networkInterface,
         IProgress<ScanProgress>? progress = null,
         CancellationToken cancellationToken = default,
-        DiscoveryScanMode mode = DiscoveryScanMode.NetworkSubnet);
+        DiscoveryScanMode mode = DiscoveryScanMode.NetworkSubnet,
+        IPAddress? directAddress = null);
 }
