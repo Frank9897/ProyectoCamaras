@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using CameraInspector.App.ViewModels;
 using CameraInspector.Video;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace CameraInspector.App;
 
