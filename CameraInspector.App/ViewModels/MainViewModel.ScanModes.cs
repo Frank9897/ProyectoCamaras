@@ -1,6 +1,7 @@
 using System.Net;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
+using CameraInspector.Network;
 using CommunityToolkit.Mvvm.Input;
 
 namespace CameraInspector.App.ViewModels;
@@ -17,8 +18,8 @@ public sealed partial class MainViewModel
     /// <summary>
     /// Ejecuta el modo de cámara directa.
     ///
-    /// Sin IP: prioriza los mecanismos de discovery de la interfaz seleccionada y no hace
-    /// un sweep de toda la subred.
+    /// Sin IP: prepara el enlace APIPA del adaptador para permitir el descubrimiento
+    /// de cámaras VIVOTEK sin DHCP y luego prioriza los mecanismos de discovery.
     ///
     /// Con IP: limita las pruebas activas a ese único host.
     /// </summary>
@@ -48,8 +49,19 @@ public sealed partial class MainViewModel
 
         try
         {
+            string? apipaStatus = null;
+            if (targetAddress is null)
+            {
+                StatusText = $"Cámara directa · preparando enlace APIPA en {SelectedInterface.Name}...";
+                var apipa = await VivotekDirectLinkAddressService.EnsureApipaAddressAsync(
+                    SelectedInterface.Name,
+                    SelectedInterface.InterfaceId,
+                    cancellationToken);
+                apipaStatus = apipa.Message;
+            }
+
             StatusText = targetAddress is null
-                ? $"Cámara directa · buscando dispositivos por discovery en {SelectedInterface.Name}..."
+                ? $"Cámara directa · {apipaStatus}"
                 : $"Cámara directa · objetivo {targetAddress} · probando host...";
 
             await foreach (var progress in _scanner.ScanAsync(
@@ -69,7 +81,7 @@ public sealed partial class MainViewModel
             {
                 if (Devices.Count == 0)
                 {
-                    StatusText = "Cámara directa: no se detectó ninguna cámara. Verificá enlace Ethernet, PoE y que la cámara soporte algún mecanismo de discovery.";
+                    StatusText = $"Cámara directa: no se detectó ninguna cámara. {apipaStatus ?? string.Empty} Verificá enlace Ethernet/PoE y que la cámara esté encendida.";
                 }
                 else if (Devices.Count == 1)
                 {
@@ -91,6 +103,10 @@ public sealed partial class MainViewModel
         catch (OperationCanceledException)
         {
             StatusText = "Detección de cámara directa cancelada.";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Error durante la detección de cámara directa: {ex.Message}";
         }
         finally
         {
