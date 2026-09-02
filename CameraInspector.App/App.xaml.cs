@@ -151,6 +151,15 @@ public partial class App : Application
     protected override async void OnExit(ExitEventArgs e)
     {
         _isShuttingDown = true;
+
+        try
+        {
+            await VivotekDirectLinkAddressService.RemoveTemporaryAddressesAsync();
+        }
+        catch
+        {
+        }
+
         for (var index = Windows.Count - 1; index >= 0; index--)
         {
             try { Windows[index].Close(); } catch { }
