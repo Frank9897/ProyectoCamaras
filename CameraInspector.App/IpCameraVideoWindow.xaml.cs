@@ -167,10 +167,12 @@ public partial class IpCameraVideoWindow : Window
         var hasStream = _viewModel.ResolvedMainStream is not null;
         var recording = _viewModel.IsRecording;
 
-        SnapshotButton.IsEnabled = hasDevice && _videoPlayerService.Player.IsPlaying;
+        // El stream resuelto representa una sesión de reproducción aceptada; LibVLC puede tardar
+        // unos instantes en marcar IsPlaying después de recibir Play().
+        SnapshotButton.IsEnabled = hasDevice && hasStream;
         RecordButton.IsEnabled = hasDevice && hasStream && !recording;
         StopRecordButton.IsEnabled = recording;
-        StopButton.IsEnabled = hasDevice && _videoPlayerService.Player.IsPlaying;
+        StopButton.IsEnabled = hasDevice && hasStream;
         InfoButton.IsEnabled = hasDevice;
     }
 }
