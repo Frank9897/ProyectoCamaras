@@ -11,6 +11,16 @@ namespace CameraInspector.Network;
 /// </summary>
 public sealed class NetworkScanOrchestrator : INetworkScanner
 {
+    private static readonly int[] DirectFastPorts =
+    {
+        80, 443, 554, 8000, 8080, 8554, 37777, 9000
+    };
+
+    private static readonly int[] DirectArpPorts =
+    {
+        80, 443, 554, 8080
+    };
+
     private readonly ISubnetCalculator _subnetCalculator;
     private readonly IPingScanner _pingScanner;
     private readonly IArpResolver _arpResolver;
@@ -61,13 +71,11 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         {
             if (hasDirectTarget)
             {
-                // Cámara directa siempre significa un único host. No dependemos del CIDR de la interfaz,
-                // por lo que también funciona con cámaras antiguas/APIPA o con IP fuera de la subred local.
                 candidates = new List<IPAddress> { directAddress! };
             }
             else if (directMode)
             {
-                // Sin IP objetivo mantenemos únicamente discovery (broadcast/multicast), sin hacer sweep.
+                // Sin IP no hacemos un sweep de subred. Discovery + ARP se utilizan como fuentes rápidas.
                 candidates = new List<IPAddress>();
             }
             else
@@ -91,6 +99,7 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         var legacyVendorTask = SafeDiscoverAsync(() => _legacyVendorDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
         var mdnsTask = SafeDiscoverAsync(() => _mdnsDiscoveryService.DiscoverAsync(networkInterface, cancellationToken), cancellationToken);
 
+        // Las fuentes siguen ejecutándose en paralelo. No añadimos esperas artificiales entre protocolos.
         await Task.WhenAll(pingTask, onvifTask, vivotekTask, reolinkTask, ssdpTask, legacyVendorTask, mdnsTask);
 
         var responsive = await pingTask;
@@ -103,8 +112,6 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
 
         if (hasDirectTarget)
         {
-            // El modo directo no debe convertir un broadcast que respondió con otra cámara en
-            // una lista de cámaras. Conservamos solo la evidencia perteneciente al host solicitado.
             onvifResults = FilterDirect(onvifResults, directAddress!, GetIpFromOnvif);
             vivotekResults = FilterDirect(vivotekResults, directAddress!, ToIp);
             reolinkResults = FilterDirect(reolinkResults, directAddress!, ToIp);
@@ -114,28 +121,69 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
             responsive = responsive.Where(ip => ip.Equals(directAddress)).ToArray();
         }
 
-        await Task.Delay(150, cancellationToken);
+        // ARP es inmediato y evita el delay fijo de 150 ms que ralentizaba cada ejecución.
         var arpTable = _arpResolver.GetArpTable();
 
         var arpCandidates = hasDirectTarget
             ? arpTable.Keys.Where(ip => ip.Equals(directAddress!))
-            : arpTable.Keys;
+            : directMode
+                ? arpTable.Keys
+                : arpTable.Keys;
 
-        var portCandidates = candidates
-            .Concat(arpCandidates)
-            .Concat(onvifResults.Select(GetIpFromOnvif).Where(ip => ip is not null).Cast<IPAddress>())
+        var discoveryCandidates = onvifResults.Select(GetIpFromOnvif).Where(ip => ip is not null).Cast<IPAddress>()
             .Concat(vivotekResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>())
             .Concat(reolinkResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>())
             .Concat(ssdpResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>())
             .Concat(legacyVendorResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>())
-            .Concat(mdnsResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>())
-            .Where(address => address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-            .Distinct()
-            .ToList();
+            .Concat(mdnsResults.Select(ToIp).Where(ip => ip is not null).Cast<IPAddress>());
 
-        var portResults = portCandidates.Count == 0
-            ? Array.Empty<CameraPortScanResult>()
-            : await _cameraPortScanner.ScanAsync(portCandidates, cancellationToken: cancellationToken);
+        var portCandidates = hasDirectTarget
+            ? candidates
+                .Concat(discoveryCandidates)
+                .Where(address => address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                .Distinct()
+                .ToList()
+            : directMode
+                ? discoveryCandidates
+                    .Where(address => address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                    .Distinct()
+                    .ToList()
+                : candidates
+                    .Concat(arpCandidates)
+                    .Concat(discoveryCandidates)
+                    .Where(address => address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                    .Distinct()
+                    .ToList();
+
+        IReadOnlyList<CameraPortScanResult> portResults;
+        if (portCandidates.Count == 0 && directMode)
+        {
+            // No hubo discovery: usamos solo la tabla ARP y cuatro puertos de alta señal.
+            // Sigue sin convertirse en un escaneo completo de subred.
+            portResults = arpCandidates.Any()
+                ? await _cameraPortScanner.ScanAsync(
+                    arpCandidates,
+                    timeoutMs: 120,
+                    maxParallelism: 128,
+                    cancellationToken: cancellationToken,
+                    ports: DirectArpPorts)
+                : Array.Empty<CameraPortScanResult>();
+        }
+        else
+        {
+            portResults = portCandidates.Count == 0
+                ? Array.Empty<CameraPortScanResult>()
+                : hasDirectTarget || directMode
+                    ? await _cameraPortScanner.ScanAsync(
+                        portCandidates,
+                        timeoutMs: 150,
+                        maxParallelism: 128,
+                        cancellationToken: cancellationToken,
+                        ports: DirectFastPorts)
+                    : await _cameraPortScanner.ScanAsync(
+                        portCandidates,
+                        cancellationToken: cancellationToken);
+        }
 
         var devices = new Dictionary<string, DiscoveredDevice>(StringComparer.OrdinalIgnoreCase);
 
