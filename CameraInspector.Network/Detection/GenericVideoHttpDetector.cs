@@ -10,17 +10,28 @@ namespace CameraInspector.Network.Detection;
 /// </summary>
 public sealed class GenericVideoHttpDetector : IManufacturerDetector
 {
-    private static readonly int[] DefaultPorts = { 80, 81, 82, 88, 8000, 8080, 8081, 8888 };
+    private static readonly int[] DefaultPorts = { 80, 81, 82, 88, 443, 8000, 8080, 8081, 8443, 8888 };
     private static readonly string[] Paths =
     {
+        // Snapshots genéricos y firmwares legacy.
         "/snapshot.jpg",
         "/snap.jpg",
         "/image.jpg",
         "/video.jpg",
+        "/snapshot.cgi",
+        "/cgi-bin/snapshot.cgi",
         "/cgi-bin/video.jpg",
+
+        // MJPEG genérico.
         "/mjpg/video.mjpg",
         "/video.mjpg",
-        "/cgi-bin/mjpg/video.cgi"
+        "/cgi-bin/mjpg/video.cgi",
+
+        // VIVOTEK HTTP/MJPEG. Está documentado como acceso válido en cámaras VIVOTEK.
+        "/video1s1.mjpg",
+        "/video1s2.mjpg",
+        "/video1s3.mjpg",
+        "/video1s4.mjpg"
     };
 
     private static readonly TimeSpan Timeout = TimeSpan.FromMilliseconds(700);
@@ -30,8 +41,7 @@ public sealed class GenericVideoHttpDetector : IManufacturerDetector
     public string Name => "GenericVideoHttp";
 
     public async Task<ManufacturerDetectionResult?> TryDetectAsync(
-        DiscoveredDevice device,
-        CancellationToken cancellationToken = default)
+        DiscoveredDevice device, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(device.IpAddress))
             return null;
@@ -54,11 +64,12 @@ public sealed class GenericVideoHttpDetector : IManufacturerDetector
                 return new ManufacturerDetectionResult
                 {
                     DetectorName = Name,
-                    Confidence = 0.96,
+                    Confidence = path.StartsWith("/video1s", StringComparison.OrdinalIgnoreCase) ? 0.98 : 0.96,
                     CameraEvidence = true,
                     EvidenceDetails = $"HTTP video endpoint: {path} (TCP/{port})",
-                    HttpSupported = true,
-                    HttpPort = port,
+                    HttpSupported = !scheme.Equals("https", StringComparison.OrdinalIgnoreCase),
+                    HttpsSupported = scheme.Equals("https", StringComparison.OrdinalIgnoreCase),
+                    HttpPort = scheme.Equals("https", StringComparison.OrdinalIgnoreCase) ? null : port,
                     RtspSupported = device.RtspSupported,
                     RtspPort = device.RtspPort
                 };
