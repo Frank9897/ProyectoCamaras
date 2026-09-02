@@ -103,11 +103,10 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         foreach (var ip in responsive)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var ipText = ip.ToString();
-            var device = GetOrCreate(devices, ipText);
-            if (arpTable.TryGetValue(ip, out var mac)) device.MacAddress ??= mac;
+            var device = GetOrCreate(devices, ip.ToString());
             device.Status = DeviceStatus.Online;
             device.AddEvidence("Ping", 0.05, "ICMP respondió", false);
+            if (arpTable.TryGetValue(ip, out var mac)) device.MacAddress ??= mac;
         }
 
         foreach (var result in onvifResults)
@@ -125,16 +124,15 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
             if (arpTable.TryGetValue(ip, out var mac)) device.MacAddress ??= mac;
         }
 
-        MergeDiscoverySource(devices, vivotekResults, "VIVOTEK Discovery", true, 0.99, "Shepherd/IW2", "VIVOTEK");
-        MergeDiscoverySource(devices, legacyVendorResults, null, true, 0.99, null, null);
-        MergeDiscoverySource(devices, ssdpResults, "SSDP/UPnP", false, 0.35, null, null);
-        MergeDiscoverySource(devices, mdnsResults, "mDNS/Bonjour", false, 0.3, null, null);
+        MergeDiscoverySource(devices, vivotekResults, "VIVOTEK Discovery", true, 0.99, "Shepherd/IW2");
+        MergeDiscoverySource(devices, legacyVendorResults, null, true, 0.99, null);
+        MergeDiscoverySource(devices, ssdpResults, "SSDP/UPnP", false, 0.35, null);
+        MergeDiscoverySource(devices, mdnsResults, "mDNS/Bonjour", false, 0.3, null);
 
         foreach (var portResult in portResults)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var ipText = portResult.IpAddress.ToString();
-            var device = GetOrCreate(devices, ipText);
+            var device = GetOrCreate(devices, portResult.IpAddress.ToString());
             if (arpTable.TryGetValue(portResult.IpAddress, out var mac)) device.MacAddress ??= mac;
             ApplyPortEvidence(device, portResult);
         }
@@ -173,17 +171,16 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         string? evidenceMethod,
         bool defaultCameraEvidence,
         double confidence,
-        string? defaultDetails,
-        string? defaultManufacturer)
+        string? defaultDetails)
     {
         foreach (var source in sourceResults)
         {
-            if (!IPAddress.TryParse(source.IpAddress, out var ip)) continue;
+            if (!IPAddress.TryParse(source.IpAddress, out _)) continue;
             var target = GetOrCreate(devices, source.IpAddress);
 
             target.MacAddress ??= source.MacAddress;
             target.Hostname ??= source.Hostname;
-            target.Manufacturer ??= source.Manufacturer ?? defaultManufacturer;
+            target.Manufacturer ??= source.Manufacturer;
             target.Model ??= source.Model;
             target.FirmwareVersion ??= source.FirmwareVersion;
             target.SerialNumber ??= source.SerialNumber;
@@ -195,25 +192,17 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
             target.HttpPort ??= source.HttpPort;
             target.RtspPort ??= source.RtspPort;
             target.CameraEvidence |= source.CameraEvidence || defaultCameraEvidence;
-            if (!string.IsNullOrWhiteSpace(source.OnvifDeviceServiceXAddr)) target.OnvifDeviceServiceXAddr ??= source.OnvifDeviceServiceXAddr;
-            if (!string.IsNullOrWhiteSpace(source.OnvifProfile)) target.OnvifProfile ??= source.OnvifProfile;
-            if (source.DetectionEvidence.Count > 0)
-            {
-                foreach (var evidence in source.DetectionEvidence)
-                    target.AddEvidence(evidence.Method, evidence.Confidence, evidence.Details, evidence.IsCameraEvidence);
-            }
+            target.OnvifDeviceServiceXAddr ??= source.OnvifDeviceServiceXAddr;
+            target.OnvifProfile ??= source.OnvifProfile;
+
+            foreach (var evidence in source.DetectionEvidence)
+                target.AddEvidence(evidence.Method, evidence.Confidence, evidence.Details, evidence.IsCameraEvidence);
 
             if (!string.IsNullOrWhiteSpace(evidenceMethod))
                 target.AddEvidence(evidenceMethod, confidence, defaultDetails ?? source.AssignedProviderName ?? source.Manufacturer, defaultCameraEvidence);
+
             target.Status = DeviceStatus.Online;
-
-            if (target.MacAddress is null && arpTablePlaceholder())
-            {
-                // Se conserva el flujo de fusión; la MAC se completa en la capa de ARP si está disponible.
-            }
         }
-
-        static bool arpTablePlaceholder() => false;
     }
 
     private static ScanProgress Report(ScanProgress update, IProgress<ScanProgress>? progress)
@@ -259,7 +248,6 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
             device.AddEvidence("TCP/RTSP", 0.45, $"puerto RTSP abierto ({device.RtspPort ?? 554})", false);
         if (device.HttpSupported || device.HttpsSupported)
             device.AddEvidence("TCP/HTTP", 0.2, "servicio web abierto", false);
-
         device.Status = DeviceStatus.Online;
     }
 }
