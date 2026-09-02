@@ -6,7 +6,8 @@ using CameraInspector.Core.Models;
 namespace CameraInspector.Network.Detection;
 
 /// <summary>
-/// Fingerprint de un servidor RTSP. Una respuesta RTSP valida es evidencia fuerte de dispositivo de video.
+/// Fingerprint de un servidor RTSP. Una respuesta RTSP por sí sola no identifica una cámara:
+/// solo se clasifica como cámara cuando existe una firma de fabricante conocida.
 /// </summary>
 public sealed class RtspFingerprintDetector : IManufacturerDetector
 {
@@ -32,17 +33,20 @@ public sealed class RtspFingerprintDetector : IManufacturerDetector
 
             var server = GetHeader(response, "Server");
             var manufacturer = DetectManufacturer(server);
+            var isKnownCameraServer = !string.IsNullOrWhiteSpace(manufacturer);
 
             return new ManufacturerDetectionResult
             {
                 DetectorName = Name,
-                Confidence = manufacturer is null ? 0.82 : 0.92,
-                CameraEvidence = true,
+                Confidence = isKnownCameraServer ? 0.92 : 0.38,
+                CameraEvidence = isKnownCameraServer,
                 EvidenceDetails = string.IsNullOrWhiteSpace(server)
-                    ? $"RTSP/1.0 en TCP/{port}"
-                    : $"RTSP/1.0 en TCP/{port} · Server: {server}",
+                    ? $"RTSP detectado en TCP/{port}; sin firma de cámara"
+                    : isKnownCameraServer
+                        ? $"RTSP/1.0 en TCP/{port} · Server: {server}"
+                        : $"RTSP detectado en TCP/{port} · Server genérico: {server}",
                 Manufacturer = manufacturer,
-                RtspSupported = true,
+                RtspSupported = isKnownCameraServer,
                 RtspPort = port,
                 HttpSupported = device.HttpSupported
             };
