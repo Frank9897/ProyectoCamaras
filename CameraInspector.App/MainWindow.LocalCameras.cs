@@ -19,19 +19,6 @@ public partial class MainWindow
     // _moduleNavigationBuilt impide reconstruir la navegación cuando WPF dispara Loaded más de una vez.
     private bool _moduleNavigationBuilt;
 
-    static MainWindow()
-    {
-        EventManager.RegisterClassHandler(
-            typeof(DataGrid),
-            FrameworkElement.PreviewMouseRightButtonDownEvent,
-            new MouseButtonEventHandler(OnDataGridPreviewMouseRightButtonDown));
-
-        EventManager.RegisterClassHandler(
-            typeof(MainWindow),
-            FrameworkElement.LoadedEvent,
-            new RoutedEventHandler(OnMainWindowLoadedForModules));
-    }
-
     private static void OnDataGridPreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (sender is not DataGrid dataGrid)
