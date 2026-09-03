@@ -32,15 +32,18 @@ public partial class NetworkConfigurationWindow : Window
         Loaded += async (_, _) =>
         {
             ConfigureManufacturerProfileUi();
-            _viewModel.BeginLoadingValues();
             try
             {
                 await _viewModel.LoadCommand.ExecuteAsync(null);
                 await _viewModel.LoadHostnameCommand.ExecuteAsync(null);
+                // La carga inicial no cuenta como una modificación realizada por el usuario.
+                _viewModel.HasUnsavedChanges = false;
+                _viewModel.ValidationMessage = string.Empty;
             }
-            finally
+            catch (Exception ex)
             {
-                _viewModel.EndLoadingValues();
+                _viewModel.StatusText = $"ALERTA: no se pudo cargar la configuración inicial: {ex.Message}";
+                _viewModel.IsStatusError = true;
             }
         };
     }
