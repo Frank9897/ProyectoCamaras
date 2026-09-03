@@ -22,15 +22,13 @@
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <StackPanel>
                 <TextBlock Text="CONFIGURACIÓN DE CÁMARA IP" FontFamily="Consolas" FontSize="19" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
-                <TextBlock Margin="0,5,0,0" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap">
-                    <Run Text="Administración de red, nombre, servicios y sistema. " />
-                    <Run Text="Primero se lee el estado actual; luego se valida y finalmente se confirma cada cambio." />
-                </TextBlock>
+                <TextBlock Margin="0,5,0,0" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" Text="Administración de red, identificación y sistema. Primero lea el estado actual; luego valide y confirme cada cambio."/>
             </StackPanel>
             <Border Grid.Column="1" Padding="10,7" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" Background="{StaticResource Panel2Brush}" CornerRadius="4" VerticalAlignment="Center">
                 <StackPanel>
                     <TextBlock Text="CÁMARA SELECCIONADA" Foreground="{StaticResource TextDimBrush}" FontSize="9" FontWeight="Bold"/>
-                    <TextBlock Text="{Binding _deviceViewModel.IpAddress}" FontFamily="Consolas" Foreground="{StaticResource AccentBrush}"/>
+                    <TextBlock Text="{Binding CameraIpAddress}" FontFamily="Consolas" Foreground="{StaticResource AccentBrush}"/>
+                    <TextBlock Text="{Binding CameraManufacturer}" FontFamily="Consolas" Foreground="{StaticResource TextDimBrush}" FontSize="9"/>
                 </StackPanel>
             </Border>
         </Grid>
@@ -41,178 +39,48 @@
                 <StackPanel>
                     <TextBlock Text="ESTADO DE CONFIGURACIÓN" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
                     <TextBlock Text="{Binding StatusText}" Margin="0,4,0,0" TextWrapping="Wrap" FontFamily="Consolas" FontSize="11">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsStatusError}" Value="True">
-                                        <Setter Property="Foreground" Value="{StaticResource ErrBrush}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
+                        <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{StaticResource TextBrush}"/><Style.Triggers><DataTrigger Binding="{Binding IsStatusError}" Value="True"><Setter Property="Foreground" Value="{StaticResource ErrBrush}"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
                     </TextBlock>
                     <TextBlock Text="{Binding ValidationMessage}" Margin="0,4,0,0" Foreground="{StaticResource WarnBrush}" FontFamily="Consolas" FontSize="10" TextWrapping="Wrap"/>
-                    <TextBlock Text="● HAY CAMBIOS PENDIENTES" Margin="0,5,0,0" Foreground="{StaticResource WarnBrush}" FontFamily="Consolas" FontSize="10" FontWeight="Bold" Visibility="{Binding HasUnsavedChanges, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    <TextBlock Text="● CAMBIOS PENDIENTES" Margin="0,5,0,0" Foreground="{StaticResource WarnBrush}" FontFamily="Consolas" FontSize="10" FontWeight="Bold"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding HasUnsavedChanges}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="↻ LEER ACTUAL" Command="{Binding LoadCommand}" Style="{StaticResource SecondaryButton}" Padding="14,8" Margin="0,0,7,0" ToolTip="Vuelve a consultar la cámara sin aplicar ningún cambio."/>
-                    <Button Content="CERRAR" Command="{Binding CloseCommand}" Padding="14,8" ToolTip="Cierra la ventana sin aplicar cambios pendientes."/>
+                    <Button Content="↻ LEER ACTUAL" Command="{Binding LoadCommand}" Style="{StaticResource SecondaryButton}" Padding="14,8" Margin="0,0,7,0" ToolTip="Consulta nuevamente la cámara. No modifica nada."/>
+                    <Button Content="CERRAR" Command="{Binding CloseCommand}" Padding="14,8" ToolTip="Cierra sin aplicar cambios pendientes."/>
                 </StackPanel>
             </Grid>
         </Border>
 
         <Border Grid.Row="2" Padding="9" Margin="0,0,0,8" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
-            <TextBlock TextWrapping="Wrap" FontSize="10" Foreground="{StaticResource TextDimBrush}">
-                <Run Text="FLUJO RECOMENDADO: " FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                <Run Text="1) LEER ACTUAL → 2) seleccionar interfaz → 3) editar → 4) VALIDAR → 5) APLICAR. " />
-                <Run Text="Los cambios de IP pueden cortar la conexión inmediatamente." Foreground="{StaticResource WarnBrush}"/>
-            </TextBlock>
+            <TextBlock TextWrapping="Wrap" FontSize="10" Foreground="{StaticResource TextDimBrush}"><Run Text="FLUJO RECOMENDADO: " FontWeight="Bold" Foreground="{StaticResource TextBrush}"/><Run Text="LEER ACTUAL → seleccionar interfaz → editar → VALIDAR → APLICAR. "/><Run Text="Los cambios de IP pueden cortar la conexión." Foreground="{StaticResource WarnBrush}"/></TextBlock>
         </Border>
 
         <TabControl Grid.Row="3">
             <TabItem Header="RESUMEN">
-                <Grid Margin="14">
-                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                    <TextBlock Text="INTERFACES DE RED DETECTADAS" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
-                    <DataGrid Grid.Row="1" Margin="0,8,0,0" ItemsSource="{Binding Interfaces}" SelectedItem="{Binding SelectedInterface, Mode=TwoWay}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="INTERFAZ" Binding="{Binding Name}" Width="150"/>
-                            <DataGridTextColumn Header="TOKEN" Binding="{Binding Token}" Width="170"/>
-                            <DataGridTextColumn Header="MAC" Binding="{Binding HwAddress}" Width="155"/>
-                            <DataGridTextColumn Header="IPv4" Binding="{Binding IPv4Address}" Width="145"/>
-                            <DataGridTextColumn Header="CIDR" Binding="{Binding IPv4PrefixLength}" Width="70"/>
-                            <DataGridTextColumn Header="DHCP" Binding="{Binding IPv4Dhcp}" Width="75"/>
-                            <DataGridTextColumn Header="MTU" Binding="{Binding Mtu}" Width="70"/>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </Grid>
+                <Grid Margin="14"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions><TextBlock Text="INTERFACES DE RED DETECTADAS" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/><DataGrid Grid.Row="1" Margin="0,8,0,0" ItemsSource="{Binding Interfaces}" SelectedItem="{Binding SelectedInterface, Mode=TwoWay}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"><DataGrid.Columns><DataGridTextColumn Header="INTERFAZ" Binding="{Binding Name}" Width="150"/><DataGridTextColumn Header="TOKEN" Binding="{Binding Token}" Width="170"/><DataGridTextColumn Header="MAC" Binding="{Binding HwAddress}" Width="155"/><DataGridTextColumn Header="IPv4" Binding="{Binding IPv4Address}" Width="145"/><DataGridTextColumn Header="CIDR" Binding="{Binding IPv4PrefixLength}" Width="70"/><DataGridTextColumn Header="DHCP" Binding="{Binding IPv4Dhcp}" Width="75"/><DataGridTextColumn Header="MTU" Binding="{Binding Mtu}" Width="70"/></DataGrid.Columns></DataGrid></Grid>
             </TabItem>
 
             <TabItem Header="RED IPv4">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <Grid Margin="18">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="190"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-
-                        <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="CONFIGURACIÓN DE RED IPv4" FontFamily="Consolas" FontSize="15" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
-                        <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,5,0,14" Text="Seleccione cómo obtiene la cámara su dirección. Los campos se validan localmente antes de enviar nada." Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
-
-                        <TextBlock Grid.Row="2" Text="INTERFAZ" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
-                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedInterface.Name}" FontFamily="Consolas" Foreground="{StaticResource TextBrush}"/>
-
-                        <TextBlock Grid.Row="3" Text="MODO IPv4" Margin="0,12,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
-                        <CheckBox Grid.Row="3" Grid.Column="1" Content="Usar DHCP automáticamente" IsChecked="{Binding UseDhcp}" Margin="0,10,0,0" ToolTip="Actívelo para que la cámara solicite su IP mediante DHCP."/>
-
-                        <TextBlock Grid.Row="4" Text="DIRECCIÓN IPv4" Margin="0,12,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
-                        <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding Ipv4Address, UpdateSourceTrigger=PropertyChanged}" FontFamily="Consolas" Height="32" IsEnabled="{Binding UseDhcp, Converter={StaticResource InverseBooleanConverter}}"/>
-
-                        <TextBlock Grid.Row="5" Text="PREFIJO CIDR" Margin="0,10,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
-                        <StackPanel Grid.Row="5" Grid.Column="1" Orientation="Horizontal" Margin="0,8,0,0">
-                            <TextBox Text="{Binding PrefixLength, UpdateSourceTrigger=PropertyChanged}" FontFamily="Consolas" Width="90" IsEnabled="{Binding UseDhcp, Converter={StaticResource InverseBooleanConverter}}"/>
-                            <TextBlock Text="ejemplo: 24 = 255.255.255.0" Margin="10,7,0,0" Foreground="{StaticResource TextDimBrush}" FontSize="10"/>
-                        </StackPanel>
-
-                        <TextBlock Grid.Row="6" Text="GATEWAY IPv4" Margin="0,12,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
-                        <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding GatewayAddress, UpdateSourceTrigger=PropertyChanged}" FontFamily="Consolas" Height="32" Margin="0,8,0,0"/>
-
-                        <StackPanel Grid.Row="7" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,20,0,0">
-                            <Button Content="✓ VALIDAR CONFIGURACIÓN" Command="{Binding ValidateNetworkCommand}" Style="{StaticResource SecondaryButton}" Padding="16,9" Margin="0,0,8,0"/>
-                            <Button Content="APLICAR CAMBIOS" Command="{Binding ApplyCommand}" Style="{StaticResource PrimaryButton}" Padding="18,9"/>
-                        </StackPanel>
-
-                        <Border Grid.Row="8" Grid.ColumnSpan="2" Margin="0,18,0,0" Padding="12" Background="{StaticResource Panel3Brush}" BorderBrush="{StaticResource WarnBrush}" BorderThickness="1">
-                            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource WarnBrush}">
-                                <Run Text="IMPORTANTE: " FontWeight="Bold"/>
-                                <Run Text="si cambia la IP, la cámara puede desaparecer de la dirección actual. Anote la nueva IP antes de aplicar."/>
-                            </TextBlock>
-                        </Border>
-                    </Grid>
-                </ScrollViewer>
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><Grid Margin="18"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="190"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="CONFIGURACIÓN DE RED IPv4" FontFamily="Consolas" FontSize="15" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/><TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,5,0,14" Text="Configure DHCP o una dirección estática. Los datos se validan localmente antes de enviar la operación." Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/><TextBlock Grid.Row="2" Text="INTERFAZ" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedInterface.Name}" FontFamily="Consolas" Foreground="{StaticResource TextBrush}"/><TextBlock Grid.Row="3" Text="MODO IPv4" Margin="0,12,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><CheckBox Grid.Row="3" Grid.Column="1" Content="Usar DHCP automáticamente" IsChecked="{Binding UseDhcp}" Margin="0,10,0,0"/><TextBlock Grid.Row="4" Text="DIRECCIÓN IPv4" Margin="0,12,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBox Grid.Row="4" Grid.Column="1" Text="{Binding Ipv4Address, UpdateSourceTrigger=PropertyChanged}" FontFamily="Consolas" Height="32"><TextBox.Style><Style TargetType="TextBox"><Setter Property="IsEnabled" Value="True"/><Style.Triggers><DataTrigger Binding="{Binding UseDhcp}" Value="True"><Setter Property="IsEnabled" Value="False"/></DataTrigger></Style.Triggers></Style></TextBox.Style></TextBox><TextBlock Grid.Row="5" Text="PREFIJO CIDR" Margin="0,10,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><StackPanel Grid.Row="5" Grid.Column="1" Orientation="Horizontal" Margin="0,8,0,0"><TextBox Text="{Binding PrefixLength, UpdateSourceTrigger=PropertyChanged}" FontFamily="Consolas" Width="90"><TextBox.Style><Style TargetType="TextBox"><Setter Property="IsEnabled" Value="True"/><Style.Triggers><DataTrigger Binding="{Binding UseDhcp}" Value="True"><Setter Property="IsEnabled" Value="False"/></DataTrigger></Style.Triggers></Style></TextBox.Style></TextBox><TextBlock Text="ejemplo: 24 = 255.255.255.0" Margin="10,7,0,0" Foreground="{StaticResource TextDimBrush}" FontSize="10"/></StackPanel><TextBlock Grid.Row="6" Text="GATEWAY IPv4" Margin="0,12,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBox Grid.Row="6" Grid.Column="1" Text="{Binding GatewayAddress, UpdateSourceTrigger=PropertyChanged}" FontFamily="Consolas" Height="32" Margin="0,8,0,0"/><StackPanel Grid.Row="7" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,20,0,0"><Button Content="✓ VALIDAR CONFIGURACIÓN" Command="{Binding ValidateNetworkCommand}" Style="{StaticResource SecondaryButton}" Padding="16,9" Margin="0,0,8,0"/><Button Content="APLICAR CAMBIOS" Command="{Binding ApplyCommand}" Style="{StaticResource PrimaryButton}" Padding="18,9"/></StackPanel><Border Grid.Row="8" Grid.ColumnSpan="2" Margin="0,18,0,0" Padding="12" Background="{StaticResource Panel3Brush}" BorderBrush="{StaticResource WarnBrush}" BorderThickness="1"><TextBlock TextWrapping="Wrap" Foreground="{StaticResource WarnBrush}"><Run Text="IMPORTANTE: " FontWeight="Bold"/><Run Text="si cambia la IP, la cámara puede desaparecer de la dirección actual. Anote la nueva IP antes de aplicar."/></TextBlock></Border></Grid></ScrollViewer>
             </TabItem>
 
             <TabItem Header="NOMBRE">
-                <Grid Margin="18">
-                    <StackPanel MaxWidth="780">
-                        <TextBlock Text="IDENTIFICACIÓN DE LA CÁMARA" FontFamily="Consolas" FontSize="15" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
-                        <TextBlock Margin="0,6,0,14" Text="El nombre ONVIF ayuda a reconocer la cámara en la red. No modifica la dirección IP." Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
-                        <TextBlock Text="NOMBRE ACTUAL / NUEVO" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
-                        <TextBox Text="{Binding Hostname, UpdateSourceTrigger=PropertyChanged}" FontFamily="Consolas" FontSize="16" Height="38" Margin="0,7,0,0"/>
-                        <TextBlock Text="Permitido: letras, números y guiones · 1 a 63 caracteres · sin espacios." Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontSize="10"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
-                            <Button Content="↻ LEER NOMBRE" Command="{Binding LoadHostnameCommand}" Style="{StaticResource SecondaryButton}" Padding="16,8" Margin="0,0,8,0"/>
-                            <Button Content="GUARDAR NOMBRE" Command="{Binding SetHostnameCommand}" Style="{StaticResource PrimaryButton}" Padding="16,8"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Grid>
+                <Grid Margin="18"><StackPanel MaxWidth="780"><TextBlock Text="IDENTIFICACIÓN DE LA CÁMARA" FontFamily="Consolas" FontSize="15" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/><TextBlock Margin="0,6,0,14" Text="El nombre ONVIF ayuda a reconocer la cámara. No modifica la dirección IP." Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/><TextBlock Text="NOMBRE ACTUAL / NUEVO" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBox Text="{Binding Hostname, UpdateSourceTrigger=PropertyChanged}" FontFamily="Consolas" FontSize="16" Height="38" Margin="0,7,0,0"/><TextBlock Text="Permitido: letras, números y guiones · 1 a 63 caracteres · sin espacios." Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontSize="10"/><StackPanel Orientation="Horizontal" Margin="0,16,0,0"><Button Content="↻ LEER NOMBRE" Command="{Binding LoadHostnameCommand}" Style="{StaticResource SecondaryButton}" Padding="16,8" Margin="0,0,8,0"/><Button Content="GUARDAR NOMBRE" Command="{Binding SetHostnameCommand}" Style="{StaticResource PrimaryButton}" Padding="16,8"/></StackPanel></StackPanel></Grid>
             </TabItem>
 
             <TabItem Header="SERVICIOS">
-                <Grid Margin="12">
-                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                    <TextBlock Text="PROTOCOLOS ANUNCIADOS POR LA CÁMARA" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
-                    <DataGrid Grid.Row="1" Margin="0,8,0,0" ItemsSource="{Binding Protocols}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="SERVICIO / PROTOCOLO" Binding="{Binding Name}" Width="220"/>
-                            <DataGridTextColumn Header="ESTADO" Binding="{Binding Enabled}" Width="130"/>
-                            <DataGridTextColumn Header="PUERTOS" Binding="{Binding Ports}" Width="*"/>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </Grid>
+                <Grid Margin="12"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions><TextBlock Text="PROTOCOLOS ANUNCIADOS POR LA CÁMARA" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/><DataGrid Grid.Row="1" Margin="0,8,0,0" ItemsSource="{Binding Protocols}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"><DataGrid.Columns><DataGridTextColumn Header="SERVICIO / PROTOCOLO" Binding="{Binding Name}" Width="220"/><DataGridTextColumn Header="ESTADO" Binding="{Binding Enabled}" Width="130"/><DataGridTextColumn Header="PUERTOS" Binding="{Binding Ports}" Width="*"/></DataGrid.Columns></DataGrid></Grid>
             </TabItem>
 
             <TabItem Header="GATEWAY">
-                <Grid Margin="18">
-                    <StackPanel>
-                        <TextBlock Text="GATEWAY IPv4 DETECTADO" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
-                        <TextBlock Margin="0,6,0,14" Text="Este apartado muestra lo que la cámara informa actualmente. Para modificarlo use RED IPv4." Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
-                        <ItemsControl ItemsSource="{Binding Gateways}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Margin="0,0,0,7" Padding="12" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
-                                        <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="14" Foreground="{StaticResource TextBrush}"/>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <TextBlock Text="(ninguno informado)" Foreground="{StaticResource TextDimBrush}" Visibility="{Binding Gateways.Count, Converter={StaticResource ZeroCountToVisibilityConverter}}"/>
-                    </StackPanel>
-                </Grid>
+                <Grid Margin="18"><StackPanel><TextBlock Text="GATEWAY IPv4 DETECTADO" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/><TextBlock Margin="0,6,0,14" Text="Este apartado muestra lo que la cámara informa actualmente. Para modificarlo use RED IPv4." Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/><ItemsControl ItemsSource="{Binding Gateways}"><ItemsControl.ItemTemplate><DataTemplate><Border Margin="0,0,0,7" Padding="12" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1"><TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="14" Foreground="{StaticResource TextBrush}"/></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl><TextBlock Text="Si no aparece ningún valor, la cámara no informó un gateway." Margin="0,8,0,0" Foreground="{StaticResource TextDimBrush}"/></StackPanel></Grid>
             </TabItem>
 
             <TabItem Header="SISTEMA">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="18" MaxWidth="820">
-                        <TextBlock Text="ACCIONES DEL SISTEMA" FontFamily="Consolas" FontSize="15" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
-                        <Border Margin="0,12,0,10" Padding="12" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
-                            <StackPanel>
-                                <TextBlock Text="REINICIAR" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                                <TextBlock Margin="0,5,0,0" Text="Reinicia la cámara sin restablecer su configuración. Puede perderse la conexión durante unos segundos." Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
-                                <Button Content="↻ REINICIAR CÁMARA" Command="{Binding RebootCommand}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="16,8" Margin="0,10,0,0"/>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Padding="12" Background="{StaticResource Panel3Brush}" BorderBrush="{StaticResource ErrBrush}" BorderThickness="1">
-                            <StackPanel>
-                                <TextBlock Text="ZONA DE PELIGRO" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource ErrBrush}"/>
-                                <TextBlock Margin="0,5,0,0" Text="RESTABLECIMIENTO DE FÁBRICA puede borrar red, usuarios y otros ajustes. La cámara puede quedar con otra IP o requerir configuración inicial." Foreground="{StaticResource TextBrush}" TextWrapping="Wrap"/>
-                                <Button Content="⚠ RESTABLECER DE FÁBRICA" Command="{Binding FactoryResetCommand}" Style="{StaticResource SecondaryButton}" Foreground="{StaticResource ErrBrush}" HorizontalAlignment="Left" Padding="16,8" Margin="0,12,0,0"/>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </ScrollViewer>
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="18" MaxWidth="820"><TextBlock Text="ACCIONES DEL SISTEMA" FontFamily="Consolas" FontSize="15" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/><Border Margin="0,12,0,10" Padding="12" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1"><StackPanel><TextBlock Text="REINICIAR" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/><TextBlock Margin="0,5,0,0" Text="Reinicia la cámara sin restablecer su configuración. Puede perderse la conexión durante unos segundos." Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/><Button Content="↻ REINICIAR CÁMARA" Command="{Binding RebootCommand}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="16,8" Margin="0,10,0,0"/></StackPanel></Border><Border Padding="12" Background="{StaticResource Panel3Brush}" BorderBrush="{StaticResource ErrBrush}" BorderThickness="1"><StackPanel><TextBlock Text="ZONA DE PELIGRO" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource ErrBrush}"/><TextBlock Margin="0,5,0,0" Text="RESTABLECIMIENTO DE FÁBRICA puede borrar red, usuarios y otros ajustes. La cámara puede quedar con otra IP o requerir configuración inicial." Foreground="{StaticResource TextBrush}" TextWrapping="Wrap"/><Button Content="⚠ RESTABLECER DE FÁBRICA" Command="{Binding FactoryResetCommand}" Style="{StaticResource SecondaryButton}" Foreground="{StaticResource ErrBrush}" HorizontalAlignment="Left" Padding="16,8" Margin="0,12,0,0"/></StackPanel></Border></StackPanel></ScrollViewer>
             </TabItem>
         </TabControl>
 
-        <DockPanel Grid.Row="4" Margin="0,10,0,0">
-            <TextBlock DockPanel.Dock="Left" Text="{Binding ValidationMessage}" Foreground="{StaticResource WarnBrush}" VerticalAlignment="Center" TextWrapping="Wrap"/>
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                <TextBlock Text="Cambios pendientes" Foreground="{StaticResource WarnBrush}" VerticalAlignment="Center" Margin="0,0,12,0" Visibility="{Binding HasUnsavedChanges, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                <Button Content="↻ ACTUALIZAR DATOS" Command="{Binding LoadCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/>
-                <Button Content="CERRAR" Command="{Binding CloseCommand}"/>
-            </StackPanel>
-        </DockPanel>
+        <DockPanel Grid.Row="4" Margin="0,10,0,0"><TextBlock DockPanel.Dock="Left" Text="{Binding ValidationMessage}" Foreground="{StaticResource WarnBrush}" VerticalAlignment="Center" TextWrapping="Wrap"/><StackPanel DockPanel.Dock="Right" Orientation="Horizontal"><TextBlock Text="● cambios pendientes" Foreground="{StaticResource WarnBrush}" VerticalAlignment="Center" Margin="0,0,12,0"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding HasUnsavedChanges}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock><Button Content="↻ ACTUALIZAR DATOS" Command="{Binding LoadCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/><Button Content="CERRAR" Command="{Binding CloseCommand}"/></StackPanel></DockPanel>
     </Grid>
 </Window>
