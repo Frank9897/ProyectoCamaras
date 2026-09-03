@@ -14,7 +14,7 @@ public static class CameraConfigurationProfileResolver
         "Discovery de la aplicación",
         "Configuración estándar con ONVIF cuando está disponible; web como respaldo",
         "ONVIF / HTTP",
-        true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, false,
         "No se identificó un fabricante con un flujo propietario conocido. Se muestran únicamente operaciones compatibles con las capacidades detectadas y se mantiene un respaldo web.",
         [
             "Leer capacidades antes de modificar",
@@ -149,7 +149,7 @@ public static class CameraConfigurationProfileResolver
         var model = device.Model ?? string.Empty;
         var value = string.Concat(manufacturer, " ", model);
 
-        if (value.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase) || value.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase)) return Vivotek;
+        if (value.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase)) return Vivotek;
         if (value.Contains("HIKVISION", StringComparison.OrdinalIgnoreCase) || value.Contains("HIK VISION", StringComparison.OrdinalIgnoreCase)) return Hikvision;
         if (value.Contains("DAHUA", StringComparison.OrdinalIgnoreCase)) return Dahua;
         if (value.Contains("AXIS", StringComparison.OrdinalIgnoreCase)) return Axis;
