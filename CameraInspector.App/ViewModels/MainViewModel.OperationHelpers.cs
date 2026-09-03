@@ -12,6 +12,31 @@ public sealed partial class MainViewModel
         return credentials is null ? null : (credentials.Username, credentials.Password);
     }
 
+    /// <summary>
+    /// Registra una reproducción real como evidencia de vídeo confirmado.
+    /// La comprobación ligera puede no conocer la ruta RTSP propietaria de una cámara,
+    /// pero si LibVLC está reproduciendo no debemos mostrar "SIN VIDEO".
+    /// </summary>
+    public void MarkVideoConfirmed(string? protocol = null, int? port = null, string? message = null)
+    {
+        if (SelectedDevice is null)
+            return;
+
+        var device = SelectedDevice.Device;
+        device.HealthState = CameraHealthState.Healthy;
+        device.CommunicationAvailable = true;
+        device.VideoAvailable = true;
+        device.AuthenticationRequired = false;
+        device.CommunicationPort = port ?? device.CommunicationPort ?? 554;
+        device.CommunicationProtocol = protocol ?? device.CommunicationProtocol ?? "RTSP";
+        device.HealthMessage = message ?? "OK: reproducción de vídeo confirmada por LibVLC.";
+        device.LastHealthCheckAt = DateTimeOffset.UtcNow;
+        device.Status = DeviceStatus.Online;
+
+        SelectedDevice.RefreshHealth();
+        SelectedDevice.Refresh();
+    }
+
     public async Task RecheckSelectedHealthAsync()
     {
         if (SelectedDevice is null)
