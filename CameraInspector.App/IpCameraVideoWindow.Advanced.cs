@@ -12,18 +12,39 @@ public partial class IpCameraVideoWindow
         if (viewModel.SelectedDevice is null)
             return;
 
-        if (!viewModel.SelectedDevice.HasImagingService)
+        var services = App.Services;
+        if (services is null)
         {
-            viewModel.StatusText = "Imagen no disponible: la cámara no anunció Imaging ONVIF.";
+            viewModel.StatusText = "ALERTA: los servicios de la aplicación no están disponibles.";
             return;
         }
 
-        var services = App.Services;
-        if (services is null)
-            return;
-
         try
         {
+            var manufacturer = viewModel.SelectedDevice.Manufacturer ?? string.Empty;
+
+            // VIVOTEK IP7133 y otros modelos legacy pueden ofrecer imagen por CGI
+            // aunque no anuncien Imaging ONVIF. En ese caso abrimos el inspector propietario.
+            if (manufacturer.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase))
+            {
+                new VivotekParametersWindow(
+                    viewModel.SelectedDevice,
+                    services.GetRequiredService<IVivotekParameterService>(),
+                    services.GetRequiredService<ICredentialStore>(),
+                    services.GetRequiredService<ICameraCredentialStore>())
+                {
+                    Owner = this,
+                    ShowInTaskbar = false
+                }.ShowDialog();
+                return;
+            }
+
+            if (!viewModel.SelectedDevice.HasImagingService)
+            {
+                viewModel.StatusText = "ALERTA: esta cámara no anunció Imaging ONVIF. El vídeo puede funcionar por un protocolo propietario y esta operación concreta no está disponible por ONVIF.";
+                return;
+            }
+
             new ImagingWindow(
                 viewModel.SelectedDevice,
                 services.GetRequiredService<IOnvifImagingService>(),
@@ -36,7 +57,7 @@ public partial class IpCameraVideoWindow
         }
         catch (Exception ex)
         {
-            viewModel.StatusText = $"No se pudo abrir ajustes de imagen: {ex.Message}";
+            viewModel.StatusText = $"ALERTA: no se pudo abrir ajustes de imagen: {ex.Message}";
         }
     }
 
@@ -46,15 +67,18 @@ public partial class IpCameraVideoWindow
         if (viewModel.SelectedDevice is null)
             return;
 
-        if (!viewModel.SelectedDevice.HasEventsService)
+        var services = App.Services;
+        if (services is null)
         {
-            viewModel.StatusText = "Eventos no disponibles: la cámara no anunció Events ONVIF.";
+            viewModel.StatusText = "ALERTA: los servicios de la aplicación no están disponibles.";
             return;
         }
 
-        var services = App.Services;
-        if (services is null)
+        if (!viewModel.SelectedDevice.HasEventsService)
+        {
+            viewModel.StatusText = "ALERTA: Eventos no disponibles porque la cámara no anunció Events ONVIF.";
             return;
+        }
 
         try
         {
@@ -70,7 +94,7 @@ public partial class IpCameraVideoWindow
         }
         catch (Exception ex)
         {
-            viewModel.StatusText = $"No se pudo abrir eventos: {ex.Message}";
+            viewModel.StatusText = $"ALERTA: no se pudo abrir eventos: {ex.Message}";
         }
     }
 
@@ -82,14 +106,17 @@ public partial class IpCameraVideoWindow
 
         var services = App.Services;
         if (services is null)
+        {
+            viewModel.StatusText = "ALERTA: los servicios de la aplicación no están disponibles.";
             return;
+        }
 
         try
         {
             var resolver = services.GetRequiredService<ICameraProviderResolver>();
             if (resolver.Resolve(viewModel.SelectedDevice.Device) is null)
             {
-                viewModel.StatusText = "No hay un provider propietario compatible con esta cámara.";
+                viewModel.StatusText = "ALERTA: no hay un provider propietario compatible con esta cámara.";
                 return;
             }
 
@@ -105,7 +132,7 @@ public partial class IpCameraVideoWindow
         }
         catch (Exception ex)
         {
-            viewModel.StatusText = $"No se pudo abrir funciones propietarias: {ex.Message}";
+            viewModel.StatusText = $"ALERTA: no se pudo abrir funciones propietarias: {ex.Message}";
         }
     }
 }
