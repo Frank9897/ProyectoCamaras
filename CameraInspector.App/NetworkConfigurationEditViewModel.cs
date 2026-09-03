@@ -35,6 +35,7 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
     [ObservableProperty] private bool _hasUnsavedChanges;
     [ObservableProperty] private string _validationMessage = string.Empty;
 
+    public DiscoveredDevice Device => _deviceViewModel.Device;
     public string CameraIpAddress => _deviceViewModel.IpAddress;
     public string CameraManufacturer => _deviceViewModel.Manufacturer;
     public string CameraModel => _deviceViewModel.Model;
