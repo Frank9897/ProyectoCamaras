@@ -52,10 +52,13 @@ public partial class IpCameraVideoWindow : Window
         }
         catch (Exception ex)
         {
-            _viewModel.StatusText = $"No se pudo comprobar la salud inicial: {ex.Message}";
+            _viewModel.StatusText = $"ALERTA: no se pudo comprobar la salud inicial: {ex.Message}";
         }
         finally
         {
+            // Si el reproductor ya está mostrando vídeo, esa evidencia real tiene prioridad
+            // sobre una comprobación ligera que no conozca la ruta propietaria del stream.
+            ConfirmPlayingVideoHealth();
             RefreshCredentialsButton();
             RefreshButtons();
         }
@@ -75,11 +78,12 @@ public partial class IpCameraVideoWindow : Window
             HealthButton.IsEnabled = false;
             _viewModel.StatusText = "Comprobando comunicación y vídeo...";
             await _viewModel.RecheckSelectedHealthAsync();
+            ConfirmPlayingVideoHealth();
             _viewModel.StatusText = _viewModel.SelectedDevice?.HealthMessage ?? "Comprobación finalizada.";
         }
         catch (Exception ex)
         {
-            _viewModel.StatusText = $"No se pudo comprobar la salud: {ex.Message}";
+            _viewModel.StatusText = $"ALERTA: no se pudo comprobar la salud: {ex.Message}";
         }
         finally
         {
@@ -89,23 +93,25 @@ public partial class IpCameraVideoWindow : Window
         }
     }
 
+    /// <summary>
+    /// La salud no debe utilizarse como un bloqueo de capacidades.
+    /// Una cámara puede no responder al probe rápido, pero seguir ofreciendo administración
+    /// por un protocolo propietario o por ONVIF cuando el técnico lo solicite.
+    /// </summary>
     private void NetworkButton_Click(object sender, RoutedEventArgs e)
     {
         var device = _viewModel.SelectedDevice;
         if (device is null)
             return;
 
-        if (!device.OnvifSupported && !device.HasMediaService)
-        {
-            _viewModel.StatusText = "Configuración de red no disponible: esta cámara no anunció administración ONVIF.";
-            return;
-        }
-
         try
         {
             var services = App.Services;
             if (services is null)
+            {
+                _viewModel.StatusText = "ALERTA: los servicios de la aplicación no están disponibles.";
                 return;
+            }
 
             var window = new NetworkConfigurationWindow(
                 device,
@@ -118,11 +124,12 @@ public partial class IpCameraVideoWindow : Window
             };
             window.ShowDialog();
             _ = _viewModel.RecheckSelectedHealthAsync();
+            ConfirmPlayingVideoHealth();
             RefreshButtons();
         }
         catch (Exception ex)
         {
-            _viewModel.StatusText = $"No se pudo abrir configuración de red: {ex.Message}";
+            _viewModel.StatusText = $"ALERTA: no se pudo abrir configuración de red: {ex.Message}";
         }
     }
 
@@ -130,7 +137,10 @@ public partial class IpCameraVideoWindow : Window
     {
         var ip = _viewModel.SelectedDevice?.IpAddress;
         if (string.IsNullOrWhiteSpace(ip))
+        {
+            _viewModel.StatusText = "ALERTA: la cámara no tiene una IP válida.";
             return;
+        }
 
         try
         {
@@ -139,7 +149,7 @@ public partial class IpCameraVideoWindow : Window
         }
         catch (Exception ex)
         {
-            _viewModel.StatusText = $"No se pudo abrir la interfaz web: {ex.Message}";
+            _viewModel.StatusText = $"ALERTA: no se pudo abrir la interfaz web: {ex.Message}";
         }
     }
 
@@ -147,7 +157,10 @@ public partial class IpCameraVideoWindow : Window
     {
         var ip = _viewModel.SelectedDevice?.IpAddress;
         if (string.IsNullOrWhiteSpace(ip))
+        {
+            _viewModel.StatusText = "ALERTA: la cámara no tiene una IP válida.";
             return;
+        }
 
         try
         {
@@ -156,7 +169,7 @@ public partial class IpCameraVideoWindow : Window
         }
         catch (Exception ex)
         {
-            _viewModel.StatusText = $"No se pudo copiar la IP: {ex.Message}";
+            _viewModel.StatusText = $"ALERTA: no se pudo copiar la IP: {ex.Message}";
         }
     }
 
@@ -164,12 +177,14 @@ public partial class IpCameraVideoWindow : Window
     {
         try
         {
-            if (_viewModel.RunDiagnosticsCommand.CanExecute(null))
-                await _viewModel.RunDiagnosticsCommand.ExecuteAsync(null);
+            if (_viewModel.RunQuickDiagnosticsCommand.CanExecute(null))
+                await _viewModel.RunQuickDiagnosticsCommand.ExecuteAsync(null);
+            else
+                _viewModel.StatusText = "ALERTA: el diagnóstico no puede iniciarse en este momento.";
         }
         catch (Exception ex)
         {
-            _viewModel.StatusText = $"No se pudo ejecutar el diagnóstico: {ex.Message}";
+            _viewModel.StatusText = $"ALERTA: no se pudo ejecutar el diagnóstico: {ex.Message}";
         }
         finally
         {
@@ -185,14 +200,14 @@ public partial class IpCameraVideoWindow : Window
 
         if (!device.HasPtzService)
         {
-            _viewModel.StatusText = "PTZ no disponible: la cámara no anunció servicio PTZ ONVIF.";
+            _viewModel.StatusText = "ALERTA: PTZ no disponible; la cámara no anunció servicio PTZ ONVIF.";
             return;
         }
 
         var service = App.Services?.GetService<IOnvifPtzService>();
         if (service is null)
         {
-            _viewModel.StatusText = "Servicio PTZ no registrado.";
+            _viewModel.StatusText = "ALERTA: servicio PTZ no registrado.";
             return;
         }
 
@@ -205,11 +220,11 @@ public partial class IpCameraVideoWindow : Window
             var success = await service.ContinuousMoveAsync(device.Device, request, credentials.Value.Username, credentials.Value.Password);
             _viewModel.StatusText = success
                 ? $"PTZ: {description}."
-                : $"PTZ no disponible: la cámara rechazó o no respondió al movimiento ({description}).";
+                : $"ALERTA: la cámara rechazó o no respondió al movimiento PTZ ({description}).";
         }
         catch (Exception ex)
         {
-            _viewModel.StatusText = $"Error PTZ ({description}): {ex.Message}";
+            _viewModel.StatusText = $"ALERTA: error PTZ ({description}): {ex.Message}";
         }
     }
 
@@ -229,7 +244,7 @@ public partial class IpCameraVideoWindow : Window
         var service = App.Services?.GetService<IOnvifPtzService>();
         if (service is null || !device.HasPtzService)
         {
-            _viewModel.StatusText = "PTZ no disponible para esta cámara.";
+            _viewModel.StatusText = "ALERTA: PTZ no disponible para esta cámara.";
             return;
         }
 
@@ -240,11 +255,11 @@ public partial class IpCameraVideoWindow : Window
                 return;
 
             var success = await service.StopAsync(device.Device, credentials.Value.Username, credentials.Value.Password);
-            _viewModel.StatusText = success ? "PTZ detenido." : "La cámara no confirmó la detención del PTZ.";
+            _viewModel.StatusText = success ? "PTZ detenido." : "ALERTA: la cámara no confirmó la detención del PTZ.";
         }
         catch (Exception ex)
         {
-            _viewModel.StatusText = $"Error al detener PTZ: {ex.Message}";
+            _viewModel.StatusText = $"ALERTA: error al detener PTZ: {ex.Message}";
         }
     }
 
@@ -270,11 +285,11 @@ public partial class IpCameraVideoWindow : Window
         try
         {
             var saved = _videoPlayerService.TakeSnapshot(dialog.FileName);
-            _viewModel.StatusText = saved ? $"Captura guardada: {dialog.FileName}" : "No hay un frame de video disponible para capturar.";
+            _viewModel.StatusText = saved ? $"Captura guardada: {dialog.FileName}" : "ALERTA: no hay un frame de video disponible para capturar.";
         }
         catch (Exception ex)
         {
-            _viewModel.StatusText = $"No se pudo guardar la captura: {ex.Message}";
+            _viewModel.StatusText = $"ALERTA: no se pudo guardar la captura: {ex.Message}";
         }
     }
 
@@ -282,7 +297,10 @@ public partial class IpCameraVideoWindow : Window
     {
         var device = _viewModel.SelectedDevice;
         if (device is null || _viewModel.ResolvedMainStream is null)
+        {
+            _viewModel.StatusText = "ALERTA: no hay un stream principal resuelto para grabar.";
             return;
+        }
 
         var dialog = new SaveFileDialog
         {
@@ -308,7 +326,7 @@ public partial class IpCameraVideoWindow : Window
         }
         catch (Exception ex)
         {
-            _viewModel.StatusText = $"No se pudo iniciar la grabación: {ex.Message}";
+            _viewModel.StatusText = $"ALERTA: no se pudo iniciar la grabación: {ex.Message}";
         }
         finally
         {
@@ -381,6 +399,18 @@ public partial class IpCameraVideoWindow : Window
         StopButton.IsEnabled = hasDevice && playing;
         InfoButton.IsEnabled = hasDevice;
         HealthButton.IsEnabled = hasDevice;
+    }
+
+    private void ConfirmPlayingVideoHealth()
+    {
+        if (!_videoPlayerService.Player.IsPlaying || _viewModel.SelectedDevice is null)
+            return;
+
+        var port = 554;
+        if (Uri.TryCreate(_viewModel.ResolvedMainStream?.RtspUri, UriKind.Absolute, out var uri) && uri.Port > 0)
+            port = uri.Port;
+
+        _viewModel.MarkVideoConfirmed("RTSP", port, "OK: vídeo confirmado por reproducción real de LibVLC. La comprobación rápida no se utiliza para bloquear operaciones.");
     }
 
     private void RefreshCredentialsButton()
