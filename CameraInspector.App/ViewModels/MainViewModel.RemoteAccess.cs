@@ -25,7 +25,11 @@ public sealed partial class MainViewModel
     private string _remotePort = "3443";
 
     [ObservableProperty] private string _remoteStatus = "Sin conexión configurada.";
-    [ObservableProperty] private bool _remoteBusy;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(TestRemoteConnectionCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SearchRemoteCamerasCommand))]
+    private bool _remoteBusy;
 
     [RelayCommand(CanExecute = nameof(CanRunRemoteAction))]
     private async Task TestRemoteConnectionAsync(CancellationToken cancellationToken)
