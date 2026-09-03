@@ -18,26 +18,25 @@ public sealed partial class MainViewModel
         var device = SelectedDevice.Device;
         StatusText = $"Probando video de {device.IpAddress}...";
 
-        // Primero probamos credenciales ya guardadas para no pedirlas innecesariamente.
         var savedCredentials = await LoadSavedCredentialSessionAsync(cancellationToken);
         if (savedCredentials is not null &&
             await TryResolveAndPlayMainStreamAsync(savedCredentials, cancellationToken))
         {
             AuthenticationRequired = false;
+            MarkVideoConfirmed("RTSP", ExtractRtspPort(ResolvedMainStream?.RtspUri), "OK: vídeo confirmado mediante reproducción real con credenciales guardadas.");
             StatusText = $"Video iniciado con las credenciales guardadas en {device.IpAddress}.";
             return true;
         }
 
-        // Una cámara recién restaurada o configurada puede publicar RTSP sin autenticación.
         var anonymous = new CredentialSession(string.Empty, string.Empty, null);
         if (await TryResolveAndPlayMainStreamAsync(anonymous, cancellationToken))
         {
             AuthenticationRequired = false;
+            MarkVideoConfirmed("RTSP", ExtractRtspPort(ResolvedMainStream?.RtspUri), "OK: vídeo confirmado mediante reproducción RTSP real, sin credenciales.");
             StatusText = $"Video iniciado automáticamente en {device.IpAddress} sin credenciales.";
             return true;
         }
 
-        // Solo llegamos aquí cuando no pudimos acceder automáticamente al stream.
         AuthenticationRequired = true;
         StatusText =
             $"La cámara {device.IpAddress} requiere usuario y contraseña o rechazó el acceso anónimo. " +
@@ -52,6 +51,7 @@ public sealed partial class MainViewModel
             await TryResolveAndPlayMainStreamAsync(enteredCredentials, cancellationToken))
         {
             AuthenticationRequired = false;
+            MarkVideoConfirmed("RTSP", ExtractRtspPort(ResolvedMainStream?.RtspUri), "OK: vídeo confirmado mediante reproducción real después de autenticar la cámara.");
             StatusText = $"Video iniciado correctamente en {SelectedDevice.IpAddress}.";
             return true;
         }
@@ -61,6 +61,16 @@ public sealed partial class MainViewModel
             "Las credenciales ingresadas no permitieron iniciar el video. " +
             "Puede modificarlas desde CREDENCIALES y volver a probar MAIN STREAM.";
         return false;
+    }
+
+    private static int? ExtractRtspPort(string? uri)
+    {
+        if (string.IsNullOrWhiteSpace(uri))
+            return null;
+
+        return Uri.TryCreate(uri, UriKind.Absolute, out var parsed)
+            ? parsed.Port > 0 ? parsed.Port : 554
+            : null;
     }
 
     private async Task<CredentialSession?> LoadSavedCredentialSessionAsync(CancellationToken cancellationToken)
@@ -87,7 +97,6 @@ public sealed partial class MainViewModel
         }
         catch
         {
-            // Un problema del almacén seguro no impide probar acceso anónimo.
             return null;
         }
     }
