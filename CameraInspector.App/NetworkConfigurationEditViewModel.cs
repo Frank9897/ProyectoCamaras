@@ -34,7 +34,11 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
     [ObservableProperty] private bool _isSystemActionRunning;
     [ObservableProperty] private bool _isStatusError;
     [ObservableProperty] private bool _hasUnsavedChanges;
-    [ObservableProperty] private string _validationMessage = "";
+    [ObservableProperty] private string _validationMessage = string.Empty;
+
+    public string CameraIpAddress => _deviceViewModel.IpAddress;
+    public string CameraManufacturer => _deviceViewModel.Manufacturer;
+    public string CameraModel => _deviceViewModel.Model;
 
     public ObservableCollection<OnvifNetworkInterfaceInfo> Interfaces { get; } = new();
     public ObservableCollection<OnvifNetworkProtocolInfo> Protocols { get; } = new();
@@ -156,7 +160,7 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
                 return;
             }
 
-            if (IPAddress.Parse(Ipv4Address).Equals(IPAddress.Broadcast) || IPAddress.Parse(Ipv4Address).Equals(IPAddress.Any))
+            if (ipv4.Equals(IPAddress.Broadcast) || ipv4.Equals(IPAddress.Any))
             {
                 ValidationMessage = "No utilice 0.0.0.0 ni 255.255.255.255 como dirección de cámara.";
                 SetStatus("ALERTA: la IPv4 seleccionada no puede utilizarse para la cámara.", true);
@@ -233,8 +237,6 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
             if (credentials is null)
                 return;
 
-            // El gateway se configura primero. Así evitamos perder el endpoint ONVIF
-            // antes de haber enviado el gateway final cuando la cámara cambia de IP.
             SetStatus("Paso 1/2: aplicando gateway...");
             var gatewayResult = await _writer.SetDefaultGatewayAsync(
                 _deviceViewModel.Device,
