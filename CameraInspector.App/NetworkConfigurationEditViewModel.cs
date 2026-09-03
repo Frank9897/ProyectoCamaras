@@ -29,7 +29,6 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
     [ObservableProperty] private string _ipv4Address = string.Empty;
     [ObservableProperty] private string _prefixLength = "24";
     [ObservableProperty] private string _gatewayAddress = string.Empty;
-    [ObservableProperty] private string _hostname = string.Empty;
     [ObservableProperty] private bool _isApplying;
     [ObservableProperty] private bool _isSystemActionRunning;
     [ObservableProperty] private bool _isStatusError;
@@ -75,7 +74,6 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
     partial void OnIpv4AddressChanged(string value) => HasUnsavedChanges = true;
     partial void OnPrefixLengthChanged(string value) => HasUnsavedChanges = true;
     partial void OnGatewayAddressChanged(string value) => HasUnsavedChanges = true;
-    partial void OnHostnameChanged(string value) => HasUnsavedChanges = true;
 
     private void SetStatus(string message, bool error = false)
     {
