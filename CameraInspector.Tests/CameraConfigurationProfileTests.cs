@@ -25,7 +25,12 @@ public sealed class CameraConfigurationProfileTests
     [Fact]
     public void Hikvision_uses_sadp_profile()
     {
-        var device = new DiscoveredDevice { Manufacturer = "Hikvision", Model = "DS-2CD" };
+        var device = new DiscoveredDevice
+        {
+            IpAddress = "192.168.1.51",
+            Manufacturer = "Hikvision",
+            Model = "DS-2CD"
+        };
 
         var profile = CameraConfigurationProfileResolver.Resolve(device);
 
@@ -36,7 +41,12 @@ public sealed class CameraConfigurationProfileTests
     [Fact]
     public void Unknown_manufacturer_falls_back_to_generic()
     {
-        var device = new DiscoveredDevice { Manufacturer = "Fabricante Desconocido", Model = "IPC-X" };
+        var device = new DiscoveredDevice
+        {
+            IpAddress = "192.168.1.52",
+            Manufacturer = "Fabricante Desconocido",
+            Model = "IPC-X"
+        };
 
         var profile = CameraConfigurationProfileResolver.Resolve(device);
 
