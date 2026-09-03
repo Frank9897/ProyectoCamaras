@@ -11,25 +11,27 @@ namespace CameraInspector.App;
 /// </summary>
 public partial class MainWindow
 {
-    // Se registra antes del constructor para ejecutar después de que el módulo principal
-    // haya sido construido por MainWindow.LocalCameras.cs.
-    private readonly bool _remoteAccessHook = RegisterRemoteAccessHook();
-
-    private bool RegisterRemoteAccessHook()
+    static MainWindow()
     {
-        Loaded += (_, _) =>
-            Dispatcher.BeginInvoke(new Action(EnsureRemoteAccessTab),
-                System.Windows.Threading.DispatcherPriority.Loaded);
-        return true;
+        EventManager.RegisterClassHandler(
+            typeof(MainWindow),
+            FrameworkElement.LoadedEvent,
+            new RoutedEventHandler(OnRemoteAccessLoaded));
+    }
+
+    private static void OnRemoteAccessLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MainWindow window)
+            return;
+
+        window.Dispatcher.BeginInvoke(
+            new Action(window.EnsureRemoteAccessTab),
+            System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     private void EnsureRemoteAccessTab()
     {
         if (Content is not TabControl modules || modules.Items.Count == 0)
-            return;
-
-        if (modules.Items.OfType<TabItem>().Any(item =>
-                string.Equals(item.Header?.ToString(), "CONEXIÓN DE ENLACE", StringComparison.OrdinalIgnoreCase)))
             return;
 
         var networkModule = modules.Items.OfType<TabItem>().FirstOrDefault(item =>
@@ -39,6 +41,10 @@ public partial class MainWindow
 
         var modes = FindModeTabControl(grid);
         if (modes is null)
+            return;
+
+        if (modes.Items.OfType<TabItem>().Any(item =>
+                string.Equals(item.Header?.ToString(), "CONEXIÓN DE ENLACE", StringComparison.OrdinalIgnoreCase)))
             return;
 
         modes.Items.Add(CreateRemoteAccessTab());
@@ -162,32 +168,31 @@ public partial class MainWindow
         Grid.SetColumn(portHelp, 2);
         formGrid.Children.Add(portHelp);
 
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0) };
         var testButton = new Button
         {
             Content = "PROBAR ENLACE",
             Width = 150,
             Height = 36,
-            Margin = new Thickness(0, 12, 8, 0),
+            Margin = new Thickness(0, 0, 8, 0),
             Style = (Style)FindResource("SecondaryButton")
         };
         testButton.SetBinding(Button.CommandProperty, new Binding("TestRemoteConnectionCommand"));
-        Grid.SetRow(testButton, 2);
-        Grid.SetColumn(testButton, 1);
-        formGrid.Children.Add(testButton);
+        actions.Children.Add(testButton);
 
         var searchButton = new Button
         {
             Content = "BUSCAR CÁMARAS",
             Width = 170,
             Height = 36,
-            Margin = new Thickness(158, 12, 0, 0),
             Style = (Style)FindResource("PrimaryButton"),
             ToolTip = "Prueba el enlace y consulta el endpoint con los detectores compatibles."
         };
         searchButton.SetBinding(Button.CommandProperty, new Binding("SearchRemoteCamerasCommand"));
-        Grid.SetRow(searchButton, 2);
-        Grid.SetColumn(searchButton, 1);
-        formGrid.Children.Add(searchButton);
+        actions.Children.Add(searchButton);
+        Grid.SetRow(actions, 2);
+        Grid.SetColumn(actions, 1);
+        formGrid.Children.Add(actions);
 
         var status = new TextBlock
         {
