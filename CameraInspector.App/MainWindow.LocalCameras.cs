@@ -11,7 +11,7 @@ namespace CameraInspector.App;
 
 /// <summary>
 /// Integración de los módulos principales de Camera Inspector.
-/// La vista RED/IP existente se conserva y se aloja como módulo; USB/UVC reutiliza la vista local validada.
+/// La vista IP se organiza en detección por red y detección directa; USB/UVC reutiliza la vista local.
 /// </summary>
 public partial class MainWindow
 {
@@ -55,7 +55,7 @@ public partial class MainWindow
 
         modules.Items.Add(new TabItem
         {
-            Header = "RED / IP",
+            Header = "CÁMARAS IP / RED",
             Content = CreateNetworkModuleContent(originalContent)
         });
         modules.Items.Add(CreateUsbModuleTab());
@@ -75,9 +75,10 @@ public partial class MainWindow
     {
         var networkModule = new Grid { Background = (Brush)FindResource("BgBrush") };
         networkModule.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        networkModule.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         networkModule.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-        var modePanel = new Border
+        var headerPanel = new Border
         {
             Background = (Brush)FindResource("PanelBrush"),
             BorderBrush = (Brush)FindResource("BorderBrush2"),
@@ -87,14 +88,14 @@ public partial class MainWindow
             Padding = new Thickness(12, 8, 12, 8)
         };
 
-        var modeLayout = new Grid();
-        modeLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(255) });
-        modeLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var headerLayout = new Grid();
+        headerLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(300) });
+        headerLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
         var titlePanel = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         titlePanel.Children.Add(new TextBlock
         {
-            Text = "CÁMARA DIRECTA",
+            Text = "CÁMARA IP / RED",
             FontFamily = new FontFamily("Consolas"),
             FontSize = 12,
             FontWeight = FontWeights.Bold,
@@ -102,18 +103,18 @@ public partial class MainWindow
         });
         titlePanel.Children.Add(new TextBlock
         {
-            Text = "IP opcional · primero discovery, después acceso.",
+            Text = "Seleccione cómo desea detectar o acceder a la cámara.",
             Margin = new Thickness(0, 3, 0, 0),
             Foreground = (Brush)FindResource("TextDimBrush")
         });
         titlePanel.Children.Add(new TextBlock
         {
-            Text = "Ideal para cámara Ethernet directa o APIPA.",
+            Text = "La detección directa no reemplaza el escaneo de red.",
             Margin = new Thickness(0, 2, 0, 0),
             Foreground = (Brush)FindResource("TextDimBrush")
         });
         Grid.SetColumn(titlePanel, 0);
-        modeLayout.Children.Add(titlePanel);
+        headerLayout.Children.Add(titlePanel);
 
         var controlsPanel = new StackPanel
         {
@@ -123,6 +124,127 @@ public partial class MainWindow
         };
 
         controlsPanel.Children.Add(new TextBlock
+        {
+            Text = "INTERFAZ",
+            FontFamily = new FontFamily("Consolas"),
+            FontSize = 10,
+            FontWeight = FontWeights.Bold,
+            Foreground = (Brush)FindResource("TextDimBrush"),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 7, 0)
+        });
+
+        var interfaceSelector = new ComboBox
+        {
+            Width = 280,
+            Height = 32,
+            ToolTip = "Interfaz que se utilizará para discovery y escaneo de red."
+        };
+        interfaceSelector.SetBinding(ItemsControl.ItemsSourceProperty, new System.Windows.Data.Binding("AvailableInterfaces"));
+        interfaceSelector.SetBinding(Selector.SelectedItemProperty, new System.Windows.Data.Binding("SelectedInterface")
+        {
+            Mode = System.Windows.Data.BindingMode.TwoWay
+        });
+        controlsPanel.Children.Add(interfaceSelector);
+
+        var globalScanButton = new Button
+        {
+            Content = "▣ ESCANEAR RED",
+            Width = 145,
+            Height = 32,
+            Margin = new Thickness(8, 0, 0, 0),
+            Style = (Style)FindResource("PrimaryButton"),
+            ToolTip = "Ejecuta la detección principal sobre la interfaz seleccionada."
+        };
+        globalScanButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("ScanCommand"));
+        controlsPanel.Children.Add(globalScanButton);
+
+        Grid.SetColumn(controlsPanel, 1);
+        headerLayout.Children.Add(controlsPanel);
+        headerPanel.Child = headerLayout;
+        Grid.SetRow(headerPanel, 0);
+        networkModule.Children.Add(headerPanel);
+
+        var modePanel = new Border
+        {
+            Background = (Brush)FindResource("PanelBrush"),
+            BorderBrush = (Brush)FindResource("BorderBrush2"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(5),
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+
+        var modes = new TabControl
+        {
+            Background = (Brush)FindResource("PanelBrush"),
+            Foreground = (Brush)FindResource("TextBrush"),
+            BorderBrush = (Brush)FindResource("BorderBrush2"),
+            BorderThickness = new Thickness(0)
+        };
+
+        var networkTab = new TabItem { Header = "POR RED" };
+        var networkTabContent = new StackPanel { Margin = new Thickness(12), Orientation = Orientation.Horizontal };
+        networkTabContent.Children.Add(new Border
+        {
+            Background = (Brush)FindResource("Panel2Brush"),
+            BorderBrush = (Brush)FindResource("BorderBrush2"),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(10),
+            Margin = new Thickness(0, 0, 10, 0),
+            Child = new StackPanel
+            {
+                Children =
+                {
+                    new TextBlock { Text = "DETECCIÓN POR RED", FontFamily = new FontFamily("Consolas"), FontWeight = FontWeights.Bold, Foreground = (Brush)FindResource("AccentBrush") },
+                    new TextBlock { Text = "Descubre cámaras dentro de la subred o en todas las interfaces activas.", Margin = new Thickness(0, 4, 0, 0), Foreground = (Brush)FindResource("TextDimBrush"), TextWrapping = TextWrapping.Wrap, Width = 420 }
+                }
+            }
+        });
+
+        var subnetButton = new Button
+        {
+            Content = "ESCANEAR SUBRED",
+            Width = 155,
+            Height = 38,
+            Margin = new Thickness(0, 0, 8, 0),
+            Style = (Style)FindResource("SecondaryButton"),
+            ToolTip = "Escanear la subred asociada a la interfaz seleccionada."
+        };
+        subnetButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("ScanNetworkSubnetCommand"));
+        networkTabContent.Children.Add(subnetButton);
+
+        var fullButton = new Button
+        {
+            Content = "ESCANEO TOTAL",
+            Width = 135,
+            Height = 38,
+            Margin = new Thickness(0, 0, 8, 0),
+            Style = (Style)FindResource("SecondaryButton"),
+            ToolTip = "Recorrer todas las interfaces de red activas y consolidar cámaras sin duplicados."
+        };
+        fullButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("ScanFullNetworkCommand"));
+        networkTabContent.Children.Add(fullButton);
+        networkTab.Content = networkTabContent;
+
+        var directTab = new TabItem { Header = "DIRECTA" };
+        var directLayout = new StackPanel { Margin = new Thickness(12) };
+        directLayout.Children.Add(new TextBlock
+        {
+            Text = "DETECCIÓN DIRECTA",
+            FontFamily = new FontFamily("Consolas"),
+            FontWeight = FontWeights.Bold,
+            Foreground = (Brush)FindResource("AccentBrush")
+        });
+        directLayout.Children.Add(new TextBlock
+        {
+            Text = "Ideal para una cámara conectada directamente, una IP conocida o un enlace APIPA.",
+            Margin = new Thickness(0, 4, 0, 10),
+            Foreground = (Brush)FindResource("TextDimBrush"),
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        var directControls = new StackPanel { Orientation = Orientation.Horizontal };
+        directControls.Children.Add(new TextBlock
         {
             Text = "IP OBJETIVO",
             FontFamily = new FontFamily("Consolas"),
@@ -135,87 +257,53 @@ public partial class MainWindow
 
         var targetTextBox = new TextBox
         {
-            Width = 145,
+            Width = 170,
             Height = 32,
-            Padding = new Thickness(7, 5, 7, 4),
             FontFamily = new FontFamily("Consolas"),
-            ToolTip = "Opcional. Vacío = descubrir sin conocer la IP. Ej.: 192.168.1.50 o 169.254.10.20."
+            ToolTip = "Opcional. Vacío = discovery directo. Ej.: 192.168.1.50 o 169.254.10.20."
         };
         targetTextBox.SetBinding(TextBox.TextProperty, new System.Windows.Data.Binding("DirectCameraIp")
         {
             Mode = System.Windows.Data.BindingMode.TwoWay,
             UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged
         });
-        controlsPanel.Children.Add(targetTextBox);
+        directControls.Children.Add(targetTextBox);
 
         var directButton = new Button
         {
             Content = "DETECTAR CÁMARA",
-            Width = 145,
+            Width = 150,
             Height = 38,
             Margin = new Thickness(8, 0, 0, 0),
             Style = (Style)FindResource("PrimaryButton"),
-            ToolTip = "Sin IP: utiliza discovery. Con IP: limita las pruebas al host indicado."
+            ToolTip = "Con IP: limita las pruebas al host indicado. Sin IP: realiza discovery directo y APIPA cuando corresponde."
         };
         directButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("ScanDirectCameraCommand"));
-        controlsPanel.Children.Add(directButton);
-
-        var credentialsButton = new Button
-        {
-            Content = "CREDENCIALES",
-            Width = 115,
-            Height = 38,
-            Margin = new Thickness(6, 0, 0, 0),
-            Style = (Style)FindResource("SecondaryButton"),
-            ToolTip = "Con una cámara seleccionada, ingresar o actualizar usuario y contraseña."
-        };
-        credentialsButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("SaveCredentialsCommand"));
-        controlsPanel.Children.Add(credentialsButton);
+        directControls.Children.Add(directButton);
 
         var networkConfigButton = new Button
         {
             Content = "CONFIG. RED",
-            Width = 110,
+            Width = 120,
             Height = 38,
-            Margin = new Thickness(6, 0, 0, 0),
+            Margin = new Thickness(8, 0, 0, 0),
             Style = (Style)FindResource("SecondaryButton"),
-            ToolTip = "Administrar IPv4, gateway, nombre, reinicio y restablecimiento de fábrica."
+            ToolTip = "Abrir configuración de red de la cámara seleccionada. La operación informará claramente si ONVIF no está disponible."
         };
         networkConfigButton.Click += NetworkConfigurationButton_Click;
-        networkConfigButton.SetBinding(Button.IsEnabledProperty, new System.Windows.Data.Binding("SelectedDevice.OnvifSupported"));
-        controlsPanel.Children.Add(networkConfigButton);
+        directControls.Children.Add(networkConfigButton);
 
-        var subnetButton = new Button
-        {
-            Content = "ESCANEAR SUBRED",
-            Width = 150,
-            Height = 38,
-            Margin = new Thickness(6, 0, 0, 0),
-            Style = (Style)FindResource("SecondaryButton"),
-            ToolTip = "Escanear la subred asociada a la interfaz seleccionada."
-        };
-        subnetButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("ScanNetworkSubnetCommand"));
-        controlsPanel.Children.Add(subnetButton);
+        directLayout.Children.Add(directControls);
+        directTab.Content = directLayout;
 
-        var fullButton = new Button
-        {
-            Content = "ESCANEO TOTAL",
-            Width = 130,
-            Height = 38,
-            Margin = new Thickness(6, 0, 0, 0),
-            Style = (Style)FindResource("SecondaryButton"),
-            ToolTip = "Recorrer todas las interfaces de red activas y consolidar cámaras sin duplicados."
-        };
-        fullButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("ScanFullNetworkCommand"));
-        controlsPanel.Children.Add(fullButton);
-
-        Grid.SetColumn(controlsPanel, 1);
-        modeLayout.Children.Add(controlsPanel);
-        modePanel.Child = modeLayout;
-        Grid.SetRow(modePanel, 0);
+        modes.Items.Add(networkTab);
+        modes.Items.Add(directTab);
+        modes.SelectedIndex = 0;
+        modePanel.Child = modes;
+        Grid.SetRow(modePanel, 1);
         networkModule.Children.Add(modePanel);
 
-        Grid.SetRow(originalContent, 1);
+        Grid.SetRow(originalContent, 2);
         networkModule.Children.Add(originalContent);
         return networkModule;
     }
@@ -228,7 +316,7 @@ public partial class MainWindow
         if (!mainViewModel.SelectedDevice.OnvifSupported)
         {
             ShowInformation(
-                "La configuración de red editable requiere que la cámara exponga ONVIF.",
+                "La configuración de red editable requiere que la cámara exponga ONVIF. La detección y el vídeo pueden seguir funcionando aunque esta función no esté disponible.",
                 "Camera Inspector — Configuración de red");
             return;
         }
