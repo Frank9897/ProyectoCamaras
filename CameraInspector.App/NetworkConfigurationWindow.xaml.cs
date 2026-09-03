@@ -5,8 +5,8 @@ using CameraInspector.Core.Interfaces;
 namespace CameraInspector.App;
 
 /// <summary>
-/// Ventana de administración de red ONVIF.
-/// La lectura es automática; las escrituras requieren confirmación explícita.
+/// Ventana de administración de red y cámara IP.
+/// La vista adapta la guía al fabricante detectado y usa ONVIF como base común cuando está disponible.
 /// </summary>
 public partial class NetworkConfigurationWindow : Window
 {
@@ -31,8 +31,17 @@ public partial class NetworkConfigurationWindow : Window
 
         Loaded += async (_, _) =>
         {
-            await _viewModel.LoadCommand.ExecuteAsync(null);
-            await _viewModel.LoadHostnameCommand.ExecuteAsync(null);
+            ConfigureManufacturerProfileUi();
+            _viewModel.BeginLoadingValues();
+            try
+            {
+                await _viewModel.LoadCommand.ExecuteAsync(null);
+                await _viewModel.LoadHostnameCommand.ExecuteAsync(null);
+            }
+            finally
+            {
+                _viewModel.EndLoadingValues();
+            }
         };
     }
 }
