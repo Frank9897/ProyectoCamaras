@@ -35,11 +35,21 @@ public partial class MainWindow
         if (Content is not Grid root || root.RowDefinitions.Count < 4)
             return;
 
-        // La tabla y el detalle comparten el espacio disponible. Ambos poseen
-        // desplazamiento propio para no perder contenido en ventanas pequeñas.
-        root.RowDefinitions[2].Height = new GridLength(0.38, GridUnitType.Star);
+        var availableHeight = ActualHeight;
+
+        // En ventanas altas damos algo más de espacio a la tabla para facilitar la lectura
+        // y mantenemos el detalle suficientemente grande para sus pestañas y desplazamiento.
+        var listRatio = availableHeight >= 850 ? 0.42 : availableHeight <= 680 ? 0.34 : 0.38;
+        var detailRatio = 1.0 - listRatio;
+
+        root.RowDefinitions[2].Height = new GridLength(listRatio, GridUnitType.Star);
         root.RowDefinitions[2].MinHeight = 145;
-        root.RowDefinitions[3].Height = new GridLength(0.62, GridUnitType.Star);
+        root.RowDefinitions[3].Height = new GridLength(detailRatio, GridUnitType.Star);
         root.RowDefinitions[3].MinHeight = 245;
+
+        // Evita que el estado global crezca indefinidamente cuando el texto de diagnóstico
+        // cambia durante un escaneo; el contenido largo se mantiene en una sola zona visible.
+        if (root.RowDefinitions.Count > 1)
+            root.RowDefinitions[1].MinHeight = 42;
     }
 }
