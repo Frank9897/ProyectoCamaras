@@ -23,16 +23,11 @@ jobs:
 
           $xamlPath = 'CameraInspector.App/MainWindow.xaml'
           $xaml = Get-Content -Raw -LiteralPath $xamlPath
-          $xamlBlock = @'
-            <StackPanel Grid.Column="1" Orientation="Horizontal">
-                <ComboBox ItemsSource="{Binding AvailableInterfaces}" SelectedItem="{Binding SelectedInterface}" Width="315" Height="32"/>
-                <Button Content="▣ ESCANEAR RED" Width="145" Height="32" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}" Command="{Binding ScanCommand}"/>
-            </StackPanel>
-'@
-          if ($xaml.Contains($xamlBlock)) {
-            $xaml = $xaml.Replace($xamlBlock, '')
-            Set-Content -LiteralPath $xamlPath -Value $xaml -Encoding utf8
-          }
+          $xaml = [regex]::Replace(
+            $xaml,
+            '(?s)\s*<StackPanel Grid\.Column="1" Orientation="Horizontal">\s*<ComboBox ItemsSource="\{Binding AvailableInterfaces\}".*?</StackPanel>\s*',
+            "`r`n")
+          Set-Content -LiteralPath $xamlPath -Value $xaml -Encoding utf8
 
           $localPath = 'CameraInspector.App/MainWindow.LocalCameras.cs'
           $local = Get-Content -Raw -LiteralPath $localPath
@@ -40,10 +35,9 @@ jobs:
           $endMarker = '        headerPanel.Child = headerLayout;'
           $end = $local.IndexOf($endMarker, $start)
           if ($start -ge 0 -and $end -gt $start) {
-            $replacement = '        headerPanel.Child = headerLayout;'
-            $local = $local.Substring(0, $start) + $replacement + $local.Substring($end + $endMarker.Length)
-            Set-Content -LiteralPath $localPath -Value $local -Encoding utf8
+            $local = $local.Substring(0, $start) + $endMarker + $local.Substring($end + $endMarker.Length)
           }
+          Set-Content -LiteralPath $localPath -Value $local -Encoding utf8
 
           Remove-Item -LiteralPath 'CameraInspector.App/MainWindow.UiCleanup.cs' -Force -ErrorAction SilentlyContinue
           Remove-Item -LiteralPath '.github/workflows/maintenance-remove-ui-controls.yml' -Force -ErrorAction SilentlyContinue
