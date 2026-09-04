@@ -113,7 +113,7 @@ public sealed class RemoteEndpointDiscoveryService : IRemoteCameraDiscoveryServi
     {
         var http = await TryHttpProbeAsync(client, target, cancellationToken);
         if (http is not null)
-            return http.IsTlsLike ? "HTTPS" : "HTTP";
+            return http.Value.IsTlsLike ? "HTTPS" : "HTTP";
 
         var rtsp = await TryRtspProbeAsync(target, cancellationToken);
         return rtsp ? "RTSP" : "TCP";
@@ -155,16 +155,17 @@ public sealed class RemoteEndpointDiscoveryService : IRemoteCameraDiscoveryServi
     }
 
     private static async Task<bool> TryRtspProbeAsync(
-        RemoteConnectionTarget target,
+        string host,
+        int port,
         CancellationToken cancellationToken)
     {
         try
         {
             using var client = new TcpClient();
-            await ConnectAsync(client, target.Host, target.Port, cancellationToken);
+            await ConnectAsync(client, host, port, cancellationToken);
             using var stream = client.GetStream();
             var request = Encoding.ASCII.GetBytes(
-                $"OPTIONS rtsp://{target.Host}:{target.Port}/ RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: CameraInspector/1.0\r\n\r\n");
+                $"OPTIONS rtsp://{host}:{port}/ RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: CameraInspector/1.0\r\n\r\n");
             await stream.WriteAsync(request, cancellationToken);
             await stream.FlushAsync(cancellationToken);
             var buffer = new byte[4096];
@@ -178,6 +179,11 @@ public sealed class RemoteEndpointDiscoveryService : IRemoteCameraDiscoveryServi
             return false;
         }
     }
+
+    private static Task<bool> TryRtspProbeAsync(
+        RemoteConnectionTarget target,
+        CancellationToken cancellationToken)
+        => TryRtspProbeAsync(target.Host, target.Port, cancellationToken);
 
     private static async Task<(bool IsCamera, string? Manufacturer, string? Model, string? Server)> ProbeApplicationFingerprintAsync(
         TcpClient client,
