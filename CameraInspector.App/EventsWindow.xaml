@@ -4,57 +4,60 @@
         Title="Camera Inspector — Events"
         Width="820"
         Height="560"
-        MinWidth="640"
-        MinHeight="400"
+        MinWidth="560"
+        MinHeight="360"
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource BgBrush}"
         Foreground="{StaticResource TextBrush}"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True">
-    <Grid Margin="16">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+        <Grid Margin="16" MinWidth="520">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="280" MinHeight="180"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
 
-        <TextBlock Text="EVENTOS // ONVIF PULLPOINT"
-                   FontFamily="Consolas"
-                   FontSize="17"
-                   FontWeight="Bold"
-                   Foreground="{StaticResource AccentBrush}"/>
+            <TextBlock Text="EVENTOS // ONVIF PULLPOINT"
+                       FontFamily="Consolas"
+                       FontSize="17"
+                       FontWeight="Bold"
+                       Foreground="{StaticResource AccentBrush}"
+                       TextWrapping="Wrap"/>
 
-        <TextBlock Grid.Row="1"
-                   Margin="0,7,0,12"
-                   Text="La consulta utiliza PullMessages: la aplicación solicita eventos a la cámara y no abre puertos entrantes en el equipo técnico."
-                   Foreground="{StaticResource TextDimBrush}"
-                   TextWrapping="Wrap"/>
+            <TextBlock Grid.Row="1"
+                       Margin="0,7,0,12"
+                       Text="La consulta utiliza PullMessages: la aplicación solicita eventos a la cámara y no abre puertos entrantes en el equipo técnico."
+                       Foreground="{StaticResource TextDimBrush}"
+                       TextWrapping="Wrap"/>
 
-        <Border Grid.Row="2"
-                Background="{StaticResource Panel2Brush}"
-                BorderBrush="{StaticResource BorderBrush2}"
-                BorderThickness="1">
-            <DataGrid ItemsSource="{Binding Events}"
-                      AutoGenerateColumns="False"
-                      IsReadOnly="True"
-                      CanUserAddRows="False"
-                      HeadersVisibility="Column"
-                      HorizontalScrollBarVisibility="Auto"
-                      VerticalScrollBarVisibility="Auto">
-                <DataGrid.Columns>
-                    <DataGridTextColumn Header="HORA" Binding="{Binding Time}" Width="160"/>
-                    <DataGridTextColumn Header="TOPIC" Binding="{Binding Topic}" Width="240"/>
-                    <DataGridTextColumn Header="SOURCE" Binding="{Binding Source}" Width="170"/>
-                    <DataGridTextColumn Header="DATA" Binding="{Binding Data}" Width="*"/>
-                </DataGrid.Columns>
-            </DataGrid>
-        </Border>
+            <Border Grid.Row="2"
+                    Background="{StaticResource Panel2Brush}"
+                    BorderBrush="{StaticResource BorderBrush2}"
+                    BorderThickness="1">
+                <DataGrid ItemsSource="{Binding Events}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          CanUserAddRows="False"
+                          HeadersVisibility="Column"
+                          HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Auto">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="HORA" Binding="{Binding Time}" Width="160"/>
+                        <DataGridTextColumn Header="TOPIC" Binding="{Binding Topic}" Width="240"/>
+                        <DataGridTextColumn Header="SOURCE" Binding="{Binding Source}" Width="170"/>
+                        <DataGridTextColumn Header="DATA" Binding="{Binding Data}" Width="*"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Border>
 
-        <WrapPanel Grid.Row="3" HorizontalAlignment="Right" Margin="0,12,0,0">
-            <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Margin="0,0,12,0" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
-            <Button Content="ACTUALIZAR" Command="{Binding RefreshCommand}" MinWidth="110" Margin="0,0,8,0" Style="{StaticResource PrimaryButton}"/>
-            <Button Content="CERRAR" Command="{Binding CloseCommand}" MinWidth="90"/>
-        </WrapPanel>
-    </Grid>
+            <WrapPanel Grid.Row="3" Margin="0,12,0,0" HorizontalAlignment="Left">
+                <Button Content="ACTUALIZAR" Command="{Binding RefreshCommand}" MinWidth="110" Margin="0,0,8,5" Style="{StaticResource PrimaryButton}"/>
+                <Button Content="CERRAR" Command="{Binding CloseCommand}" MinWidth="90" Margin="0,0,12,5}"/>
+                <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" MaxWidth="420" Margin="0,0,0,5"/>
+            </WrapPanel>
+        </Grid>
+    </ScrollViewer>
 </Window>
