@@ -5,6 +5,9 @@ namespace CameraInspector.Network.Detection;
 /// <summary>
 /// Decide si un dispositivo debe mostrarse como cámara.
 /// Una sola señal genérica como RTSP, HTTP, OUI o SSDP nunca alcanza por sí sola.
+/// Las detecciones fuertes deben marcar explícitamente que la respuesta constituye
+/// evidencia de cámara; esto evita que un protocolo reutilizado por otros servicios
+/// sea tratado como identidad de cámara por el solo nombre del detector.
 /// </summary>
 public static class CameraDetectionClassifier
 {
@@ -59,8 +62,16 @@ public static class CameraDetectionClassifier
 
             if (StrongMethods.Contains(method))
             {
-                strong++;
-                details.Add($"{evidence.Method} ({evidence.Confidence:P0})");
+                if (evidence.IsCameraEvidence)
+                {
+                    strong++;
+                    details.Add($"{evidence.Method} ({evidence.Confidence:P0})");
+                }
+                else
+                {
+                    weak++;
+                    details.Add($"{evidence.Method} · no confirma cámara ({evidence.Confidence:P0})");
+                }
                 continue;
             }
 
