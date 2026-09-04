@@ -105,13 +105,15 @@ public partial class MainWindow
         {
             Text = "Seleccione cómo desea detectar o acceder a la cámara.",
             Margin = new Thickness(0, 3, 0, 0),
-            Foreground = (Brush)FindResource("TextDimBrush")
+            Foreground = (Brush)FindResource("TextDimBrush"),
+            TextWrapping = TextWrapping.Wrap
         });
         titlePanel.Children.Add(new TextBlock
         {
             Text = "La detección directa no reemplaza el escaneo de red.",
             Margin = new Thickness(0, 2, 0, 0),
-            Foreground = (Brush)FindResource("TextDimBrush")
+            Foreground = (Brush)FindResource("TextDimBrush"),
+            TextWrapping = TextWrapping.Wrap
         });
         Grid.SetColumn(titlePanel, 0);
         headerLayout.Children.Add(titlePanel);
@@ -138,20 +140,21 @@ public partial class MainWindow
         };
 
         var networkTab = new TabItem { Header = "POR RED" };
-        var networkTabContent = new StackPanel { Margin = new Thickness(12), Orientation = Orientation.Horizontal };
+        var networkTabContent = new WrapPanel { Margin = new Thickness(12) };
         networkTabContent.Children.Add(new Border
         {
             Background = (Brush)FindResource("Panel2Brush"),
             BorderBrush = (Brush)FindResource("BorderBrush2"),
             BorderThickness = new Thickness(1),
             Padding = new Thickness(10),
-            Margin = new Thickness(0, 0, 10, 0),
+            Margin = new Thickness(0, 0, 10, 8),
             Child = new StackPanel
             {
+                Width = 420,
                 Children =
                 {
-                    new TextBlock { Text = "DETECCIÓN POR RED", FontFamily = new FontFamily("Consolas"), FontWeight = FontWeights.Bold, Foreground = (Brush)FindResource("AccentBrush") },
-                    new TextBlock { Text = "Descubre cámaras dentro de la subred o en todas las interfaces activas.", Margin = new Thickness(0, 4, 0, 0), Foreground = (Brush)FindResource("TextDimBrush"), TextWrapping = TextWrapping.Wrap, Width = 420 }
+                    new TextBlock { Text = "DETECCIÓN POR RED", FontFamily = new FontFamily("Consolas"), FontWeight = FontWeights.Bold, Foreground = (Brush)FindResource("AccentBrush"), TextWrapping = TextWrapping.Wrap },
+                    new TextBlock { Text = "Descubre cámaras dentro de la subred o en todas las interfaces activas.", Margin = new Thickness(0, 4, 0, 0), Foreground = (Brush)FindResource("TextDimBrush"), TextWrapping = TextWrapping.Wrap }
                 }
             }
         });
@@ -161,7 +164,7 @@ public partial class MainWindow
             Content = "ESCANEAR SUBRED",
             Width = 155,
             Height = 38,
-            Margin = new Thickness(0, 0, 8, 0),
+            Margin = new Thickness(0, 0, 8, 8),
             Style = (Style)FindResource("SecondaryButton"),
             ToolTip = "Escanear la subred asociada a la interfaz seleccionada."
         };
@@ -173,7 +176,7 @@ public partial class MainWindow
             Content = "ESCANEO TOTAL",
             Width = 135,
             Height = 38,
-            Margin = new Thickness(0, 0, 8, 0),
+            Margin = new Thickness(0, 0, 8, 8),
             Style = (Style)FindResource("SecondaryButton"),
             ToolTip = "Recorrer todas las interfaces de red activas y consolidar cámaras sin duplicados."
         };
@@ -198,7 +201,7 @@ public partial class MainWindow
             TextWrapping = TextWrapping.Wrap
         });
 
-        var directControls = new StackPanel { Orientation = Orientation.Horizontal };
+        var directControls = new WrapPanel();
         directControls.Children.Add(new TextBlock
         {
             Text = "IP OBJETIVO",
@@ -207,7 +210,7 @@ public partial class MainWindow
             FontWeight = FontWeights.Bold,
             Foreground = (Brush)FindResource("TextDimBrush"),
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 7, 0)
+            Margin = new Thickness(0, 0, 7, 7)
         });
 
         var targetTextBox = new TextBox
@@ -215,6 +218,7 @@ public partial class MainWindow
             Width = 170,
             Height = 32,
             FontFamily = new FontFamily("Consolas"),
+            Margin = new Thickness(0, 0, 8, 7),
             ToolTip = "Opcional. Vacío = discovery directo. Ej.: 192.168.1.50 o 169.254.10.20."
         };
         targetTextBox.SetBinding(TextBox.TextProperty, new System.Windows.Data.Binding("DirectCameraIp")
@@ -229,7 +233,7 @@ public partial class MainWindow
             Content = "DETECTAR CÁMARA",
             Width = 150,
             Height = 38,
-            Margin = new Thickness(8, 0, 0, 0),
+            Margin = new Thickness(0, 0, 8, 7),
             Style = (Style)FindResource("PrimaryButton"),
             ToolTip = "Con IP: limita las pruebas al host indicado. Sin IP: realiza discovery directo y APIPA cuando corresponde."
         };
@@ -241,9 +245,9 @@ public partial class MainWindow
             Content = "CONFIG. RED",
             Width = 120,
             Height = 38,
-            Margin = new Thickness(8, 0, 0, 0),
+            Margin = new Thickness(0, 0, 0, 7),
             Style = (Style)FindResource("SecondaryButton"),
-            ToolTip = "Abrir configuración de red de la cámara seleccionada. La operación informará claramente si ONVIF no está disponible."
+            ToolTip = "Abrir configuración de red de la cámara seleccionada."
         };
         networkConfigButton.Click += NetworkConfigurationButton_Click;
         directControls.Children.Add(networkConfigButton);
@@ -340,24 +344,30 @@ public partial class MainWindow
             BorderThickness = new Thickness(1),
             Margin = new Thickness(12),
             Padding = new Thickness(22),
-            Child = new StackPanel
+            Child = new ScrollViewer
             {
-                Children =
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = new StackPanel
                 {
-                    new TextBlock
+                    Children =
                     {
-                        Text = title,
-                        FontFamily = new FontFamily("Consolas"),
-                        FontSize = 16,
-                        FontWeight = FontWeights.Bold,
-                        Foreground = (Brush)FindResource("AccentBrush")
-                    },
-                    new TextBlock
-                    {
-                        Text = description,
-                        Margin = new Thickness(0, 12, 0, 0),
-                        TextWrapping = TextWrapping.Wrap,
-                        Foreground = (Brush)FindResource("TextDimBrush")
+                        new TextBlock
+                        {
+                            Text = title,
+                            FontFamily = new FontFamily("Consolas"),
+                            FontSize = 16,
+                            FontWeight = FontWeights.Bold,
+                            Foreground = (Brush)FindResource("AccentBrush"),
+                            TextWrapping = TextWrapping.Wrap
+                        },
+                        new TextBlock
+                        {
+                            Text = description,
+                            Margin = new Thickness(0, 12, 0, 0),
+                            TextWrapping = TextWrapping.Wrap,
+                            Foreground = (Brush)FindResource("TextDimBrush")
+                        }
                     }
                 }
             }
