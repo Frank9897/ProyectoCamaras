@@ -1,11 +1,14 @@
+using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Interop;
+using System.Windows.Media;
 
 namespace CameraInspector.App.Responsive;
 
 /// <summary>
-/// Mantiene las ventanas WPF dentro del área de trabajo disponible y evita
-/// tamaños iniciales imposibles en monitores pequeños o con escalado elevado.
-/// El contenido debe aportar sus propios ScrollViewer/DataGrid para el scroll.
+/// Mantiene las ventanas WPF dentro del área de trabajo disponible, respetando
+/// el monitor real y su escalado DPI. El contenido debe aportar sus propios
+/// ScrollViewer/DataGrid para el scroll interno.
 /// </summary>
 public static class ResponsiveWindowBehavior
 {
@@ -15,12 +18,6 @@ public static class ResponsiveWindowBehavior
             typeof(bool),
             typeof(ResponsiveWindowBehavior),
             new PropertyMetadata(false, OnEnableChanged));
-
-    public static bool GetEnable(DependencyObject element)
-        => (bool)element.GetValue(EnableProperty);
-
-    public static void SetEnable(DependencyObject element, bool value)
-        => element.SetValue(EnableProperty, value);
 
     private static readonly DependencyProperty IsHookedProperty =
         DependencyProperty.RegisterAttached(
@@ -43,6 +40,26 @@ public static class ResponsiveWindowBehavior
             typeof(ResponsiveWindowBehavior),
             new PropertyMetadata(double.NaN));
 
+    private static readonly DependencyProperty LastWorkAreaWidthProperty =
+        DependencyProperty.RegisterAttached(
+            "LastWorkAreaWidth",
+            typeof(double),
+            typeof(ResponsiveWindowBehavior),
+            new PropertyMetadata(double.NaN));
+
+    private static readonly DependencyProperty LastWorkAreaHeightProperty =
+        DependencyProperty.RegisterAttached(
+            "LastWorkAreaHeight",
+            typeof(double),
+            typeof(ResponsiveWindowBehavior),
+            new PropertyMetadata(double.NaN));
+
+    public static bool GetEnable(DependencyObject element)
+        => (bool)element.GetValue(EnableProperty);
+
+    public static void SetEnable(DependencyObject element, bool value)
+        => element.SetValue(EnableProperty, value);
+
     private static bool GetIsHooked(DependencyObject element)
         => (bool)element.GetValue(IsHookedProperty);
 
@@ -61,6 +78,18 @@ public static class ResponsiveWindowBehavior
     private static void SetOriginalMinHeight(DependencyObject element, double value)
         => element.SetValue(OriginalMinHeightProperty, value);
 
+    private static double GetLastWorkAreaWidth(DependencyObject element)
+        => (double)element.GetValue(LastWorkAreaWidthProperty);
+
+    private static void SetLastWorkAreaWidth(DependencyObject element, double value)
+        => element.SetValue(LastWorkAreaWidthProperty, value);
+
+    private static double GetLastWorkAreaHeight(DependencyObject element)
+        => (double)element.GetValue(LastWorkAreaHeightProperty);
+
+    private static void SetLastWorkAreaHeight(DependencyObject element, double value)
+        => element.SetValue(LastWorkAreaHeightProperty, value);
+
     private static void OnEnableChanged(DependencyObject dependencyObject, DependencyPropertyChangedEventArgs e)
     {
         if (dependencyObject is not Window window)
@@ -74,6 +103,8 @@ public static class ResponsiveWindowBehavior
                 SetOriginalMinHeight(window, window.MinHeight);
                 window.Loaded += WindowLoaded;
                 window.Closed += WindowClosed;
+                window.LocationChanged += WindowLocationChanged;
+                window.StateChanged += WindowStateChanged;
                 SetIsHooked(window, true);
             }
 
@@ -86,6 +117,7 @@ public static class ResponsiveWindowBehavior
             window.Loaded -= WindowLoaded;
             window.Closed -= WindowClosed;
             window.SizeChanged -= WindowSizeChanged;
+            window.LocationChanged -= WindowLocationChanged;
             window.StateChanged -= WindowStateChanged;
             SetIsHooked(window, false);
         }
@@ -103,10 +135,17 @@ public static class ResponsiveWindowBehavior
             return;
 
         window.SizeChanged -= WindowSizeChanged;
+        window.LocationChanged -= WindowLocationChanged;
         window.StateChanged -= WindowStateChanged;
     }
 
     private static void WindowSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (sender is Window window)
+            ApplyBounds(window);
+    }
+
+    private static void WindowLocationChanged(object? sender, EventArgs e)
     {
         if (sender is Window window)
             ApplyBounds(window);
@@ -123,33 +162,105 @@ public static class ResponsiveWindowBehavior
         if (!window.IsLoaded && PresentationSource.FromVisual(window) is null)
             return;
 
-        var workArea = SystemParameters.WorkArea;
+        var workArea = GetCurrentMonitorWorkArea(window);
         const double margin = 24;
         var maxWidth = Math.Max(360, workArea.Width - margin);
         var maxHeight = Math.Max(260, workArea.Height - margin);
 
-        // Conserva los mínimos originales para que una ventana que se abrió en un
-        // monitor pequeño no quede permanentemente reducida al cambiar de monitor.
+        // Conserva los mínimos declarados por cada ventana. Solo se reducen temporalmente
+        // cuando el monitor actual no dispone físicamente de ese espacio.
         var originalMinWidth = GetOriginalMinWidth(window);
         var originalMinHeight = GetOriginalMinHeight(window);
         if (double.IsNaN(originalMinWidth))
+        {
             originalMinWidth = window.MinWidth;
+            SetOriginalMinWidth(window, originalMinWidth);
+        }
         if (double.IsNaN(originalMinHeight))
+        {
             originalMinHeight = window.MinHeight;
+            SetOriginalMinHeight(window, originalMinHeight);
+        }
 
         window.MinWidth = Math.Min(originalMinWidth, maxWidth);
         window.MinHeight = Math.Min(originalMinHeight, maxHeight);
         window.MaxWidth = Math.Max(window.MinWidth, maxWidth);
         window.MaxHeight = Math.Max(window.MinHeight, maxHeight);
 
-        if (window.Width > window.MaxWidth)
-            window.Width = window.MaxWidth;
-        if (window.Height > window.MaxHeight)
-            window.Height = window.MaxHeight;
+        if (window.WindowState == WindowState.Normal)
+        {
+            if (window.Width > window.MaxWidth)
+                window.Width = window.MaxWidth;
+            if (window.Height > window.MaxHeight)
+                window.Height = window.MaxHeight;
+        }
 
-        window.SizeChanged -= WindowSizeChanged;
-        window.StateChanged -= WindowStateChanged;
-        window.SizeChanged += WindowSizeChanged;
-        window.StateChanged += WindowStateChanged;
+        SetLastWorkAreaWidth(window, workArea.Width);
+        SetLastWorkAreaHeight(window, workArea.Height);
+
+        // SizeChanged se conecta una sola vez; ApplyBounds no vuelve a registrar el evento
+        // en cada resize, evitando una cadena innecesaria de suscripciones.
+        if (!window.SizeChanged?.GetInvocationList().Contains(WindowSizeChanged) ?? true)
+            window.SizeChanged += WindowSizeChanged;
     }
+
+    private static Size GetCurrentMonitorWorkArea(Window window)
+    {
+        try
+        {
+            var handle = new WindowInteropHelper(window).Handle;
+            if (handle != nint.Zero)
+            {
+                var monitor = MonitorFromWindow(handle, MonitorDefaultToNearest);
+                if (monitor != nint.Zero)
+                {
+                    var info = new MonitorInfo
+                    {
+                        CbSize = Marshal.SizeOf<MonitorInfo>()
+                    };
+
+                    if (GetMonitorInfo(monitor, ref info))
+                    {
+                        var dpi = VisualTreeHelper.GetDpi(window);
+                        var width = (info.Work.Right - info.Work.Left) / Math.Max(0.1, dpi.DpiScaleX);
+                        var height = (info.Work.Bottom - info.Work.Top) / Math.Max(0.1, dpi.DpiScaleY);
+                        return new Size(width, height);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Fallback para entornos donde user32/DPI no esté disponible como se espera.
+        }
+
+        return SystemParameters.WorkArea.Size;
+    }
+
+    private const uint MonitorDefaultToNearest = 2;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MonitorInfo
+    {
+        public int CbSize;
+        public NativeRect Monitor;
+        public NativeRect Work;
+        public uint Flags;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern nint MonitorFromWindow(nint hwnd, uint flags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetMonitorInfo(nint monitor, ref MonitorInfo monitorInfo);
 }
