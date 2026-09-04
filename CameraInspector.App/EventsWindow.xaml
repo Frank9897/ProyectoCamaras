@@ -55,7 +55,7 @@
 
             <WrapPanel Grid.Row="3" Margin="0,12,0,0" HorizontalAlignment="Left">
                 <Button Content="ACTUALIZAR" Command="{Binding RefreshCommand}" MinWidth="110" Margin="0,0,8,5" Style="{StaticResource PrimaryButton}"/>
-                <Button Content="CERRAR" Command="{Binding CloseCommand}" MinWidth="90" Margin="0,0,12,5}"/>
+                <Button Content="CERRAR" Command="{Binding CloseCommand}" MinWidth="90" Margin="0,0,12,5"/>
                 <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" MaxWidth="420" Margin="0,0,0,5"/>
             </WrapPanel>
         </Grid>
