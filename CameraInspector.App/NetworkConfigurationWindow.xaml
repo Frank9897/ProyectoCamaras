@@ -118,7 +118,7 @@
                             <TextBlock Margin="0,6,0,14" Text="El nombre ONVIF ayuda a reconocer la cámara. No modifica la dirección IP." Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
                             <TextBlock Text="NOMBRE ACTUAL / NUEVO" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
                             <TextBox Text="{Binding Hostname, UpdateSourceTrigger=PropertyChanged}" FontFamily="Consolas" FontSize="16" Margin="0,7,0,0"/>
-                            <TextBlock Text="Permitido: letras, números y guiones · 1 a 63 caracteres · sin espacios." Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontSize="10" TextWrapping="Wrap"/>
+                            <TextBlock Text="Permitido: letras, números y guiones · 1 a 63 caracteres · sin espacios." Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontFamily="Consolas" FontSize="10" TextWrapping="Wrap"/>
                             <WrapPanel Margin="0,16,0,0">
                                 <Button Content="↻ LEER NOMBRE" Command="{Binding LoadHostnameCommand}" Style="{StaticResource SecondaryButton}" Padding="16,8" Margin="0,0,8,5"/>
                                 <Button Content="GUARDAR NOMBRE" Command="{Binding SetHostnameCommand}" Style="{StaticResource PrimaryButton}" Padding="16,8" Margin="0,0,0,5"/>
@@ -168,9 +168,27 @@
                                 <Button Content="↻ REINICIAR CÁMARA" Command="{Binding RebootCommand}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="16,8" Margin="0,10,0,0"/>
                             </StackPanel>
                         </Border>
+                        <Border Padding="12" Background="{StaticResource Panel3Brush}" BorderBrush="{StaticResource ErrBrush}" BorderThickness="1">
+                            <StackPanel>
+                                <TextBlock Text="ZONA DE PELIGRO" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource ErrBrush}"/>
+                                <TextBlock Margin="0,5,0,0" Text="RESTABLECIMIENTO DE FÁBRICA puede borrar red, usuarios y otros ajustes. La cámara puede quedar con otra IP o requerir configuración inicial." Foreground="{StaticResource TextBrush}" TextWrapping="Wrap"/>
+                                <Button Content="⚠ RESTABLECER DE FÁBRICA" Command="{Binding FactoryResetCommand}" Style="{StaticResource SecondaryButton}" Foreground="{StaticResource ErrBrush}" HorizontalAlignment="Left" Padding="16,8" Margin="0,12,0,0"/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
         </TabControl>
+
+        <DockPanel Grid.Row="4" Margin="0,10,0,0">
+            <TextBlock DockPanel.Dock="Left" Text="{Binding ValidationMessage}" Foreground="{StaticResource WarnBrush}" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="560" Margin="0,0,10,5"/>
+            <WrapPanel DockPanel.Dock="Right" HorizontalAlignment="Right">
+                <TextBlock Text="● cambios pendientes" Foreground="{StaticResource WarnBrush}" VerticalAlignment="Center" Margin="0,0,12,5">
+                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding HasUnsavedChanges}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                </TextBlock>
+                <Button Content="↻ ACTUALIZAR DATOS" Command="{Binding LoadCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,5"/>
+                <Button Content="CERRAR" Command="{Binding CloseCommand}" Margin="0,0,0,5"/>
+            </WrapPanel>
+        </DockPanel>
     </Grid>
 </Window>
