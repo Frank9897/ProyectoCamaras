@@ -30,12 +30,7 @@
                 <TextBlock Text="CAMERA INSPECTOR" FontFamily="Consolas" FontSize="18" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
                 <TextBlock Text="  //  DESCUBRIMIENTO · DIAGNÓSTICO · VIDEO · INVENTARIO" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}" Margin="12,4,0,0"/>
             </StackPanel>
-
-            <StackPanel Grid.Column="1" Orientation="Horizontal">
-                <ComboBox ItemsSource="{Binding AvailableInterfaces}" SelectedItem="{Binding SelectedInterface}" Width="315" Height="32"/>
-                <Button Content="▣ ESCANEAR RED" Width="145" Height="32" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}" Command="{Binding ScanCommand}"/>
-            </StackPanel>
-        </Grid>
+</Grid>
 
         <!-- ESTADO GLOBAL. -->
         <Border Grid.Row="1" Padding="9,7" Margin="0,0,0,8" BorderThickness="1" CornerRadius="4" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}">
@@ -261,3 +256,4 @@
         </StackPanel>
     </Grid>
 </Window>
+

@@ -116,51 +116,6 @@ public partial class MainWindow
         Grid.SetColumn(titlePanel, 0);
         headerLayout.Children.Add(titlePanel);
 
-        var controlsPanel = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        controlsPanel.Children.Add(new TextBlock
-        {
-            Text = "INTERFAZ",
-            FontFamily = new FontFamily("Consolas"),
-            FontSize = 10,
-            FontWeight = FontWeights.Bold,
-            Foreground = (Brush)FindResource("TextDimBrush"),
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 7, 0)
-        });
-
-        var interfaceSelector = new ComboBox
-        {
-            Width = 280,
-            Height = 32,
-            ToolTip = "Interfaz que se utilizará para discovery y escaneo de red."
-        };
-        interfaceSelector.SetBinding(ItemsControl.ItemsSourceProperty, new System.Windows.Data.Binding("AvailableInterfaces"));
-        interfaceSelector.SetBinding(Selector.SelectedItemProperty, new System.Windows.Data.Binding("SelectedInterface")
-        {
-            Mode = System.Windows.Data.BindingMode.TwoWay
-        });
-        controlsPanel.Children.Add(interfaceSelector);
-
-        var globalScanButton = new Button
-        {
-            Content = "▣ ESCANEAR RED",
-            Width = 145,
-            Height = 32,
-            Margin = new Thickness(8, 0, 0, 0),
-            Style = (Style)FindResource("PrimaryButton"),
-            ToolTip = "Ejecuta la detección principal sobre la interfaz seleccionada."
-        };
-        globalScanButton.SetBinding(Button.CommandProperty, new System.Windows.Data.Binding("ScanCommand"));
-        controlsPanel.Children.Add(globalScanButton);
-
-        Grid.SetColumn(controlsPanel, 1);
-        headerLayout.Children.Add(controlsPanel);
         headerPanel.Child = headerLayout;
         Grid.SetRow(headerPanel, 0);
         networkModule.Children.Add(headerPanel);
@@ -421,3 +376,4 @@ public partial class MainWindow
         return null;
     }
 }
+
