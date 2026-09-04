@@ -284,6 +284,14 @@ public static class ResponsiveWindowBehavior
 
                 if (GetMonitorInfo(monitor, ref info))
                 {
+                    if (PresentationSource.FromVisual(window) is HwndSource source && source.CompositionTarget is not null)
+                    {
+                        var fromDevice = source.CompositionTarget.TransformFromDevice;
+                        var topLeft = fromDevice.Transform(new Point(info.Work.Left, info.Work.Top));
+                        var bottomRight = fromDevice.Transform(new Point(info.Work.Right, info.Work.Bottom));
+                        return new MonitorMetrics(new Rect(topLeft, bottomRight));
+                    }
+
                     var dpi = VisualTreeHelper.GetDpi(window);
                     var scaleX = Math.Max(0.1, dpi.DpiScaleX);
                     var scaleY = Math.Max(0.1, dpi.DpiScaleY);
