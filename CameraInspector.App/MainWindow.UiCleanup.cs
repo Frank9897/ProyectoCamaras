@@ -2,7 +2,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
-using System.Windows.Threading;
 
 namespace CameraInspector.App;
 
@@ -11,21 +10,6 @@ namespace CameraInspector.App;
 /// </summary>
 public partial class MainWindow
 {
-    private readonly bool _uiCleanupHook = RegisterUiCleanupHook();
-
-    private bool RegisterUiCleanupHook()
-    {
-        Loaded += OnUiCleanupLoaded;
-        return true;
-    }
-
-    private void OnUiCleanupLoaded(object sender, RoutedEventArgs e)
-    {
-        Dispatcher.BeginInvoke(
-            new Action(RemoveRedundantNetworkSelectors),
-            DispatcherPriority.ContextIdle);
-    }
-
     private void RemoveRedundantNetworkSelectors()
     {
         // Imagen 2: quitar únicamente el selector INTERFAZ y su botón ESCANEAR RED
