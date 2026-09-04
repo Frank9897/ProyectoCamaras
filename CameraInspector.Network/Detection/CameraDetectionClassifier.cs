@@ -43,14 +43,27 @@ public static class CameraDetectionClassifier
 
         foreach (var evidence in device.DetectionEvidence)
         {
-            if (StrongMethods.Contains(evidence.Method))
+            var method = evidence.Method?.Trim() ?? string.Empty;
+            var isVivotekEvidence = method.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase);
+
+            // El discovery propietario VIVOTEK no se acepta como evidencia fuerte cuando
+            // únicamente entrega el fabricante pero no aporta identidad de dispositivo.
+            // Esto evita marcar PCs/servidores que reaccionen accidentalmente al broadcast.
+            if (isVivotekEvidence && !HasIndependentVivotekIdentity(device))
+            {
+                weak++;
+                details.Add($"{evidence.Method} ({evidence.Confidence:P0})");
+                continue;
+            }
+
+            if (StrongMethods.Contains(method))
             {
                 strong++;
                 details.Add($"{evidence.Method} ({evidence.Confidence:P0})");
                 continue;
             }
 
-            if (WeakMethods.Contains(evidence.Method))
+            if (WeakMethods.Contains(method))
             {
                 weak++;
                 details.Add($"{evidence.Method} ({evidence.Confidence:P0})");
@@ -59,7 +72,6 @@ public static class CameraDetectionClassifier
 
             if (evidence.IsCameraEvidence && evidence.Confidence >= 0.9)
             {
-                // Evidencia no genérica: solo suma como fuerte cuando el propio detector la marcó explícitamente.
                 strong++;
                 details.Add($"{evidence.Method} ({evidence.Confidence:P0})");
             }
@@ -80,16 +92,18 @@ public static class CameraDetectionClassifier
             strong++;
 
         var score = Math.Min(100, strong * 40 + Math.Min(20, weak * 5));
-        var hasStrongEvidence = strong > 0;
         var hasCorroboration = strong >= 2 || (strong >= 1 && weak >= 1);
+        var hasCameraIdentity = !string.IsNullOrWhiteSpace(device.Model)
+            || !string.IsNullOrWhiteSpace(device.SerialNumber)
+            || !string.IsNullOrWhiteSpace(device.MacAddress)
+            || !string.IsNullOrWhiteSpace(device.AssignedProviderName);
 
-        // ONVIF o un detector propietario fuerte bastan. Señales genéricas nunca bastan.
         var isLikelyCamera = device.OnvifSupported
             || device.HasOnvifMediaService
             || device.HasOnvifImagingService
             || device.HasOnvifPtzService
             || hasCorroboration
-            || (hasStrongEvidence && device.CameraEvidence && !IsGenericOnly(device));
+            || (strong > 0 && device.CameraEvidence && (hasCameraIdentity || !HasOnlyVivotekEvidence(device)));
 
         return new CameraClassificationResult
         {
@@ -101,11 +115,22 @@ public static class CameraDetectionClassifier
         };
     }
 
-    private static bool IsGenericOnly(DiscoveredDevice device)
+    private static bool HasIndependentVivotekIdentity(DiscoveredDevice device)
+    {
+        if (device.OnvifSupported || device.HasOnvifMediaService || device.HasOnvifImagingService || device.HasOnvifPtzService)
+            return true;
+
+        return !string.IsNullOrWhiteSpace(device.Model)
+            || !string.IsNullOrWhiteSpace(device.SerialNumber)
+            || !string.IsNullOrWhiteSpace(device.MacAddress)
+            || !string.IsNullOrWhiteSpace(device.AssignedProviderName);
+    }
+
+    private static bool HasOnlyVivotekEvidence(DiscoveredDevice device)
     {
         var meaningful = device.DetectionEvidence.Any(e =>
-            !WeakMethods.Contains(e.Method) &&
-            !string.Equals(e.Method, "RtspFingerprint", StringComparison.OrdinalIgnoreCase));
+            !e.Method.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase)
+            && !WeakMethods.Contains(e.Method));
         return !meaningful;
     }
 }
