@@ -22,7 +22,11 @@ public sealed class CameraDetectionClassifierTests
     [Fact]
     public void OnvifEvidence_ClassifiesAsCamera()
     {
-        var device = new DiscoveredDevice { IpAddress = "192.168.1.21" };
+        var device = new DiscoveredDevice
+        {
+            IpAddress = "192.168.1.21",
+            CameraEvidence = true
+        };
         device.AddEvidence("OnvifProbe", 0.98, "Device service", true);
 
         var result = CameraDetectionClassifier.Classify(device);
