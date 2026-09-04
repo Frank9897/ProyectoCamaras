@@ -378,7 +378,7 @@ public sealed class RemoteEndpointDiscoveryService : IRemoteCameraDiscoveryServi
         {
             "vivotek", "hikvision", "dahua", "axis", "hanwha", "samsung", "uniview",
             "reolink", "mobotix", "camera", "ipcam", "ip camera", "network camera",
-            "onvif", "rtsp server", "network video"
+            "onvif"
         };
         return tokens.Any(token => value.Contains(token, StringComparison.OrdinalIgnoreCase));
     }
