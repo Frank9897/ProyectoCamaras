@@ -11,24 +11,6 @@ namespace CameraInspector.App;
 /// </summary>
 public partial class MainWindow
 {
-    static MainWindow()
-    {
-        EventManager.RegisterClassHandler(
-            typeof(MainWindow),
-            FrameworkElement.LoadedEvent,
-            new RoutedEventHandler(OnRemoteAccessLoaded));
-    }
-
-    private static void OnRemoteAccessLoaded(object sender, RoutedEventArgs e)
-    {
-        if (sender is not MainWindow window)
-            return;
-
-        window.Dispatcher.BeginInvoke(
-            new Action(window.EnsureRemoteAccessTab),
-            System.Windows.Threading.DispatcherPriority.Loaded);
-    }
-
     private void EnsureRemoteAccessTab()
     {
         if (Content is not TabControl modules || modules.Items.Count == 0)
