@@ -33,19 +33,21 @@ public partial class MainWindow
             return;
 
         var availableHeight = ActualHeight;
+        var compact = availableHeight > 0 && availableHeight <= 680;
 
-        // En ventanas altas damos algo más de espacio a la tabla para facilitar la lectura
-        // y mantenemos el detalle suficientemente grande para sus pestañas y desplazamiento.
-        var listRatio = availableHeight >= 850 ? 0.42 : availableHeight <= 680 ? 0.34 : 0.38;
+        // En ventanas altas damos algo más de espacio a la tabla. En ventanas compactas
+        // reducimos la reserva mínima de ambas zonas y dejamos que sus propios controles
+        // hagan scroll cuando el contenido no entra físicamente.
+        var listRatio = availableHeight >= 850 ? 0.42 : compact ? 0.34 : 0.38;
         var detailRatio = 1.0 - listRatio;
 
         root.RowDefinitions[2].Height = new GridLength(listRatio, GridUnitType.Star);
-        root.RowDefinitions[2].MinHeight = 145;
+        root.RowDefinitions[2].MinHeight = compact ? 120 : 145;
         root.RowDefinitions[3].Height = new GridLength(detailRatio, GridUnitType.Star);
-        root.RowDefinitions[3].MinHeight = 245;
+        root.RowDefinitions[3].MinHeight = compact ? 210 : 245;
 
-        // Evita que el estado global crezca indefinidamente cuando el texto de diagnóstico
-        // cambia durante un escaneo; el contenido largo se mantiene en una sola zona visible.
+        // Mantiene el área de estado legible sin permitir que un mensaje largo
+        // consuma el espacio reservado para la tabla y el detalle.
         if (root.RowDefinitions.Count > 1)
             root.RowDefinitions[1].MinHeight = 42;
     }
