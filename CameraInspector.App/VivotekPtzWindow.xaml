@@ -1,65 +1,74 @@
 <Window x:Class="CameraInspector.App.VivotekPtzWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:responsive="clr-namespace:CameraInspector.App.Responsive"
+        responsive:ResponsiveWindowBehavior.Enable="True"
         Title="Camera Inspector — PTZ VIVOTEK"
         Width="430"
         Height="470"
-        MinWidth="380"
-        MinHeight="420"
+        MinWidth="330"
+        MinHeight="360"
+        ResizeMode="CanResize"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource WindowBackgroundBrush}"
-        Foreground="{DynamicResource PrimaryTextBrush}">
-    <Grid Margin="18">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
-
-        <StackPanel Grid.Row="0" Margin="0,0,0,18">
-            <TextBlock Text="PTZ VIVOTEK"
-                       FontSize="20"
-                       FontWeight="SemiBold" />
-            <TextBlock Text="Control propietario CGI"
-                       Margin="0,4,0,0"
-                       Foreground="{DynamicResource SecondaryTextBrush}" />
-        </StackPanel>
-
-        <Grid Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+        Foreground="{DynamicResource PrimaryTextBrush}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid Margin="14">
             <Grid.RowDefinitions>
-                <RowDefinition Height="64" />
-                <RowDefinition Height="64" />
-                <RowDefinition Height="64" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="76" />
-                <ColumnDefinition Width="76" />
-                <ColumnDefinition Width="76" />
-            </Grid.ColumnDefinitions>
 
-            <Button Grid.Row="0" Grid.Column="1" Content="▲" Command="{Binding UpCommand}" FontSize="22" />
-            <Button Grid.Row="1" Grid.Column="0" Content="◀" Command="{Binding LeftCommand}" FontSize="22" />
-            <Button Grid.Row="1" Grid.Column="1" Content="■" Command="{Binding StopCommand}" FontSize="20" />
-            <Button Grid.Row="1" Grid.Column="2" Content="▶" Command="{Binding RightCommand}" FontSize="22" />
-            <Button Grid.Row="2" Grid.Column="1" Content="▼" Command="{Binding DownCommand}" FontSize="22" />
-        </Grid>
-
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,18,0,12">
-            <Button Width="120" Margin="4" Content="HOME" Command="{Binding HomeCommand}" />
-            <Button Width="120" Margin="4" Content="STOP" Command="{Binding StopCommand}" />
-        </StackPanel>
-
-        <StackPanel Grid.Row="3">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                <Button Width="140" Margin="4" Content="ZOOM WIDE" Command="{Binding ZoomWideCommand}" />
-                <Button Width="140" Margin="4" Content="ZOOM TELE" Command="{Binding ZoomTeleCommand}" />
+            <StackPanel Grid.Row="0" Margin="0,0,0,14">
+                <TextBlock Text="PTZ VIVOTEK"
+                           FontSize="20"
+                           FontWeight="SemiBold"
+                           TextWrapping="Wrap" />
+                <TextBlock Text="Control propietario CGI"
+                           Margin="0,4,0,0"
+                           Foreground="{DynamicResource SecondaryTextBrush}"
+                           TextWrapping="Wrap" />
             </StackPanel>
-            <TextBlock Text="{Binding StatusText}"
-                       Margin="0,12,0,0"
-                       TextWrapping="Wrap"
-                       Foreground="{DynamicResource SecondaryTextBrush}" />
-            <Button Margin="0,14,0,0" Content="CERRAR" Command="{Binding CloseCommand}" />
-        </StackPanel>
-    </Grid>
+
+            <Grid Grid.Row="1" HorizontalAlignment="Center" Margin="0,2,0,12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="60" />
+                    <RowDefinition Height="60" />
+                    <RowDefinition Height="60" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="72" />
+                    <ColumnDefinition Width="72" />
+                    <ColumnDefinition Width="72" />
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Row="0" Grid.Column="1" Content="▲" Command="{Binding UpCommand}" FontSize="22" ToolTip="Subir" />
+                <Button Grid.Row="1" Grid.Column="0" Content="◀" Command="{Binding LeftCommand}" FontSize="22" ToolTip="Izquierda" />
+                <Button Grid.Row="1" Grid.Column="1" Content="■" Command="{Binding StopCommand}" FontSize="20" ToolTip="Detener" />
+                <Button Grid.Row="1" Grid.Column="2" Content="▶" Command="{Binding RightCommand}" FontSize="22" ToolTip="Derecha" />
+                <Button Grid.Row="2" Grid.Column="1" Content="▼" Command="{Binding DownCommand}" FontSize="22" ToolTip="Bajar" />
+            </Grid>
+
+            <WrapPanel Grid.Row="2" HorizontalAlignment="Center" Margin="0,2,0,10">
+                <Button Width="116" MinHeight="34" Margin="4" Content="HOME" Command="{Binding HomeCommand}" />
+                <Button Width="116" MinHeight="34" Margin="4" Content="STOP" Command="{Binding StopCommand}" />
+            </WrapPanel>
+
+            <StackPanel Grid.Row="3">
+                <WrapPanel HorizontalAlignment="Center">
+                    <Button Width="132" MinHeight="34" Margin="4" Content="ZOOM WIDE" Command="{Binding ZoomWideCommand}" />
+                    <Button Width="132" MinHeight="34" Margin="4" Content="ZOOM TELE" Command="{Binding ZoomTeleCommand}" />
+                </WrapPanel>
+                <TextBlock Text="{Binding StatusText}"
+                           Margin="0,10,0,0"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource SecondaryTextBrush}" />
+                <Button Margin="0,12,0,0" MinHeight="34" Content="CERRAR" Command="{Binding CloseCommand}" />
+            </StackPanel>
+        </Grid>
+    </ScrollViewer>
 </Window>
