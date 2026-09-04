@@ -1,0 +1,29 @@
+# Visual Studio / Rider
+.vs/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.rsuser
+
+# .NET build output
+**/bin/
+**/obj/
+
+# Test / coverage output
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# Publish output
+publish/
+artifacts/
+
+# Local IDE/cache files
+*.pidb
+*.sln.iml
+
+# OS files
+.DS_Store
+Thumbs.db
