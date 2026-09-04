@@ -4,42 +4,49 @@
         Title="Camera Inspector"
         Width="1280"
         Height="820"
-        MinWidth="1050"
-        MinHeight="680"
+        MinWidth="980"
+        MinHeight="600"
         Background="{StaticResource BgBrush}"
         Foreground="{StaticResource TextBrush}"
         WindowStartupLocation="CenterScreen">
 
-    <Grid Margin="12" Background="{StaticResource BgBrush}">
+    <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="220"/>
-            <RowDefinition Height="*" MinHeight="330"/>
+            <RowDefinition Height="2*" MinHeight="170"/>
+            <RowDefinition Height="3*" MinHeight="200"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- CABECERA compacta para reservar más espacio al contenido técnico. -->
         <Grid Grid.Row="0" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*" MinWidth="300"/>
             </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                <Run Text="CAMERA INSPECTOR" FontFamily="Consolas" FontSize="18" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+                <Run Text="  //  DESCUBRIMIENTO · DIAGNÓSTICO · VIDEO · INVENTARIO" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}"/>
+            </TextBlock>
+        </Grid>
 
-            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock Text="CAMERA INSPECTOR" FontFamily="Consolas" FontSize="18" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
-                <TextBlock Text="  //  DESCUBRIMIENTO · DIAGNÓSTICO · VIDEO · INVENTARIO" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}" Margin="12,4,0,0"/>
-            </StackPanel>
-</Grid>
-
-        <!-- ESTADO GLOBAL. -->
         <Border Grid.Row="1" Padding="9,7" Margin="0,0,0,8" BorderThickness="1" CornerRadius="4" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}">
             <TextBlock Text="{Binding StatusText}" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
         </Border>
 
-        <!-- LISTA: altura controlada para garantizar que el detalle siempre permanezca visible. -->
-        <Border Grid.Row="2" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="5">
-            <DataGrid ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" IsReadOnly="True" AutoGenerateColumns="False" HeadersVisibility="Column" CanUserAddRows="False" CanUserResizeRows="False" CanUserSortColumns="True" RowHeight="27" ColumnHeaderHeight="29" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" BorderThickness="0">
+        <Border Grid.Row="2" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="5" MinHeight="170">
+            <DataGrid ItemsSource="{Binding Devices}"
+                      SelectedItem="{Binding SelectedDevice}"
+                      IsReadOnly="True"
+                      AutoGenerateColumns="False"
+                      HeadersVisibility="Column"
+                      CanUserAddRows="False"
+                      CanUserResizeRows="False"
+                      CanUserSortColumns="True"
+                      RowHeight="27"
+                      ColumnHeaderHeight="29"
+                      HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Auto"
+                      BorderThickness="0">
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="ESTADO" Binding="{Binding Status}" Width="80"/>
                     <DataGridTextColumn Header="IP" Binding="{Binding IpAddress}" Width="115"/>
@@ -57,52 +64,39 @@
             </DataGrid>
         </Border>
 
-        <!-- DETALLE: ocupa todo el espacio restante de la ventana. -->
-        <Border Grid.Row="3" Margin="0,8,0,0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="5">
+        <Border Grid.Row="3" Margin="0,8,0,0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="5" MinHeight="200">
             <Grid DataContext="{Binding SelectedDevice}">
-                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*" MinHeight="160"/>
+                </Grid.RowDefinitions>
                 <Grid Grid.Row="0" Margin="11,8,11,6">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" Orientation="Horizontal">
-                        <TextBlock Text="DETALLE DE CÁMARA" FontFamily="Consolas" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
-                        <TextBlock Text="  //  " Foreground="{StaticResource TextDimBrush}"/>
-                        <TextBlock Text="{Binding Manufacturer}" FontFamily="Consolas" FontSize="12" Foreground="{StaticResource TextBrush}"/>
-                    </StackPanel>
+                    <TextBlock Grid.Column="0" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis">
+                        <Run Text="DETALLE DE CÁMARA" FontFamily="Consolas" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+                        <Run Text="  //  " Foreground="{StaticResource TextDimBrush}"/>
+                        <Run Text="{Binding Manufacturer}" FontFamily="Consolas" FontSize="12" Foreground="{StaticResource TextBrush}"/>
+                    </TextBlock>
                     <TextBlock Grid.Column="1" Text="{Binding IpAddress}" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}"/>
                 </Grid>
 
-                <TabControl x:Name="DeviceDetailTabs" Grid.Row="1" Margin="7,0,7,7" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" SelectionChanged="DeviceDetailTabs_SelectionChanged">
+                <TabControl x:Name="DeviceDetailTabs" Grid.Row="1" Margin="7,0,7,7" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}">
                     <TabItem Header="GENERAL">
-                        <ScrollViewer VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled" Background="{StaticResource PanelBrush}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                             <StackPanel Margin="12">
-                                <Grid>
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="95"/><ColumnDefinition Width="190"/><ColumnDefinition Width="95"/><ColumnDefinition Width="190"/><ColumnDefinition Width="95"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                                    <TextBlock Grid.Column="0" Text="IP" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding IpAddress}" FontFamily="Consolas"/>
-                                    <TextBlock Grid.Column="2" Text="MAC" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Column="3" Text="{Binding MacAddress}" FontFamily="Consolas"/>
-                                    <TextBlock Grid.Column="4" Text="ESTADO" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Column="5" Text="{Binding Status}" FontFamily="Consolas"/>
-                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="FABRICANTE" Margin="0,8,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Manufacturer}" Margin="0,8,0,0"/>
-                                    <TextBlock Grid.Row="1" Grid.Column="2" Text="MODELO" Margin="0,8,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Row="1" Grid.Column="3" Text="{Binding Model}" Margin="0,8,0,0"/>
-                                    <TextBlock Grid.Row="1" Grid.Column="4" Text="SERIAL" Margin="0,8,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Row="1" Grid.Column="5" Text="{Binding SerialNumber}" Margin="0,8,0,0" FontFamily="Consolas"/>
-                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="CAMERA ID" Margin="0,8,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding CameraId}" Margin="0,8,0,0" FontFamily="Consolas"/>
-                                    <TextBlock Grid.Row="2" Grid.Column="2" Text="FIRMWARE" Margin="0,8,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Row="2" Grid.Column="3" Text="{Binding Firmware}" Margin="0,8,0,0"/>
-                                    <TextBlock Grid.Row="2" Grid.Column="4" Text="ÚLT. VISTO" Margin="0,8,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Row="2" Grid.Column="5" Text="{Binding LastSeenAt}" Margin="0,8,0,0" FontFamily="Consolas"/>
-                                </Grid>
-
-                                <TextBlock Text="MÉTODOS DE DETECCIÓN" Margin="0,14,0,7" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontWeight="Bold"/>
-                                <Border Padding="9" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
-                                    <TextBlock Text="{Binding DetectionDetails}" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap"/>
-                                </Border>
-
+                                <WrapPanel>
+                                    <Border Padding="8,4" Margin="0,0,8,8" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1"><StackPanel><TextBlock Text="IP" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Text="{Binding IpAddress}" FontFamily="Consolas" TextWrapping="Wrap"/></StackPanel></Border>
+                                    <Border Padding="8,4" Margin="0,0,8,8" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1"><StackPanel><TextBlock Text="MAC" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Text="{Binding MacAddress}" FontFamily="Consolas" TextWrapping="Wrap"/></StackPanel></Border>
+                                    <Border Padding="8,4" Margin="0,0,8,8" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1"><StackPanel><TextBlock Text="ESTADO" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Text="{Binding Status}" FontFamily="Consolas" TextWrapping="Wrap"/></StackPanel></Border>
+                                    <Border Padding="8,4" Margin="0,0,8,8" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1"><StackPanel><TextBlock Text="FABRICANTE" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Text="{Binding Manufacturer}" TextWrapping="Wrap"/></StackPanel></Border>
+                                    <Border Padding="8,4" Margin="0,0,8,8" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1"><StackPanel><TextBlock Text="MODELO" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Text="{Binding Model}" TextWrapping="Wrap"/></StackPanel></Border>
+                                    <Border Padding="8,4" Margin="0,0,8,8" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1"><StackPanel><TextBlock Text="SERIAL" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Text="{Binding SerialNumber}" FontFamily="Consolas" TextWrapping="Wrap"/></StackPanel></Border>
+                                    <Border Padding="8,4" Margin="0,0,8,8" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1"><StackPanel><TextBlock Text="CAMERA ID" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Text="{Binding CameraId}" FontFamily="Consolas" TextWrapping="Wrap"/></StackPanel></Border>
+                                    <Border Padding="8,4" Margin="0,0,8,8" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1"><StackPanel><TextBlock Text="FIRMWARE" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Text="{Binding Firmware}" TextWrapping="Wrap"/></StackPanel></Border>
+                                    <Border Padding="8,4" Margin="0,0,8,8" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1"><StackPanel><TextBlock Text="ÚLT. VISTO" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/><TextBlock Text="{Binding LastSeenAt}" FontFamily="Consolas" TextWrapping="Wrap"/></StackPanel></Border>
+                                </WrapPanel>
+                                <TextBlock Text="MÉTODOS DE DETECCIÓN" Margin="0,6,0,7" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontWeight="Bold"/>
+                                <Border Padding="9" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1"><TextBlock Text="{Binding DetectionDetails}" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap"/></Border>
                                 <TextBlock Text="CAPACIDADES ONVIF" Margin="0,14,0,7" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontWeight="Bold"/>
                                 <WrapPanel>
                                     <Border Padding="8,4" Margin="0,0,6,6" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" Background="{StaticResource Panel2Brush}"><TextBlock><Run Text="ONVIF  "/><Run Text="{Binding OnvifSupported}" FontFamily="Consolas"/></TextBlock></Border>
@@ -112,7 +106,6 @@
                                     <Border Padding="8,4" Margin="0,0,6,6" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" Background="{StaticResource Panel2Brush}"><TextBlock><Run Text="EVENTS  "/><Run Text="{Binding HasEventsService}" FontFamily="Consolas"/></TextBlock></Border>
                                     <Border Padding="8,4" Margin="0,0,6,6" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" Background="{StaticResource Panel2Brush}"><TextBlock><Run Text="RTSP  "/><Run Text="{Binding RtspSupported}" FontFamily="Consolas"/></TextBlock></Border>
                                 </WrapPanel>
-
                                 <TextBlock Text="ENDPOINTS ONVIF" Margin="0,12,0,7" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontWeight="Bold"/>
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="135"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
@@ -131,129 +124,48 @@
                             </StackPanel>
                         </ScrollViewer>
                     </TabItem>
-
                     <TabItem Header="CREDENCIALES">
-                        <ScrollViewer VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                             <StackPanel Margin="12">
                                 <TextBlock Text="SEGURIDAD DEL DISPOSITIVO" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
                                 <TextBlock Margin="0,9,0,0" TextWrapping="Wrap" Foreground="{StaticResource TextDimBrush}" Text="La contraseña se almacena únicamente en Windows Credential Manager. SQLite conserva solo el usuario y la referencia al secreto."/>
                                 <Grid Margin="0,14,0,0">
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" MinWidth="135"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                                     <TextBlock Grid.Row="0" Grid.Column="0" Text="CREDENCIALES" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding HasSavedCredentials}" FontFamily="Consolas"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding HasSavedCredentials}" FontFamily="Consolas" TextWrapping="Wrap"/>
                                     <TextBlock Grid.Row="1" Grid.Column="0" Text="USUARIO" Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SavedCredentialUsername}" Margin="0,6,0,0" FontFamily="Consolas"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SavedCredentialUsername}" Margin="0,6,0,0" FontFamily="Consolas" TextWrapping="Wrap"/>
                                     <TextBlock Grid.Row="2" Grid.Column="0" Text="ÚLT. VERIFICACIÓN" Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SavedCredentialLastVerifiedAt}" Margin="0,6,0,0" FontFamily="Consolas"/>
-                                    <CheckBox Grid.Row="2" Grid.Column="1" Content="Usar credenciales guardadas automáticamente" IsChecked="{Binding UseSavedCredentials}" Margin="0,28,0,0"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SavedCredentialLastVerifiedAt}" Margin="0,6,0,0" FontFamily="Consolas" TextWrapping="Wrap"/>
                                 </Grid>
+                                <CheckBox Content="Usar credenciales guardadas automáticamente" IsChecked="{Binding UseSavedCredentials}" Margin="0,14,0,0"/>
                             </StackPanel>
                         </ScrollViewer>
                     </TabItem>
-
                     <TabItem x:Name="IpVideoTab" Header="VIDEO">
-                        <Grid Margin="10">
-                            <Border Background="{StaticResource Panel2Brush}"
-                                    BorderBrush="{StaticResource BorderAccentBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="5"
-                                    Padding="24">
-                                <Grid>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="*"/>
-                                        <RowDefinition Height="Auto"/>
-                                    </Grid.RowDefinitions>
-
-                                    <StackPanel Grid.Row="0">
-                                        <TextBlock Text="VIDEO / CÁMARA IP"
-                                                   FontFamily="Consolas"
-                                                   FontSize="18"
-                                                   FontWeight="Bold"
-                                                   Foreground="{StaticResource AccentBrush}"/>
-                                        <TextBlock Margin="0,6,0,0"
-                                                   Text="El reproductor IP se abre en una ventana independiente."
-                                                   Foreground="{StaticResource TextBrush}"
-                                                   FontSize="13"/>
-                                        <TextBlock Margin="0,5,0,0"
-                                                   Text="La ventana incluye preview, snapshot, grabación, detener preview, detener grabación e información."
-                                                   Foreground="{StaticResource TextDimBrush}"
-                                                   TextWrapping="Wrap"/>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel Margin="10">
+                                <Border Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderAccentBrush}" BorderThickness="1" CornerRadius="5" Padding="18">
+                                    <StackPanel>
+                                        <TextBlock Text="VIDEO IP" FontFamily="Consolas" FontSize="15" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+                                        <TextBlock Margin="0,6,0,0" Text="La reproducción se abre en una ventana especializada. Esta pestaña no reserva un área fija que pueda desplazar el detalle." Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
                                     </StackPanel>
-
-                                    <Border Grid.Row="1"
-                                            Margin="0,18,0,0"
-                                            Padding="12"
-                                            Background="{StaticResource Panel3Brush}"
-                                            BorderBrush="{StaticResource BorderBrush2}"
-                                            BorderThickness="1">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="130"/><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="CÁMARA" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
-                                            <TextBlock Grid.Column="1" Text="{Binding Manufacturer}" FontFamily="Consolas"/>
-                                            <TextBlock Grid.Column="2" Text="IP" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
-                                            <TextBlock Grid.Column="3" Text="{Binding IpAddress}" FontFamily="Consolas" Foreground="{StaticResource AccentBrush}"/>
-                                        </Grid>
-                                    </Border>
-
-                                    <StackPanel Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Center">
-                                        <TextBlock Text="▶"
-                                                   FontFamily="Consolas"
-                                                   FontSize="42"
-                                                   HorizontalAlignment="Center"
-                                                   Foreground="{StaticResource AccentBrush}"/>
-                                        <TextBlock Text="ABRIR REPRODUCTOR IP"
-                                                   FontFamily="Consolas"
-                                                   FontSize="16"
-                                                   FontWeight="Bold"
-                                                   HorizontalAlignment="Center"
-                                                   Foreground="{StaticResource TextBrush}"/>
-                                        <TextBlock Text="Seleccione una cámara en la lista y vuelva a pulsar VIDEO."
-                                                   Margin="0,7,0,0"
-                                                   Foreground="{StaticResource TextDimBrush}"
-                                                   HorizontalAlignment="Center"/>
-                                    </StackPanel>
-
-                                    <Button Grid.Row="3"
-                                            Content="ABRIR VENTANA DE VIDEO"
-                                            Command="{x:Null}"
-                                            Click="OpenIpVideoFromPanel_Click"
-                                            Width="205"
-                                            Height="38"
-                                            HorizontalAlignment="Center"
-                                            Margin="0,18,0,0"
-                                            Style="{StaticResource PrimaryButton}"/>
-                                </Grid>
-                            </Border>
-                        </Grid>
-                    </TabItem>
-
-                    <TabItem Header="DIAGNÓSTICO">
-                        <Grid Margin="10">
-                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                            <Button Grid.Row="0" Content="⚙ EJECUTAR DIAGNÓSTICO" Command="{Binding DataContext.RunDiagnosticsCommand, RelativeSource={RelativeSource AncestorType=Window}}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left"/>
-                            <DataGrid Grid.Row="1" Margin="0,8,0,0" ItemsSource="{Binding DataContext.DiagnosticResults, RelativeSource={RelativeSource AncestorType=Window}}" IsReadOnly="True" AutoGenerateColumns="True"/>
-                            <TextBlock Grid.Row="2" Text="Las pruebas requieren credenciales válidas cuando el servicio las solicita." Foreground="{StaticResource TextDimBrush}" Margin="0,8,0,0"/>
-                        </Grid>
-                    </TabItem>
-
-                    <TabItem Header="HISTORIAL">
-                        <Grid Margin="10">
-                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                            <Button Grid.Row="0" Content="↻ ACTUALIZAR" Command="{Binding DataContext.RefreshHistoryCommand, RelativeSource={RelativeSource AncestorType=Window}}" HorizontalAlignment="Left"/>
-                            <DataGrid Grid.Row="1" Margin="0,8,0,0" ItemsSource="{Binding DataContext.DiagnosticHistory, RelativeSource={RelativeSource AncestorType=Window}}" IsReadOnly="True" AutoGenerateColumns="True"/>
-                        </Grid>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
                     </TabItem>
                 </TabControl>
             </Grid>
         </Border>
 
-        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,7,0,0">
-            <Button Content="▣ GUARDAR CREDENCIALES" Command="{Binding SaveCredentialsCommand}" Margin="0,0,6,0"/>
-            <Button Content="✕ ELIMINAR CREDENCIALES" Command="{Binding DeleteCredentialsCommand}"/>
+        <StackPanel Grid.Row="4" Margin="0,10,0,0">
+            <WrapPanel Margin="0,0,0,8">
+                <Button Content="ACTUALIZAR" Command="{Binding RefreshCommand}" MinWidth="105" Height="34" Margin="0,0,6,0" Style="{StaticResource PrimaryButton}"/>
+            </WrapPanel>
+            <Border Padding="9" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
+                <TextBlock Text="{Binding StatusText}" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
+            </Border>
         </StackPanel>
     </Grid>
 </Window>
-
