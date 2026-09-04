@@ -32,7 +32,8 @@ public static class CameraDetectionClassifier
         "OuiMac",
         "SSDP",
         "mDNS",
-        "Arp"
+        "Arp",
+        "Ping"
     };
 
     public static CameraClassificationResult Classify(DiscoveredDevice device)
@@ -47,8 +48,7 @@ public static class CameraDetectionClassifier
             var isVivotekEvidence = method.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase);
 
             // El discovery propietario VIVOTEK no se acepta como evidencia fuerte cuando
-            // únicamente entrega el fabricante pero no aporta identidad de dispositivo.
-            // Esto evita marcar PCs/servidores que reaccionen accidentalmente al broadcast.
+            // únicamente entrega el fabricante/proveedor. Debe existir identidad independiente.
             if (isVivotekEvidence && !HasIndependentVivotekIdentity(device))
             {
                 weak++;
@@ -95,8 +95,7 @@ public static class CameraDetectionClassifier
         var hasCorroboration = strong >= 2 || (strong >= 1 && weak >= 1);
         var hasCameraIdentity = !string.IsNullOrWhiteSpace(device.Model)
             || !string.IsNullOrWhiteSpace(device.SerialNumber)
-            || !string.IsNullOrWhiteSpace(device.MacAddress)
-            || !string.IsNullOrWhiteSpace(device.AssignedProviderName);
+            || !string.IsNullOrWhiteSpace(device.MacAddress);
 
         var isLikelyCamera = device.OnvifSupported
             || device.HasOnvifMediaService
@@ -122,8 +121,7 @@ public static class CameraDetectionClassifier
 
         return !string.IsNullOrWhiteSpace(device.Model)
             || !string.IsNullOrWhiteSpace(device.SerialNumber)
-            || !string.IsNullOrWhiteSpace(device.MacAddress)
-            || !string.IsNullOrWhiteSpace(device.AssignedProviderName);
+            || !string.IsNullOrWhiteSpace(device.MacAddress);
     }
 
     private static bool HasOnlyVivotekEvidence(DiscoveredDevice device)
