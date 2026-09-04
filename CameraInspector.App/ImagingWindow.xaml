@@ -74,9 +74,9 @@
         </ScrollViewer>
 
         <WrapPanel Grid.Row="3" HorizontalAlignment="Right" Margin="0,12,0,0">
-            <Button Content="LEER" Command="{Binding LoadCommand}" MinWidth="90" Margin="0,0,8,5}"/>
-            <Button Content="APLICAR" Command="{Binding SaveCommand}" MinWidth="100" Style="{StaticResource PrimaryButton}" Margin="0,0,8,5}"/>
-            <Button Content="CERRAR" Command="{Binding CloseCommand}" MinWidth="90" Margin="0,0,0,5}"/>
+            <Button Content="LEER" Command="{Binding LoadCommand}" MinWidth="90" Margin="0,0,8,5"/>
+            <Button Content="APLICAR" Command="{Binding SaveCommand}" MinWidth="100" Style="{StaticResource PrimaryButton}" Margin="0,0,8,5"/>
+            <Button Content="CERRAR" Command="{Binding CloseCommand}" MinWidth="90" Margin="0,0,0,5"/>
         </WrapPanel>
     </Grid>
 </Window>
