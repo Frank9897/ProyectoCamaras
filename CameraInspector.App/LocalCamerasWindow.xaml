@@ -29,16 +29,16 @@
                     <TextBlock Text="Webcams UVC, capturadoras y cámaras virtuales expuestas por Windows" Margin="0,5,0,0" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
                 </StackPanel>
                 <WrapPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
-                    <Button x:Name="RefreshButton" Content="ACTUALIZAR" MinWidth="105" MinHeight="34" Margin="0,0,8,5" Click="RefreshButton_Click" Style="{StaticResource SecondaryButton}"/>
-                    <Button x:Name="InfoButton" Content="INFORMACIÓN" MinWidth="110" MinHeight="34" Margin="0,0,0,5" Click="InfoButton_Click" Style="{StaticResource SecondaryButton}"/>
+                    <Button x:Name="RefreshButton" Content="ACTUALIZAR" MinWidth="105" MinHeight="34" Margin="0,0,8,5" Click="RefreshButton_Click" Style="{StaticResource SecondaryButton}" ToolTip="Vuelve a enumerar las fuentes de vídeo disponibles en Windows."/>
+                    <Button x:Name="InfoButton" Content="INFORMACIÓN" MinWidth="110" MinHeight="34" Margin="0,0,0,5" Click="InfoButton_Click" Style="{StaticResource SecondaryButton}" ToolTip="Explica qué dispositivos locales puede detectar la aplicación."/>
                 </WrapPanel>
             </Grid>
         </Border>
 
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="300" MinWidth="220" MaxWidth="420"/>
-                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="280" MinWidth="220" MaxWidth="420"/>
+                <ColumnDefinition Width="6"/>
                 <ColumnDefinition Width="*" MinWidth="300"/>
             </Grid.ColumnDefinitions>
 
@@ -65,6 +65,16 @@
                 </DockPanel>
             </Border>
 
+            <GridSplitter Grid.Column="1"
+                          Width="6"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch"
+                          Background="{StaticResource BorderBrush2}"
+                          ShowsPreview="True"
+                          ResizeDirection="Columns"
+                          ResizeBehavior="PreviousAndNext"
+                          ToolTip="Arrastre para ampliar o reducir la lista de dispositivos."/>
+
             <Border Grid.Column="2" Background="#000000" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="5">
                 <Grid>
                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*" MinHeight="190"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -84,10 +94,10 @@
                     </Border>
                     <StackPanel Grid.Row="2" Margin="9,9,9,7">
                         <WrapPanel Margin="0,0,0,7">
-                            <Button x:Name="SnapshotButton" Content="SNAPSHOT" MinWidth="100" MinHeight="32" Margin="0,0,6,5" Click="SnapshotButton_Click" Style="{StaticResource SecondaryButton}"/>
-                            <Button x:Name="RecordButton" Content="● GRABAR" MinWidth="100" MinHeight="32" Margin="0,0,6,5" Click="RecordButton_Click" Style="{StaticResource SecondaryButton}"/>
-                            <Button x:Name="StopRecordButton" Content="■ FIN GRABACIÓN" MinWidth="128" MinHeight="32" Margin="0,0,6,5" Click="StopRecordButton_Click" Style="{StaticResource SecondaryButton}"/>
-                            <Button x:Name="StopButton" Content="DETENER PREVIEW" MinWidth="120" MinHeight="32" Margin="0,0,6,5" Click="StopButton_Click" Style="{StaticResource SecondaryButton}"/>
+                            <Button x:Name="SnapshotButton" Content="SNAPSHOT" MinWidth="100" MinHeight="32" Margin="0,0,6,5" Click="SnapshotButton_Click" Style="{StaticResource SecondaryButton}" ToolTip="Guarda una captura de la imagen actual."/>
+                            <Button x:Name="RecordButton" Content="● GRABAR" MinWidth="100" MinHeight="32" Margin="0,0,6,5" Click="RecordButton_Click" Style="{StaticResource SecondaryButton}" ToolTip="Inicia la grabación de la cámara local seleccionada."/>
+                            <Button x:Name="StopRecordButton" Content="■ FIN GRABACIÓN" MinWidth="128" MinHeight="32" Margin="0,0,6,5" Click="StopRecordButton_Click" Style="{StaticResource SecondaryButton}" ToolTip="Detiene la grabación en curso."/>
+                            <Button x:Name="StopButton" Content="DETENER PREVIEW" MinWidth="120" MinHeight="32" Margin="0,0,6,5" Click="StopButton_Click" Style="{StaticResource SecondaryButton}" ToolTip="Detiene la previsualización sin cerrar la ventana."/>
                         </WrapPanel>
                         <Border Padding="8" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
                             <TextBlock x:Name="StatusTextBlock" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
