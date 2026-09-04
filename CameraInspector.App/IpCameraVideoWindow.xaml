@@ -3,40 +3,40 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
         Title="Camera Inspector — Video IP"
-        Width="1180"
-        Height="800"
-        MinWidth="980"
-        MinHeight="660"
+        Width="1200"
+        Height="820"
+        MinWidth="900"
+        MinHeight="600"
         Background="{StaticResource BgBrush}"
         Foreground="{StaticResource TextBrush}"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         WindowStartupLocation="CenterOwner">
-    <Grid Margin="12">
+    <Grid Margin="14">
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
 
-        <Border Grid.Row="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="5" Padding="12" Margin="0,0,0,10">
+        <Border Grid.Row="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="5" Padding="14" Margin="0,0,0,12">
             <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <StackPanel>
-                    <TextBlock Text="VIDEO / CÁMARA IP" FontFamily="Consolas" FontSize="15" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+                    <TextBlock Text="VIDEO / CÁMARA IP" FontFamily="Consolas" FontSize="16" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
                     <TextBlock Margin="0,4,0,0" Foreground="{StaticResource TextBrush}"><Run Text="IP: "/><Run Text="{Binding SelectedDevice.IpAddress}" FontFamily="Consolas"/></TextBlock>
-                    <TextBlock Margin="0,2,0,0" Foreground="{StaticResource TextDimBrush}"><Run Text="Fabricante: "/><Run Text="{Binding SelectedDevice.Manufacturer}"/><Run Text="  ·  Modelo: "/><Run Text="{Binding SelectedDevice.Model}"/></TextBlock>
+                    <TextBlock Margin="0,2,0,0" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"><Run Text="Fabricante: "/><Run Text="{Binding SelectedDevice.Manufacturer}"/><Run Text="  ·  Modelo: "/><Run Text="{Binding SelectedDevice.Model}"/></TextBlock>
                 </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Border Background="{StaticResource AccentSoftBrush}" BorderBrush="{StaticResource BorderAccentBrush}" BorderThickness="1" CornerRadius="3" Padding="12,7">
+                <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+                    <Border Background="{StaticResource AccentSoftBrush}" BorderBrush="{StaticResource BorderAccentBrush}" BorderThickness="1" CornerRadius="3" Padding="12,7" Margin="0,0,8,0">
                         <StackPanel Orientation="Horizontal"><Ellipse Width="8" Height="8" Fill="{StaticResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,7,0"/><TextBlock Text="REPRODUCTOR IP" FontFamily="Consolas" FontSize="10" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/></StackPanel>
                     </Border>
-                    <Button x:Name="HealthButton" Content="↻ COMPROBAR SALUD" Click="HealthButton_Click" Width="155" Height="34" Margin="8,0,0,0" Style="{StaticResource SecondaryButton}"/>
-                </StackPanel>
+                    <Button x:Name="HealthButton" Content="↻ COMPROBAR SALUD" Click="HealthButton_Click" MinWidth="155" Height="34" Style="{StaticResource SecondaryButton}"/>
+                </WrapPanel>
             </Grid>
         </Border>
 
         <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="300"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="300"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
 
             <Border Grid.Column="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="5" Padding="12">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel>
                         <TextBlock Text="DISPOSITIVO" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
                         <Border Margin="0,10,0,0" Padding="10" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
@@ -44,7 +44,7 @@
                                 <TextBlock Text="DIRECCIÓN IP" Foreground="{StaticResource TextDimBrush}" FontSize="10" FontWeight="Bold"/>
                                 <TextBlock Text="{Binding SelectedDevice.IpAddress}" FontFamily="Consolas" FontSize="17" Foreground="{StaticResource TextBrush}" Margin="0,3,0,8"/>
                                 <TextBlock Text="MAC" Foreground="{StaticResource TextDimBrush}" FontSize="10" FontWeight="Bold"/>
-                                <TextBlock Text="{Binding SelectedDevice.MacAddress}" FontFamily="Consolas" Margin="0,3,0,8"/>
+                                <TextBlock Text="{Binding SelectedDevice.MacAddress}" FontFamily="Consolas" Margin="0,3,0,8" TextWrapping="Wrap"/>
                                 <TextBlock Text="ESTADO" Foreground="{StaticResource TextDimBrush}" FontSize="10" FontWeight="Bold"/>
                                 <TextBlock Text="{Binding SelectedDevice.HealthDisplay}" FontFamily="Consolas" Foreground="{StaticResource AccentBrush}" Margin="0,3,0,8"/>
                                 <TextBlock Text="COMUNICACIÓN" Foreground="{StaticResource TextDimBrush}" FontSize="10" FontWeight="Bold"/>
@@ -58,18 +58,18 @@
 
                         <TextBlock Text="OPERACIONES" Margin="0,14,0,7" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
                         <WrapPanel>
-                            <Button Content="CONFIG. RED" Click="NetworkButton_Click" Width="120" Height="33" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
-                            <Button Content="IMAGEN" Click="ImagingButton_Click" Width="80" Height="33" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
-                            <Button Content="EVENTOS" Click="EventsButton_Click" Width="85" Height="33" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
-                            <Button Content="PROPIETARIO" Click="ProviderButton_Click" Width="105" Height="33" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
-                            <Button Content="ABRIR WEB" Click="OpenWebButton_Click" Width="105" Height="33" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
-                            <Button Content="COPIAR IP" Click="CopyIpButton_Click" Width="90" Height="33" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
+                            <Button Content="CONFIG. RED" Click="NetworkButton_Click" MinWidth="120" Height="33" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
+                            <Button Content="IMAGEN" Click="ImagingButton_Click" MinWidth="80" Height="33" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
+                            <Button Content="EVENTOS" Click="EventsButton_Click" MinWidth="85" Height="33" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
+                            <Button Content="PROPIETARIO" Click="ProviderButton_Click" MinWidth="105" Height="33" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
+                            <Button Content="ABRIR WEB" Click="OpenWebButton_Click" MinWidth="105" Height="33" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
+                            <Button Content="COPIAR IP" Click="CopyIpButton_Click" MinWidth="90" Height="33" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
                         </WrapPanel>
 
                         <TextBlock Text="PTZ" Margin="0,9,0,7" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
                         <Grid HorizontalAlignment="Center">
-                            <Grid.RowDefinitions><RowDefinition Height="32"/><RowDefinition Height="32"/><RowDefinition Height="32"/><RowDefinition Height="32"/></Grid.RowDefinitions>
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="58"/><ColumnDefinition Width="58"/><ColumnDefinition Width="58"/></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="34"/><RowDefinition Height="34"/><RowDefinition Height="34"/><RowDefinition Height="34"/></Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="62"/><ColumnDefinition Width="62"/><ColumnDefinition Width="62"/></Grid.ColumnDefinitions>
                             <Button Grid.Row="0" Grid.Column="1" Content="▲" Click="PtzUp_Click" Style="{StaticResource SecondaryButton}" Margin="2"/>
                             <Button Grid.Row="1" Grid.Column="0" Content="◀" Click="PtzLeft_Click" Style="{StaticResource SecondaryButton}" Margin="2"/>
                             <Button Grid.Row="1" Grid.Column="1" Content="■" Click="PtzStop_Click" Style="{StaticResource SecondaryButton}" Margin="2"/>
@@ -83,20 +83,20 @@
                         <Border Padding="10" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
                             <StackPanel>
                                 <TextBlock Text="MAIN STREAM" Foreground="{StaticResource TextDimBrush}" FontSize="10" FontWeight="Bold"/>
-                                <TextBlock Text="{Binding ResolvedMainStream.Resolution, StringFormat=Resolución: {0}}" FontFamily="Consolas" Margin="0,3,0,1"/>
-                                <TextBlock Text="{Binding ResolvedMainStream.Encoding, StringFormat=Codec: {0}}" FontFamily="Consolas" Foreground="{StaticResource TextDimBrush}"/>
+                                <TextBlock Text="{Binding ResolvedMainStream.Resolution, StringFormat=Resolución: {0}}" FontFamily="Consolas" Margin="0,3,0,1" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding ResolvedMainStream.Encoding, StringFormat=Codec: {0}}" FontFamily="Consolas" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
                                 <TextBlock Text="{Binding ResolvedMainStream.FrameRate, StringFormat=FPS: {0}}" FontFamily="Consolas" Foreground="{StaticResource TextDimBrush}" Margin="0,0,0,8"/>
                                 <TextBlock Text="SUB STREAM" Foreground="{StaticResource TextDimBrush}" FontSize="10" FontWeight="Bold"/>
-                                <TextBlock Text="{Binding ResolvedSubStream.Resolution, StringFormat=Resolución: {0}}" FontFamily="Consolas" Margin="0,3,0,1"/>
-                                <TextBlock Text="{Binding ResolvedSubStream.Encoding, StringFormat=Codec: {0}}" FontFamily="Consolas" Foreground="{StaticResource TextDimBrush}"/>
+                                <TextBlock Text="{Binding ResolvedSubStream.Resolution, StringFormat=Resolución: {0}}" FontFamily="Consolas" Margin="0,3,0,1" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding ResolvedSubStream.Encoding, StringFormat=Codec: {0}}" FontFamily="Consolas" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
                                 <TextBlock Text="{Binding ResolvedSubStream.FrameRate, StringFormat=FPS: {0}}" FontFamily="Consolas" Foreground="{StaticResource TextDimBrush}"/>
                             </StackPanel>
                         </Border>
 
                         <TextBlock Text="ACCESO" Margin="0,14,0,7" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
                         <WrapPanel>
-                            <Button x:Name="CredentialsButton" Content="CREDENCIALES" Click="CredentialsButton_Click" Width="125" Height="34" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
-                            <Button Content="DIAGNÓSTICO" Click="DiagnosticsButton_Click" Width="105" Height="34" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
+                            <Button x:Name="CredentialsButton" Content="CREDENCIALES" Click="CredentialsButton_Click" MinWidth="125" Height="34" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
+                            <Button Content="DIAGNÓSTICO" Click="DiagnosticsButton_Click" MinWidth="105" Height="34" Margin="0,0,5,5" Style="{StaticResource SecondaryButton}"/>
                         </WrapPanel>
                         <TextBlock Text="Las credenciales se almacenan en Windows Credential Manager." Margin="0,3,0,0" Foreground="{StaticResource TextDimBrush}" FontSize="10" TextWrapping="Wrap"/>
                     </StackPanel>
@@ -113,15 +113,15 @@
             </Border>
         </Grid>
 
-        <StackPanel Grid.Row="2" Margin="0,10,0,0">
+        <StackPanel Grid.Row="2" Margin="0,12,0,0">
             <WrapPanel Margin="0,0,0,8">
-                <Button x:Name="MainStreamButton" Content="▶ MAIN STREAM" Command="{Binding GetMainStreamUriCommand}" Width="125" Height="34" Margin="0,0,6,0" Style="{StaticResource PrimaryButton}"/>
-                <Button x:Name="SubStreamButton" Content="▶ SUB STREAM" Command="{Binding GetSubStreamUriCommand}" Width="120" Height="34" Margin="0,0,6,0" Style="{StaticResource SecondaryButton}"/>
-                <Button x:Name="SnapshotButton" Content="SNAPSHOT" Click="SnapshotButton_Click" Width="105" Height="34" Margin="0,0,6,0" Style="{StaticResource SecondaryButton}"/>
-                <Button x:Name="RecordButton" Content="● GRABAR" Click="RecordButton_Click" Width="105" Height="34" Margin="0,0,6,0" Style="{StaticResource SecondaryButton}"/>
-                <Button x:Name="StopRecordButton" Content="■ FIN GRABACIÓN" Click="StopRecordButton_Click" Width="135" Height="34" Margin="0,0,6,0" Style="{StaticResource SecondaryButton}"/>
-                <Button x:Name="StopButton" Content="DETENER PREVIEW" Click="StopButton_Click" Width="135" Height="34" Margin="0,0,6,0" Style="{StaticResource SecondaryButton}"/>
-                <Button x:Name="InfoButton" Content="INFORMACIÓN" Click="InfoButton_Click" Width="110" Height="34" Margin="0,0,6,0" Style="{StaticResource SecondaryButton}"/>
+                <Button x:Name="MainStreamButton" Content="▶ MAIN STREAM" Command="{Binding GetMainStreamUriCommand}" MinWidth="125" Height="34" Margin="0,0,6,0" Style="{StaticResource PrimaryButton}"/>
+                <Button x:Name="SubStreamButton" Content="▶ SUB STREAM" Command="{Binding GetSubStreamUriCommand}" MinWidth="120" Height="34" Margin="0,0,6,0" Style="{StaticResource SecondaryButton}"/>
+                <Button x:Name="SnapshotButton" Content="SNAPSHOT" Click="SnapshotButton_Click" MinWidth="105" Height="34" Margin="0,0,6,0" Style="{StaticResource SecondaryButton}"/>
+                <Button x:Name="RecordButton" Content="● GRABAR" Click="RecordButton_Click" MinWidth="105" Height="34" Margin="0,0,6,0" Style="{StaticResource SecondaryButton}"/>
+                <Button x:Name="StopRecordButton" Content="■ FIN GRABACIÓN" Click="StopRecordButton_Click" MinWidth="135" Height="34" Margin="0,0,6,0" Style="{StaticResource SecondaryButton}"/>
+                <Button x:Name="StopButton" Content="DETENER PREVIEW" Click="StopButton_Click" MinWidth="135" Height="34" Margin="0,0,6,0" Style="{StaticResource SecondaryButton}"/>
+                <Button x:Name="InfoButton" Content="INFORMACIÓN" Click="InfoButton_Click" MinWidth="110" Height="34" Margin="0,0,6,0" Style="{StaticResource SecondaryButton}"/>
             </WrapPanel>
             <Border Padding="9" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
                 <StackPanel>
