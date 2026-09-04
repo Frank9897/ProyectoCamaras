@@ -78,8 +78,14 @@ public static class ResponsiveWindowBehavior
     private static void SetOriginalMinHeight(DependencyObject element, double value)
         => element.SetValue(OriginalMinHeightProperty, value);
 
+    private static double GetLastWorkAreaWidth(DependencyObject element)
+        => (double)element.GetValue(LastWorkAreaWidthProperty);
+
     private static void SetLastWorkAreaWidth(DependencyObject element, double value)
         => element.SetValue(LastWorkAreaWidthProperty, value);
+
+    private static double GetLastWorkAreaHeight(DependencyObject element)
+        => (double)element.GetValue(LastWorkAreaHeightProperty);
 
     private static void SetLastWorkAreaHeight(DependencyObject element, double value)
         => element.SetValue(LastWorkAreaHeightProperty, value);
@@ -162,8 +168,6 @@ public static class ResponsiveWindowBehavior
         var maxWidth = Math.Max(360, workArea.Width - margin);
         var maxHeight = Math.Max(260, workArea.Height - margin);
 
-        // Conserva los mínimos declarados por cada ventana. Solo se reducen temporalmente
-        // cuando el monitor actual no dispone físicamente de ese espacio.
         var originalMinWidth = GetOriginalMinWidth(window);
         var originalMinHeight = GetOriginalMinHeight(window);
         if (double.IsNaN(originalMinWidth))
@@ -177,21 +181,34 @@ public static class ResponsiveWindowBehavior
             SetOriginalMinHeight(window, originalMinHeight);
         }
 
-        window.MinWidth = Math.Min(originalMinWidth, maxWidth);
-        window.MinHeight = Math.Min(originalMinHeight, maxHeight);
-        window.MaxWidth = Math.Max(window.MinWidth, maxWidth);
-        window.MaxHeight = Math.Max(window.MinHeight, maxHeight);
+        // Evita reescribir todas las propiedades en cada pixel de un resize cuando el
+        // monitor y su área de trabajo no cambiaron. El tamaño actual sigue verificándose
+        // para respetar el límite del monitor.
+        var previousWidth = GetLastWorkAreaWidth(window);
+        var previousHeight = GetLastWorkAreaHeight(window);
+        var workAreaChanged = double.IsNaN(previousWidth)
+            || double.IsNaN(previousHeight)
+            || Math.Abs(previousWidth - workArea.Width) > 0.5
+            || Math.Abs(previousHeight - workArea.Height) > 0.5;
+
+        if (workAreaChanged)
+        {
+            window.MinWidth = Math.Min(originalMinWidth, maxWidth);
+            window.MinHeight = Math.Min(originalMinHeight, maxHeight);
+            window.MaxWidth = Math.Max(window.MinWidth, maxWidth);
+            window.MaxHeight = Math.Max(window.MinHeight, maxHeight);
+
+            SetLastWorkAreaWidth(window, workArea.Width);
+            SetLastWorkAreaHeight(window, workArea.Height);
+        }
 
         if (window.WindowState == WindowState.Normal)
         {
-            if (window.Width > window.MaxWidth)
-                window.Width = window.MaxWidth;
-            if (window.Height > window.MaxHeight)
-                window.Height = window.MaxHeight;
+            if (window.Width > maxWidth)
+                window.Width = maxWidth;
+            if (window.Height > maxHeight)
+                window.Height = maxHeight;
         }
-
-        SetLastWorkAreaWidth(window, workArea.Width);
-        SetLastWorkAreaHeight(window, workArea.Height);
     }
 
     private static Size GetCurrentMonitorWorkArea(Window window)
