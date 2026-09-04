@@ -78,14 +78,8 @@ public static class ResponsiveWindowBehavior
     private static void SetOriginalMinHeight(DependencyObject element, double value)
         => element.SetValue(OriginalMinHeightProperty, value);
 
-    private static double GetLastWorkAreaWidth(DependencyObject element)
-        => (double)element.GetValue(LastWorkAreaWidthProperty);
-
     private static void SetLastWorkAreaWidth(DependencyObject element, double value)
         => element.SetValue(LastWorkAreaWidthProperty, value);
-
-    private static double GetLastWorkAreaHeight(DependencyObject element)
-        => (double)element.GetValue(LastWorkAreaHeightProperty);
 
     private static void SetLastWorkAreaHeight(DependencyObject element, double value)
         => element.SetValue(LastWorkAreaHeightProperty, value);
@@ -105,6 +99,7 @@ public static class ResponsiveWindowBehavior
                 window.Closed += WindowClosed;
                 window.LocationChanged += WindowLocationChanged;
                 window.StateChanged += WindowStateChanged;
+                window.SizeChanged += WindowSizeChanged;
                 SetIsHooked(window, true);
             }
 
@@ -197,11 +192,6 @@ public static class ResponsiveWindowBehavior
 
         SetLastWorkAreaWidth(window, workArea.Width);
         SetLastWorkAreaHeight(window, workArea.Height);
-
-        // SizeChanged se conecta una sola vez; ApplyBounds no vuelve a registrar el evento
-        // en cada resize, evitando una cadena innecesaria de suscripciones.
-        if (!window.SizeChanged?.GetInvocationList().Contains(WindowSizeChanged) ?? true)
-            window.SizeChanged += WindowSizeChanged;
     }
 
     private static Size GetCurrentMonitorWorkArea(Window window)
@@ -222,9 +212,11 @@ public static class ResponsiveWindowBehavior
                     if (GetMonitorInfo(monitor, ref info))
                     {
                         var dpi = VisualTreeHelper.GetDpi(window);
-                        var width = (info.Work.Right - info.Work.Left) / Math.Max(0.1, dpi.DpiScaleX);
-                        var height = (info.Work.Bottom - info.Work.Top) / Math.Max(0.1, dpi.DpiScaleY);
-                        return new Size(width, height);
+                        var scaleX = Math.Max(0.1, dpi.DpiScaleX);
+                        var scaleY = Math.Max(0.1, dpi.DpiScaleY);
+                        return new Size(
+                            (info.Work.Right - info.Work.Left) / scaleX,
+                            (info.Work.Bottom - info.Work.Top) / scaleY);
                     }
                 }
             }
