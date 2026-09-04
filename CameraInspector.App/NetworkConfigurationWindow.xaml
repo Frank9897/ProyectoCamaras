@@ -184,7 +184,7 @@
                 <TextBlock Text="● cambios pendientes" Foreground="{StaticResource WarnBrush}" VerticalAlignment="Center" Margin="0,0,12,5">
                     <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding HasUnsavedChanges}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
                 </TextBlock>
-                <Button Content="↻ ACTUALIZAR DATOS" Command="{Binding LoadCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,5}"/>
+                <Button Content="↻ ACTUALIZAR DATOS" Command="{Binding LoadCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,5"/>
                 <Button Content="CERRAR" Command="{Binding CloseCommand}" Margin="0,0,0,5"/>
             </WrapPanel>
         </DockPanel>
