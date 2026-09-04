@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
@@ -12,10 +13,20 @@ namespace CameraInspector.Network.Diagnostics;
 /// </summary>
 public sealed class CameraHealthService : ICameraHealthService
 {
-    private static readonly int[] CommonPorts = { 80, 443, 554, 8000, 8080, 8554, 37777, 9000 };
+    private static readonly int[] CommonPorts =
+    {
+        80, 81, 82, 88, 443, 8000, 8080, 8081, 8443, 8554, 8888, 554, 37777, 9000
+    };
+
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromMilliseconds(450);
     private static readonly TimeSpan ReadTimeout = TimeSpan.FromMilliseconds(700);
-    private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false })
+    private static readonly HttpClient Http = new(new HttpClientHandler
+    {
+        AllowAutoRedirect = false,
+        // El servicio solo diagnostica disponibilidad. Cámaras suelen usar certificados
+        // autofirmados; no se utiliza esta instancia para una operación autenticada.
+        ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+    })
     {
         Timeout = TimeSpan.FromMilliseconds(800)
     };
@@ -50,7 +61,7 @@ public sealed class CameraHealthService : ICameraHealthService
             }
         }
 
-        foreach (var port in ports.Where(p => p is 80 or 81 or 82 or 88 or 443 or 8080 or 8081 or 8443 or 8888 or 8000))
+        foreach (var port in ports.Where(p => p is 80 or 81 or 82 or 88 or 443 or 8000 or 8080 or 8081 or 8443 or 8888))
         {
             var http = await ProbeHttpVideoAsync(device.IpAddress, port, cancellationToken);
             if (http.VideoAvailable)
