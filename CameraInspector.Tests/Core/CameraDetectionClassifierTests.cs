@@ -96,4 +96,20 @@ public sealed class CameraDetectionClassifierTests
         Assert.True(result.IsLikelyCamera);
         Assert.True(result.StrongEvidenceCount >= 1);
     }
+
+    [Fact]
+    public void GenericRemoteRtspEvidence_DoesNotClassifyAsCamera()
+    {
+        var device = new DiscoveredDevice
+        {
+            IpAddress = "203.0.113.11",
+            CameraEvidence = false
+        };
+        device.AddEvidence("RemoteCameraFingerprint", 0.92, "RTSP server genérico", false);
+
+        var result = CameraDetectionClassifier.Classify(device);
+
+        Assert.False(result.IsLikelyCamera);
+        Assert.Equal(0, result.StrongEvidenceCount);
+    }
 }
