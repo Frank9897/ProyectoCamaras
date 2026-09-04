@@ -150,15 +150,38 @@ public sealed class RemoteEndpointDiscoveryService : IRemoteCameraDiscoveryServi
         RemoteConnectionTarget target,
         CancellationToken cancellationToken)
     {
+        if (target.Port is 443 or 8443)
+        {
+            if (await TryHttpsProbeAsync(target, cancellationToken))
+                return "HTTPS";
+
+            var http = await TryHttpProbeAsync(target, cancellationToken);
+            if (http is not null)
+                return "HTTP";
+
+            return await TryRtspProbeAsync(target, cancellationToken) ? "RTSP" : "TCP";
+        }
+
+        if (target.Port is 554 or 8554)
+        {
+            if (await TryRtspProbeAsync(target, cancellationToken))
+                return "RTSP";
+
+            var http = await TryHttpProbeAsync(target, cancellationToken);
+            if (http is not null)
+                return "HTTP";
+
+            return await TryHttpsProbeAsync(target, cancellationToken) ? "HTTPS" : "TCP";
+        }
+
+        var defaultHttp = await TryHttpProbeAsync(target, cancellationToken);
+        if (defaultHttp is not null)
+            return "HTTP";
+
         if (await TryHttpsProbeAsync(target, cancellationToken))
             return "HTTPS";
 
-        var http = await TryHttpProbeAsync(target, cancellationToken);
-        if (http is not null)
-            return "HTTP";
-
-        var rtsp = await TryRtspProbeAsync(target, cancellationToken);
-        return rtsp ? "RTSP" : "TCP";
+        return await TryRtspProbeAsync(target, cancellationToken) ? "RTSP" : "TCP";
     }
 
     private static async Task<bool> TryHttpsProbeAsync(
