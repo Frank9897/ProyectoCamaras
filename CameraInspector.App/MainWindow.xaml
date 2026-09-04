@@ -146,26 +146,28 @@
                         </ScrollViewer>
                     </TabItem>
                     <TabItem x:Name="IpVideoTab" Header="VIDEO">
-                        <Grid Margin="10">
-                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                            <WrapPanel Grid.Row="0" Margin="0,0,0,8">
-                                <Button x:Name="MainStreamButton" Content="▶ MAIN STREAM" Command="{Binding GetMainStreamUriCommand}" MinWidth="125" Height="34" Margin="0,0,6,5" Style="{StaticResource PrimaryButton}"/>
-                                <Button x:Name="SubStreamButton" Content="▶ SUB STREAM" Command="{Binding GetSubStreamUriCommand}" MinWidth="120" Height="34" Margin="0,0,6,5" Style="{StaticResource SecondaryButton}"/>
-                                <Button x:Name="SnapshotButton" Content="SNAPSHOT" Click="SnapshotButton_Click" MinWidth="105" Height="34" Margin="0,0,6,5" Style="{StaticResource SecondaryButton}"/>
-                                <Button x:Name="StopButton" Content="DETENER" Click="StopButton_Click" MinWidth="100" Height="34" Margin="0,0,6,5" Style="{StaticResource SecondaryButton}"/>
-                            </WrapPanel>
-                            <Border Grid.Row="1" Background="#000000" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
-                                <vlc:VideoView x:Name="VideoSurface" Background="#000000" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
-                            </Border>
-                            <Border Grid.Row="2" Margin="0,8,0,0" Padding="8" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
-                                <TextBlock Text="{Binding StatusText}" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
-                            </Border>
-                        </Grid>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel Margin="10">
+                                <Border Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderAccentBrush}" BorderThickness="1" CornerRadius="5" Padding="18">
+                                    <StackPanel>
+                                        <TextBlock Text="VIDEO IP" FontFamily="Consolas" FontSize="15" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+                                        <TextBlock Margin="0,6,0,0" Text="La reproducción se abre en una ventana especializada. Esta pestaña no reserva un área fija que pueda desplazar el detalle." Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
                     </TabItem>
                 </TabControl>
             </Grid>
         </Border>
 
-        <TextBlock Grid.Row="4" Margin="4,7,4,0" Text="Camera Inspector · Descubrimiento ONVIF / WS-Discovery · RTSP · VIVOTEK" FontFamily="Consolas" FontSize="10" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
+        <StackPanel Grid.Row="4" Margin="0,10,0,0">
+            <WrapPanel Margin="0,0,0,8">
+                <Button Content="ACTUALIZAR" Command="{Binding RefreshCommand}" MinWidth="105" Height="34" Margin="0,0,6,0" Style="{StaticResource PrimaryButton}"/>
+            </WrapPanel>
+            <Border Padding="9" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
+                <TextBlock Text="{Binding StatusText}" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
+            </Border>
+        </StackPanel>
     </Grid>
 </Window>
