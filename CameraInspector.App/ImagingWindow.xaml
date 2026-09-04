@@ -2,14 +2,16 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Camera Inspector — Imaging"
-        Width="560"
-        Height="420"
-        MinWidth="520"
-        MinHeight="380"
+        Width="640"
+        Height="480"
+        MinWidth="500"
+        MinHeight="360"
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource BgBrush}"
-        Foreground="{StaticResource TextBrush}">
-    <Grid Margin="14">
+        Foreground="{StaticResource TextBrush}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True">
+    <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -19,22 +21,24 @@
 
         <TextBlock Text="AJUSTES DE IMAGEN // ONVIF"
                    FontFamily="Consolas"
-                   FontSize="16"
+                   FontSize="17"
                    FontWeight="Bold"
                    Foreground="{StaticResource AccentBrush}"/>
 
         <TextBlock Grid.Row="1"
-                   Margin="0,8,0,10"
+                   Margin="0,7,0,12"
                    Text="Leer primero para conocer las capacidades expuestas por la cámara. Aplicar cambios requiere credenciales y se ejecuta únicamente por acción del técnico."
                    Foreground="{StaticResource TextDimBrush}"
                    TextWrapping="Wrap"/>
 
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-            <Grid>
+        <ScrollViewer Grid.Row="2"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <Grid Margin="2,0,2,2">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="150"/>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="90"/>
+                    <ColumnDefinition Width="80"/>
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -46,29 +50,29 @@
 
                 <TextBlock Grid.Row="0" Text="BRILLO" Foreground="{StaticResource TextDimBrush}" Margin="0,8,8,8"/>
                 <Slider Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Settings.Brightness, Mode=TwoWay}" VerticalAlignment="Center"/>
-                <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding Settings.Brightness, StringFormat={}{0:F1}}" FontFamily="Consolas" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Right"/>
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding Settings.Brightness, StringFormat={}{0:F1}}" FontFamily="Consolas" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
 
                 <TextBlock Grid.Row="1" Text="SATURACIÓN" Foreground="{StaticResource TextDimBrush}" Margin="0,8,8,8"/>
                 <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Settings.ColorSaturation, Mode=TwoWay}" VerticalAlignment="Center"/>
-                <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding Settings.ColorSaturation, StringFormat={}{0:F1}}" FontFamily="Consolas" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Right"/>
+                <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding Settings.ColorSaturation, StringFormat={}{0:F1}}" FontFamily="Consolas" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
 
                 <TextBlock Grid.Row="2" Text="CONTRASTE" Foreground="{StaticResource TextDimBrush}" Margin="0,8,8,8"/>
                 <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Settings.Contrast, Mode=TwoWay}" VerticalAlignment="Center"/>
-                <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding Settings.Contrast, StringFormat={}{0:F1}}" FontFamily="Consolas" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Right"/>
+                <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding Settings.Contrast, StringFormat={}{0:F1}}" FontFamily="Consolas" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
 
                 <TextBlock Grid.Row="3" Text="NITIDEZ" Foreground="{StaticResource TextDimBrush}" Margin="0,8,8,8"/>
                 <Slider Grid.Row="3" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Settings.Sharpness, Mode=TwoWay}" VerticalAlignment="Center"/>
-                <TextBlock Grid.Row="3" Grid.Column="2" Text="{Binding Settings.Sharpness, StringFormat={}{0:F1}}" FontFamily="Consolas" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Right"/>
+                <TextBlock Grid.Row="3" Grid.Column="2" Text="{Binding Settings.Sharpness, StringFormat={}{0:F1}}" FontFamily="Consolas" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
 
                 <TextBlock Grid.Row="4" Text="IR CUT" Foreground="{StaticResource TextDimBrush}" Margin="0,8,8,8"/>
                 <ComboBox Grid.Row="4" Grid.Column="1" ItemsSource="{Binding IrCutOptions}" SelectedItem="{Binding Settings.IrCutFilter, Mode=TwoWay}"/>
             </Grid>
         </ScrollViewer>
 
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-            <Button Content="LEER" Command="{Binding LoadCommand}" Width="90" Margin="0,0,8,0"/>
-            <Button Content="APLICAR" Command="{Binding SaveCommand}" Width="100" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/>
-            <Button Content="CERRAR" Command="{Binding CloseCommand}" Width="90"/>
-        </StackPanel>
+        <WrapPanel Grid.Row="3" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="LEER" Command="{Binding LoadCommand}" MinWidth="90" Margin="0,0,8,0"/>
+            <Button Content="APLICAR" Command="{Binding SaveCommand}" MinWidth="100" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/>
+            <Button Content="CERRAR" Command="{Binding CloseCommand}" MinWidth="90"/>
+        </WrapPanel>
     </Grid>
 </Window>
