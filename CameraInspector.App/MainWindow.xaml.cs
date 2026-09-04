@@ -63,6 +63,7 @@ public partial class MainWindow : Window
             ConfigureCameraContextMenu();
             ConfigureHealthUi();
             EnsureRemoteAccessTab();
+            RemoveRedundantNetworkSelectors();
         };
     }
 
