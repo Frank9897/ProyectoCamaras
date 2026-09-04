@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Threading;
 
@@ -29,30 +30,23 @@ public partial class MainWindow
     {
         // Imagen 2: quitar únicamente el selector INTERFAZ y su botón ESCANEAR RED
         // del encabezado dinámico de CÁMARA IP / RED. No ocultamos el título.
-        foreach (var comboBox in EnumerateVisualChildren(this).OfType<ComboBox>())
+        foreach (var comboBox in EnumerateUiCleanupVisualChildren(this).OfType<ComboBox>())
         {
-            var itemsSource = comboBox.GetBindingExpression(ItemsControl.ItemsSourceProperty);
-            if (itemsSource is null)
-                continue;
-
             var binding = BindingOperations.GetBinding(comboBox, ItemsControl.ItemsSourceProperty);
             if (binding?.Path?.Path?.Equals("AvailableInterfaces", StringComparison.OrdinalIgnoreCase) == true)
                 comboBox.Visibility = Visibility.Collapsed;
         }
 
-        foreach (var button in EnumerateVisualChildren(this).OfType<Button>())
+        foreach (var button in EnumerateUiCleanupVisualChildren(this).OfType<Button>())
         {
-            if (button.Command is not null)
-            {
-                var commandBinding = BindingOperations.GetBinding(button, Button.CommandProperty);
-                if (commandBinding?.Path?.Path?.Equals("ScanCommand", StringComparison.OrdinalIgnoreCase) == true)
-                    button.Visibility = Visibility.Collapsed;
-            }
+            var commandBinding = BindingOperations.GetBinding(button, Button.CommandProperty);
+            if (commandBinding?.Path?.Path?.Equals("ScanCommand", StringComparison.OrdinalIgnoreCase) == true)
+                button.Visibility = Visibility.Collapsed;
         }
 
         // También ocultamos las etiquetas contiguas "INTERFAZ" solamente cuando pertenecen
         // al mismo bloque visual que el selector de interfaces, sin tocar otros textos.
-        foreach (var label in EnumerateVisualChildren(this).OfType<TextBlock>())
+        foreach (var label in EnumerateUiCleanupVisualChildren(this).OfType<TextBlock>())
         {
             if (!string.Equals(label.Text?.Trim(), "INTERFAZ", StringComparison.OrdinalIgnoreCase))
                 continue;
@@ -66,14 +60,14 @@ public partial class MainWindow
         }
     }
 
-    private static IEnumerable<DependencyObject> EnumerateVisualChildren(DependencyObject root)
+    private static IEnumerable<DependencyObject> EnumerateUiCleanupVisualChildren(DependencyObject root)
     {
         var count = VisualTreeHelper.GetChildrenCount(root);
         for (var index = 0; index < count; index++)
         {
             var child = VisualTreeHelper.GetChild(root, index);
             yield return child;
-            foreach (var nested in EnumerateVisualChildren(child))
+            foreach (var nested in EnumerateUiCleanupVisualChildren(child))
                 yield return nested;
         }
     }
