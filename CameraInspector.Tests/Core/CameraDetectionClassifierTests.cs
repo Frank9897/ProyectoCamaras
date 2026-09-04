@@ -45,9 +45,27 @@ public sealed class CameraDetectionClassifierTests
     }
 
     [Fact]
+    public void VivotekDiscoveryWithOnlyMac_DoesNotClassifyAsCamera()
+    {
+        var device = new DiscoveredDevice
+        {
+            IpAddress = "192.168.1.23",
+            Manufacturer = "VIVOTEK",
+            MacAddress = "00:11:22:33:44:55",
+            CameraEvidence = true
+        };
+        device.AddEvidence("VivotekDiscovery", 0.95, "Vendor response", true);
+
+        var result = CameraDetectionClassifier.Classify(device);
+
+        Assert.False(result.IsLikelyCamera);
+        Assert.Equal(0, result.StrongEvidenceCount);
+    }
+
+    [Fact]
     public void StrongAndWeakCorroboration_ClassifiesAsCamera()
     {
-        var device = new DiscoveredDevice { IpAddress = "192.168.1.23" };
+        var device = new DiscoveredDevice { IpAddress = "192.168.1.24" };
         device.AddEvidence("HikvisionSADP", 0.95, "SADP device", true);
         device.AddEvidence("RtspFingerprint", 0.90, "RTSP/554", false);
 
@@ -56,5 +74,22 @@ public sealed class CameraDetectionClassifierTests
         Assert.True(result.IsLikelyCamera);
         Assert.True(result.StrongEvidenceCount >= 1);
         Assert.True(result.WeakEvidenceCount >= 1);
+    }
+
+    [Fact]
+    public void RemoteCameraFingerprint_ClassifiesAsCamera()
+    {
+        var device = new DiscoveredDevice
+        {
+            IpAddress = "203.0.113.10",
+            Manufacturer = "HIKVISION",
+            CameraEvidence = true
+        };
+        device.AddEvidence("RemoteCameraFingerprint", 0.92, "remote endpoint", true);
+
+        var result = CameraDetectionClassifier.Classify(device);
+
+        Assert.True(result.IsLikelyCamera);
+        Assert.True(result.StrongEvidenceCount >= 1);
     }
 }
