@@ -112,7 +112,7 @@ public sealed class CameraHealthService : ICameraHealthService
             await client.ConnectAsync(ip, port, timeout.Token);
             await using var stream = client.GetStream();
             var request = Encoding.ASCII.GetBytes(
-                "DESCRIBE rtsp://" + ip + "/ RTSP/1.0\r\n" +
+                $"DESCRIBE rtsp://{ip}:{port}/ RTSP/1.0\r\n" +
                 "CSeq: 1\r\n" +
                 "Accept: application/sdp\r\n" +
                 "User-Agent: CameraInspector/1.0\r\n\r\n");
