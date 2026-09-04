@@ -163,7 +163,7 @@ public static class ResponsiveWindowBehavior
             ? nint.Zero
             : MonitorFromWindow(handle, MonitorDefaultToNearest);
 
-        var workArea = GetCurrentMonitorWorkArea(window, monitor);
+        var monitorMetrics = GetCurrentMonitorMetrics(window, monitor);
         var monitorId = monitor.ToInt64();
         if (!force && monitorId != 0 && monitorId == GetLastMonitor(window))
             return;
@@ -182,8 +182,8 @@ public static class ResponsiveWindowBehavior
         }
 
         const double margin = 24;
-        var maxWidth = Math.Max(360, workArea.Width - margin);
-        var maxHeight = Math.Max(260, workArea.Height - margin);
+        var maxWidth = Math.Max(360, monitorMetrics.WorkArea.Width - margin);
+        var maxHeight = Math.Max(260, monitorMetrics.WorkArea.Height - margin);
 
         try
         {
@@ -195,7 +195,10 @@ public static class ResponsiveWindowBehavior
             window.MaxHeight = Math.Max(window.MinHeight, maxHeight);
 
             if (window.WindowState == WindowState.Normal)
+            {
                 FitInitialOrOversizedWindow(window, maxWidth, maxHeight);
+                ClampWindowToWorkArea(window, monitorMetrics.WorkArea);
+            }
 
             if (monitorId != 0)
                 SetLastMonitor(window, monitorId);
@@ -242,7 +245,33 @@ public static class ResponsiveWindowBehavior
         window.Height = newHeight;
     }
 
-    private static Size GetCurrentMonitorWorkArea(Window window, nint monitor)
+    private static void ClampWindowToWorkArea(Window window, Rect workArea)
+    {
+        var width = double.IsNaN(window.Width) || double.IsInfinity(window.Width)
+            ? window.ActualWidth
+            : window.Width;
+        var height = double.IsNaN(window.Height) || double.IsInfinity(window.Height)
+            ? window.ActualHeight
+            : window.Height;
+
+        if (width <= 0 || height <= 0)
+            return;
+
+        var minLeft = workArea.Left;
+        var minTop = workArea.Top;
+        var maxLeft = workArea.Right - width;
+        var maxTop = workArea.Bottom - height;
+
+        var left = Math.Clamp(window.Left, minLeft, Math.Max(minLeft, maxLeft));
+        var top = Math.Clamp(window.Top, minTop, Math.Max(minTop, maxTop));
+
+        if (!double.IsNaN(left) && !double.IsInfinity(left))
+            window.Left = left;
+        if (!double.IsNaN(top) && !double.IsInfinity(top))
+            window.Top = top;
+    }
+
+    private static MonitorMetrics GetCurrentMonitorMetrics(Window window, nint monitor)
     {
         try
         {
@@ -258,9 +287,13 @@ public static class ResponsiveWindowBehavior
                     var dpi = VisualTreeHelper.GetDpi(window);
                     var scaleX = Math.Max(0.1, dpi.DpiScaleX);
                     var scaleY = Math.Max(0.1, dpi.DpiScaleY);
-                    return new Size(
+                    var workArea = new Rect(
+                        info.Work.Left / scaleX,
+                        info.Work.Top / scaleY,
                         (info.Work.Right - info.Work.Left) / scaleX,
                         (info.Work.Bottom - info.Work.Top) / scaleY);
+
+                    return new MonitorMetrics(workArea);
                 }
             }
         }
@@ -269,8 +302,10 @@ public static class ResponsiveWindowBehavior
             // Fallback para entornos donde user32/DPI no esté disponible como se espera.
         }
 
-        return SystemParameters.WorkArea.Size;
+        return new MonitorMetrics(SystemParameters.WorkArea);
     }
+
+    private readonly record struct MonitorMetrics(Rect WorkArea);
 
     private const uint MonitorDefaultToNearest = 2;
 
