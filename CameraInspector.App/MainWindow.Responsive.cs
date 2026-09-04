@@ -11,6 +11,17 @@ public partial class MainWindow
 {
     private bool _responsiveLayoutAttached;
 
+    protected override void OnInitialized(EventArgs e)
+    {
+        base.OnInitialized(e);
+
+        // Se aplica antes de la primera presentación para evitar un salto visual
+        // desde el tamaño XAML original hacia el tamaño mínimo operativo.
+        MinWidth = 900;
+        MinHeight = 580;
+        SizeChanged += MainWindow_SizeChanged;
+    }
+
     protected override void OnContentRendered(EventArgs e)
     {
         base.OnContentRendered(e);
@@ -19,9 +30,6 @@ public partial class MainWindow
             return;
 
         _responsiveLayoutAttached = true;
-        MinWidth = 900;
-        MinHeight = 580;
-        SizeChanged += MainWindow_SizeChanged;
         ApplyResponsiveLayout();
     }
 
