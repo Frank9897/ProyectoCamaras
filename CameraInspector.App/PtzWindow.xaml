@@ -4,20 +4,23 @@
         Title="Control PTZ"
         Width="430"
         Height="430"
-        MinWidth="390"
-        MinHeight="390"
+        MinWidth="330"
+        MinHeight="310"
+        ResizeMode="CanResize"
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource BgBrush}"
-        Foreground="{StaticResource TextBrush}">
+        Foreground="{StaticResource TextBrush}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True">
 
-    <Grid Margin="14">
+    <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="*" MinHeight="205"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Margin="0,0,0,12">
+        <StackPanel Grid.Row="0" Margin="0,0,0,10">
             <TextBlock Text="CONTROL PTZ"
                        FontFamily="Consolas"
                        FontWeight="Bold"
@@ -26,48 +29,58 @@
             <TextBlock Text="ONVIF · MOVIMIENTO CONTINUO"
                        Margin="0,4,0,0"
                        FontFamily="Consolas"
-                       Foreground="{StaticResource TextDimBrush}"/>
+                       Foreground="{StaticResource TextDimBrush}"
+                       TextWrapping="Wrap"/>
         </StackPanel>
 
-        <Grid Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="70"/>
-                <RowDefinition Height="70"/>
-                <RowDefinition Height="70"/>
-            </Grid.RowDefinitions>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="80"/>
-                <ColumnDefinition Width="80"/>
-                <ColumnDefinition Width="80"/>
-            </Grid.ColumnDefinitions>
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <Grid HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,4">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="64"/>
+                    <RowDefinition Height="64"/>
+                    <RowDefinition Height="64"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="72"/>
+                    <ColumnDefinition Width="72"/>
+                    <ColumnDefinition Width="72"/>
+                </Grid.ColumnDefinitions>
 
-            <Button Grid.Row="0" Grid.Column="1" Content="▲"
-                    Command="{Binding PtzUpCommand}"
-                    FontSize="22" ToolTip="Subir"/>
-            <Button Grid.Row="1" Grid.Column="0" Content="◀"
-                    Command="{Binding PtzLeftCommand}"
-                    FontSize="22" ToolTip="Izquierda"/>
-            <Button Grid.Row="1" Grid.Column="1" Content="■"
-                    Command="{Binding PtzStopCommand}"
-                    FontSize="20"
-                    Style="{StaticResource PrimaryButton}"
-                    ToolTip="Detener"/>
-            <Button Grid.Row="1" Grid.Column="2" Content="▶"
-                    Command="{Binding PtzRightCommand}"
-                    FontSize="22" ToolTip="Derecha"/>
-            <Button Grid.Row="2" Grid.Column="1" Content="▼"
-                    Command="{Binding PtzDownCommand}"
-                    FontSize="22" ToolTip="Bajar"/>
-        </Grid>
+                <Button Grid.Row="0" Grid.Column="1" Content="▲"
+                        Command="{Binding PtzUpCommand}"
+                        FontSize="22" ToolTip="Subir"/>
+                <Button Grid.Row="1" Grid.Column="0" Content="◀"
+                        Command="{Binding PtzLeftCommand}"
+                        FontSize="22" ToolTip="Izquierda"/>
+                <Button Grid.Row="1" Grid.Column="1" Content="■"
+                        Command="{Binding PtzStopCommand}"
+                        FontSize="20"
+                        Style="{StaticResource PrimaryButton}"
+                        ToolTip="Detener"/>
+                <Button Grid.Row="1" Grid.Column="2" Content="▶"
+                        Command="{Binding PtzRightCommand}"
+                        FontSize="22" ToolTip="Derecha"/>
+                <Button Grid.Row="2" Grid.Column="1" Content="▼"
+                        Command="{Binding PtzDownCommand}"
+                        FontSize="22" ToolTip="Bajar"/>
+            </Grid>
+        </ScrollViewer>
 
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center">
-            <Button Content="ZOOM −"
-                    Width="110"
-                    Margin="0,0,8,0"
-                    Command="{Binding PtzZoomOutCommand}"/>
-            <Button Content="ZOOM +"
-                    Width="110"
-                    Command="{Binding PtzZoomInCommand}"/>
-        </StackPanel>
+        <ScrollViewer Grid.Row="2"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <WrapPanel HorizontalAlignment="Center" Margin="0,6,0,0">
+                <Button Content="ZOOM −"
+                        Width="108"
+                        Margin="4"
+                        Command="{Binding PtzZoomOutCommand}"/>
+                <Button Content="ZOOM +"
+                        Width="108"
+                        Margin="4"
+                        Command="{Binding PtzZoomInCommand}"/>
+            </WrapPanel>
+        </ScrollViewer>
     </Grid>
 </Window>
