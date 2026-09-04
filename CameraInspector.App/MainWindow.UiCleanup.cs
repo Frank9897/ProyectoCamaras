@@ -6,8 +6,7 @@ using System.Windows.Threading;
 namespace CameraInspector.App;
 
 /// <summary>
-/// Limpieza visual de controles de navegación que quedaron redundantes después de
-/// centralizar las opciones de escaneo en las pestañas de modo.
+/// Limpieza visual de controles de navegación redundantes.
 /// </summary>
 public partial class MainWindow
 {
@@ -28,42 +27,43 @@ public partial class MainWindow
 
     private void RemoveRedundantNetworkSelectors()
     {
-        // El encabezado superior del contenido original ya no debe mostrar otro selector
-        // de interfaz ni otro botón global de escaneo: los modos POR RED / DIRECTA / ENLACE
-        // son ahora el punto de entrada para cada operación.
-        var title = FindTextBlock(this, "CAMERA INSPECTOR");
-        if (title is not null && FindVisualAncestor<Grid>(title) is { } originalHeader)
-            originalHeader.Visibility = Visibility.Collapsed;
-
-        // El selector INTERFAZ del encabezado del módulo CÁMARA IP / RED es redundante.
-        // La interfaz necesaria para POR RED se sigue resolviendo internamente desde el VM.
-        var interfaceLabel = FindTextBlock(this, "INTERFAZ");
-        if (interfaceLabel is not null && FindVisualAncestor<StackPanel>(interfaceLabel) is { } controlsPanel)
-            controlsPanel.Visibility = Visibility.Collapsed;
-    }
-
-    private static TextBlock? FindTextBlock(DependencyObject root, string text)
-    {
-        foreach (var child in EnumerateVisualChildren(root))
+        // Imagen 2: quitar únicamente el selector INTERFAZ y su botón ESCANEAR RED
+        // del encabezado dinámico de CÁMARA IP / RED. No ocultamos el título.
+        foreach (var comboBox in EnumerateVisualChildren(this).OfType<ComboBox>())
         {
-            if (child is TextBlock textBlock &&
-                string.Equals(textBlock.Text, text, StringComparison.OrdinalIgnoreCase))
-                return textBlock;
-        }
-        return null;
-    }
+            var itemsSource = comboBox.GetBindingExpression(ItemsControl.ItemsSourceProperty);
+            if (itemsSource is null)
+                continue;
 
-    private static T? FindVisualAncestor<T>(DependencyObject child)
-        where T : DependencyObject
-    {
-        var current = VisualTreeHelper.GetParent(child);
-        while (current is not null)
-        {
-            if (current is T match)
-                return match;
-            current = VisualTreeHelper.GetParent(current);
+            var binding = BindingOperations.GetBinding(comboBox, ItemsControl.ItemsSourceProperty);
+            if (binding?.Path?.Path?.Equals("AvailableInterfaces", StringComparison.OrdinalIgnoreCase) == true)
+                comboBox.Visibility = Visibility.Collapsed;
         }
-        return null;
+
+        foreach (var button in EnumerateVisualChildren(this).OfType<Button>())
+        {
+            if (button.Command is not null)
+            {
+                var commandBinding = BindingOperations.GetBinding(button, Button.CommandProperty);
+                if (commandBinding?.Path?.Path?.Equals("ScanCommand", StringComparison.OrdinalIgnoreCase) == true)
+                    button.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        // También ocultamos las etiquetas contiguas "INTERFAZ" solamente cuando pertenecen
+        // al mismo bloque visual que el selector de interfaces, sin tocar otros textos.
+        foreach (var label in EnumerateVisualChildren(this).OfType<TextBlock>())
+        {
+            if (!string.Equals(label.Text?.Trim(), "INTERFAZ", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var parent = VisualTreeHelper.GetParent(label);
+            if (parent is not Panel panel)
+                continue;
+
+            if (panel.Children.OfType<ComboBox>().Any(combo => combo.Visibility == Visibility.Collapsed))
+                label.Visibility = Visibility.Collapsed;
+        }
     }
 
     private static IEnumerable<DependencyObject> EnumerateVisualChildren(DependencyObject root)
@@ -78,4 +78,3 @@ public partial class MainWindow
         }
     }
 }
-
