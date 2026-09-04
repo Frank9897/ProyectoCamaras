@@ -21,7 +21,8 @@ public static class CameraDetectionClassifier
         "Uniview",
         "MOBOTIX",
         "Reolink",
-        "LegacyCameraHttp"
+        "LegacyCameraHttp",
+        "RemoteCameraFingerprint"
     };
 
     private static readonly HashSet<string> WeakMethods = new(StringComparer.OrdinalIgnoreCase)
@@ -95,7 +96,7 @@ public static class CameraDetectionClassifier
         var hasCorroboration = strong >= 2 || (strong >= 1 && weak >= 1);
         var hasCameraIdentity = !string.IsNullOrWhiteSpace(device.Model)
             || !string.IsNullOrWhiteSpace(device.SerialNumber)
-            || !string.IsNullOrWhiteSpace(device.MacAddress);
+            || !string.IsNullOrWhiteSpace(device.Manufacturer);
 
         var isLikelyCamera = device.OnvifSupported
             || device.HasOnvifMediaService
@@ -120,8 +121,7 @@ public static class CameraDetectionClassifier
             return true;
 
         return !string.IsNullOrWhiteSpace(device.Model)
-            || !string.IsNullOrWhiteSpace(device.SerialNumber)
-            || !string.IsNullOrWhiteSpace(device.MacAddress);
+            || !string.IsNullOrWhiteSpace(device.SerialNumber);
     }
 
     private static bool HasOnlyVivotekEvidence(DiscoveredDevice device)
