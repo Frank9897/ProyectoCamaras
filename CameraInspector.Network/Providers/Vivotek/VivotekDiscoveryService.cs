@@ -64,14 +64,9 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
             IPAddress.Parse("169.254.255.255")
         };
 
-        if (IsApipa(bindAddress))
-            broadcasts.Add(IPAddress.Parse("169.254.255.255"));
-
         using var socket = CreateBoundSocket(bindAddress, ShepherdDiscoveryPort, cancellationToken);
         socket.EnableBroadcast = true;
 
-        // Shepherd usa UDP 5678 para el descubrimiento. Enviamos también al puerto
-        // de compatibilidad antiguo porque algunas generaciones de firmware lo soportan.
         var probes = BuildProbes();
         foreach (var target in broadcasts.Distinct())
         {
@@ -107,12 +102,20 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
                     break;
 
                 var packet = await receive;
+
+                // Nunca interpretar una respuesta generada por el propio equipo como una cámara.
+                if (IPAddress.IsLoopback(packet.RemoteEndPoint.Address) ||
+                    packet.RemoteEndPoint.Address.Equals(bindAddress))
+                    continue;
+
                 if (!LooksLikeVivotekResponse(packet.Buffer))
                     continue;
 
                 var device = CreateDiscoveredDevice(packet.RemoteEndPoint.Address, packet.Buffer);
-                var key = device.MacAddress ?? device.IpAddress;
+                if (device.MacAddress is null)
+                    continue;
 
+                var key = device.MacAddress;
                 if (results.TryGetValue(key, out var existing))
                     MergeEvidence(existing, device);
                 else
@@ -207,14 +210,10 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
 
     private static bool LooksLikeVivotekResponse(byte[] payload)
     {
-        if (payload.Length < 11 || payload[0] != 0x02)
-        {
-            var text = Encoding.ASCII.GetString(payload);
-            return text.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase);
-        }
-
-        return ExtractVivotekMac(payload) is not null ||
-               Encoding.ASCII.GetString(payload).Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase);
+        // La cadena "VIVOTEK" por sí sola no identifica una cámara: puede aparecer
+        // en tráfico ajeno, respuestas reflejadas o paquetes de prueba. Exigimos una
+        // estructura que contenga la MAC VIVOTEK esperada antes de producir evidencia fuerte.
+        return payload.Length >= 11 && ExtractVivotekMac(payload) is not null;
     }
 
     private static DiscoveredDevice CreateDiscoveredDevice(IPAddress sourceAddress, byte[] payload)
@@ -231,7 +230,7 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
             Model = model,
             AssignedProviderName = "VIVOTEK",
             Status = DeviceStatus.Online,
-            CameraEvidence = true,
+            CameraEvidence = mac is not null,
             HttpSupported = true,
             HttpPort = 80,
             RtspSupported = true,
@@ -241,8 +240,8 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
         device.AddEvidence(
             "VIVOTEK Discovery",
             0.99,
-            "respuesta del mecanismo propietario VIVOTEK",
-            true);
+            $"respuesta propietaria VIVOTEK con identidad MAC {mac}",
+            mac is not null);
 
         return device;
     }
@@ -305,7 +304,7 @@ public sealed class VivotekDiscoveryService : IVivotekDiscoveryService
         target.SerialNumber ??= source.SerialNumber;
         target.Manufacturer = "VIVOTEK";
         target.AssignedProviderName = "VIVOTEK";
-        target.CameraEvidence = true;
+        target.CameraEvidence |= source.CameraEvidence;
         target.HttpSupported |= source.HttpSupported;
         target.RtspSupported |= source.RtspSupported;
         target.HttpPort ??= source.HttpPort;
