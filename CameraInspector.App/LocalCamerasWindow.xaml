@@ -4,56 +4,56 @@
         Title="Camera Inspector — Cámaras locales / USB"
         Width="1200"
         Height="780"
-        MinWidth="900"
-        MinHeight="560"
+        MinWidth="760"
+        MinHeight="500"
         Background="{StaticResource BgBrush}"
         Foreground="{StaticResource TextBrush}"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         WindowStartupLocation="CenterOwner">
-    <Grid Margin="14">
+    <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="*" MinHeight="300"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="5" Padding="14" Margin="0,0,0,12">
+        <Border Grid.Row="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="5" Padding="12" Margin="0,0,0,10">
             <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <StackPanel>
-                    <TextBlock Text="CÁMARAS LOCALES / USB" FontFamily="Consolas" FontSize="16" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+                <StackPanel MinWidth="220">
+                    <TextBlock Text="CÁMARAS LOCALES / USB" FontFamily="Consolas" FontSize="16" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap"/>
                     <TextBlock Text="Webcams UVC, capturadoras y cámaras virtuales expuestas por Windows" Margin="0,5,0,0" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
                 </StackPanel>
-                <WrapPanel Grid.Column="1" VerticalAlignment="Center">
-                    <Button x:Name="RefreshButton" Content="ACTUALIZAR" MinWidth="110" Height="34" Margin="0,0,8,0" Click="RefreshButton_Click" Style="{StaticResource SecondaryButton}"/>
-                    <Button x:Name="InfoButton" Content="INFORMACIÓN" MinWidth="115" Height="34" Click="InfoButton_Click" Style="{StaticResource SecondaryButton}"/>
+                <WrapPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
+                    <Button x:Name="RefreshButton" Content="ACTUALIZAR" MinWidth="105" MinHeight="34" Margin="0,0,8,5" Click="RefreshButton_Click" Style="{StaticResource SecondaryButton}"/>
+                    <Button x:Name="InfoButton" Content="INFORMACIÓN" MinWidth="110" MinHeight="34" Margin="0,0,0,5" Click="InfoButton_Click" Style="{StaticResource SecondaryButton}"/>
                 </WrapPanel>
             </Grid>
         </Border>
 
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="340" MinWidth="260"/>
-                <ColumnDefinition Width="12"/>
-                <ColumnDefinition Width="*" MinWidth="400"/>
+                <ColumnDefinition Width="300" MinWidth="220" MaxWidth="420"/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="*" MinWidth="300"/>
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="5" Padding="10">
+            <Border Grid.Column="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="5" Padding="9">
                 <DockPanel>
                     <TextBlock DockPanel.Dock="Top" Text="DISPOSITIVOS" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,8"/>
-                    <TextBlock DockPanel.Dock="Bottom" Margin="0,10,0,0" Text="Un teléfono por USB solo aparecerá como cámara cuando Windows lo exponga como fuente de vídeo. MTP por sí solo no es captura de vídeo." Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" FontSize="10"/>
-                    <ListBox x:Name="CameraList" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" SelectionChanged="CameraList_SelectionChanged" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <TextBlock DockPanel.Dock="Bottom" Margin="0,9,0,0" Text="Un teléfono por USB solo aparecerá como cámara cuando Windows lo exponga como fuente de vídeo. MTP por sí solo no es captura de vídeo." Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" FontSize="10"/>
+                    <ListBox x:Name="CameraList" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" SelectionChanged="CameraList_SelectionChanged" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <Border Padding="9" Margin="3" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
+                                <Border Padding="8" Margin="3" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
                                     <StackPanel>
                                         <TextBlock Text="{Binding Name}" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap"/>
-                                        <TextBlock Margin="0,4,0,0" Foreground="{StaticResource AccentBrush}"><Run Text="Origen: "/><Run Text="{Binding DiscoverySource}"/></TextBlock>
-                                        <TextBlock Margin="0,2,0,0" Foreground="{StaticResource TextDimBrush}"><Run Text="Estado: "/><Run Text="{Binding Status}"/></TextBlock>
-                                        <TextBlock Margin="0,2,0,0" Foreground="{StaticResource TextDimBrush}"><Run Text="Transporte: "/><Run Text="{Binding Transport}"/></TextBlock>
-                                        <TextBlock Margin="0,2,0,0" Foreground="{StaticResource TextDimBrush}"><Run Text="VID/PID: "/><Run Text="{Binding UsbVendorId}"/><Run Text=" / "/><Run Text="{Binding UsbProductId}"/></TextBlock>
-                                        <TextBlock Margin="0,2,0,0" Foreground="{StaticResource TextDimBrush}"><Run Text="Índice captura: "/><Run Text="{Binding CaptureIndex}"/></TextBlock>
+                                        <TextBlock Margin="0,4,0,0" Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap"><Run Text="Origen: "/><Run Text="{Binding DiscoverySource}"/></TextBlock>
+                                        <TextBlock Margin="0,2,0,0" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"><Run Text="Estado: "/><Run Text="{Binding Status}"/></TextBlock>
+                                        <TextBlock Margin="0,2,0,0" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"><Run Text="Transporte: "/><Run Text="{Binding Transport}"/></TextBlock>
+                                        <TextBlock Margin="0,2,0,0" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"><Run Text="VID/PID: "/><Run Text="{Binding UsbVendorId}"/><Run Text=" / "/><Run Text="{Binding UsbProductId}"/></TextBlock>
+                                        <TextBlock Margin="0,2,0,0" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"><Run Text="Índice captura: "/><Run Text="{Binding CaptureIndex}"/></TextBlock>
                                     </StackPanel>
                                 </Border>
                             </DataTemplate>
@@ -64,27 +64,27 @@
 
             <Border Grid.Column="2" Background="#000000" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="5">
                 <Grid>
-                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                    <Grid Grid.Row="0" Margin="10,8">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*" MinHeight="190"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                    <Grid Grid.Row="0" Margin="9,7">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <StackPanel>
-                            <TextBlock Text="PREVISUALIZACIÓN LOCAL" FontFamily="Consolas" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+                        <StackPanel MinWidth="150">
+                            <TextBlock Text="PREVISUALIZACIÓN LOCAL" FontFamily="Consolas" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap"/>
                             <TextBlock x:Name="SelectedCameraNameText" Margin="0,4,0,0" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap"/>
                         </StackPanel>
-                        <TextBlock Grid.Column="1" x:Name="CaptureStateTextBlock" VerticalAlignment="Center" Foreground="{StaticResource TextDimBrush}" FontFamily="Consolas" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Column="1" x:Name="CaptureStateTextBlock" VerticalAlignment="Center" Foreground="{StaticResource TextDimBrush}" FontFamily="Consolas" TextWrapping="Wrap" MaxWidth="160"/>
                     </Grid>
-                    <Border Grid.Row="1" Margin="10,0" Background="#000000" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
+                    <Border Grid.Row="1" Margin="9,0" Background="#000000" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
                         <Grid>
                             <Image x:Name="VideoImage" Stretch="Uniform" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" RenderOptions.BitmapScalingMode="LowQuality"/>
-                            <TextBlock x:Name="NoVideoTextBlock" Text="SIN SEÑAL" FontFamily="Consolas" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextDimBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="NoVideoTextBlock" Text="SIN SEÑAL" FontFamily="Consolas" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextDimBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap"/>
                         </Grid>
                     </Border>
-                    <StackPanel Grid.Row="2" Margin="10,10,10,8">
-                        <WrapPanel Margin="0,0,0,8">
-                            <Button x:Name="SnapshotButton" Content="SNAPSHOT" MinWidth="105" Height="32" Margin="0,0,6,5" Click="SnapshotButton_Click" Style="{StaticResource SecondaryButton}"/>
-                            <Button x:Name="RecordButton" Content="● GRABAR" MinWidth="105" Height="32" Margin="0,0,6,5" Click="RecordButton_Click" Style="{StaticResource SecondaryButton}"/>
-                            <Button x:Name="StopRecordButton" Content="■ FIN GRABACIÓN" MinWidth="135" Height="32" Margin="0,0,6,5" Click="StopRecordButton_Click" Style="{StaticResource SecondaryButton}"/>
-                            <Button x:Name="StopButton" Content="DETENER PREVIEW" MinWidth="125" Height="32" Margin="0,0,6,5" Click="StopButton_Click" Style="{StaticResource SecondaryButton}"/>
+                    <StackPanel Grid.Row="2" Margin="9,9,9,7">
+                        <WrapPanel Margin="0,0,0,7">
+                            <Button x:Name="SnapshotButton" Content="SNAPSHOT" MinWidth="100" MinHeight="32" Margin="0,0,6,5" Click="SnapshotButton_Click" Style="{StaticResource SecondaryButton}"/>
+                            <Button x:Name="RecordButton" Content="● GRABAR" MinWidth="100" MinHeight="32" Margin="0,0,6,5" Click="RecordButton_Click" Style="{StaticResource SecondaryButton}"/>
+                            <Button x:Name="StopRecordButton" Content="■ FIN GRABACIÓN" MinWidth="128" MinHeight="32" Margin="0,0,6,5" Click="StopRecordButton_Click" Style="{StaticResource SecondaryButton}"/>
+                            <Button x:Name="StopButton" Content="DETENER PREVIEW" MinWidth="120" MinHeight="32" Margin="0,0,6,5" Click="StopButton_Click" Style="{StaticResource SecondaryButton}"/>
                         </WrapPanel>
                         <Border Padding="8" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
                             <TextBlock x:Name="StatusTextBlock" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
@@ -94,6 +94,6 @@
             </Border>
         </Grid>
 
-        <TextBlock Grid.Row="2" Margin="4,8,4,0" Text="Camera Inspector · Captura local UVC · Media Foundation / DirectShow" FontFamily="Consolas" FontSize="10" Foreground="{StaticResource TextDimBrush}"/>
+        <TextBlock Grid.Row="2" Margin="4,7,4,0" Text="Camera Inspector · Captura local UVC · Media Foundation / DirectShow" FontFamily="Consolas" FontSize="10" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
     </Grid>
 </Window>
