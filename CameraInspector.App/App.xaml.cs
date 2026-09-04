@@ -2,6 +2,7 @@ using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Windows;
+using CameraInspector.App.Responsive;
 using CameraInspector.App.Security;
 using CameraInspector.App.ViewModels;
 using CameraInspector.Core.Interfaces;
@@ -23,6 +24,7 @@ public partial class App : Application
 {
     private IHost? _host;
     private bool _isShuttingDown;
+    private static bool _responsiveWindowsRegistered;
     public static IServiceProvider? Services { get; private set; }
 
     // En una publicación single-file AppContext.BaseDirectory puede apuntar al directorio
@@ -52,6 +54,7 @@ public partial class App : Application
     public App()
     {
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        RegisterResponsiveWindowHandling();
         DispatcherUnhandledException += (_, args) =>
         {
             WriteErrorLog("EXCEPCIÓN NO CONTROLADA EN UI", args.Exception);
@@ -59,6 +62,24 @@ public partial class App : Application
             args.Handled = true;
         };
         AppDomain.CurrentDomain.UnhandledException += (_, args) => WriteErrorLog("EXCEPCIÓN FATAL", args.ExceptionObject);
+    }
+
+    private static void RegisterResponsiveWindowHandling()
+    {
+        if (_responsiveWindowsRegistered)
+            return;
+
+        _responsiveWindowsRegistered = true;
+        EventManager.RegisterClassHandler(
+            typeof(Window),
+            FrameworkElement.LoadedEvent,
+            new RoutedEventHandler(ApplyResponsiveWindowBehavior));
+    }
+
+    private static void ApplyResponsiveWindowBehavior(object sender, RoutedEventArgs e)
+    {
+        if (sender is Window window)
+            ResponsiveWindowBehavior.SetEnable(window, true);
     }
 
     protected override async void OnStartup(StartupEventArgs e)
