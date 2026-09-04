@@ -87,13 +87,21 @@ public static class ResponsiveWindowBehavior
         var maxWidth = Math.Max(360, workArea.Width - margin);
         var maxHeight = Math.Max(260, workArea.Height - margin);
 
-        window.MaxWidth = maxWidth;
-        window.MaxHeight = maxHeight;
+        // En pantallas muy pequeñas un MinWidth/MinHeight declarado por una
+        // ventana puede ser mayor que el área disponible. Lo reducimos de forma
+        // segura para que la ventana siga siendo utilizable y pueda desplazarse.
+        if (window.MinWidth > maxWidth)
+            window.MinWidth = maxWidth;
+        if (window.MinHeight > maxHeight)
+            window.MinHeight = maxHeight;
 
-        if (window.Width > maxWidth)
-            window.Width = maxWidth;
-        if (window.Height > maxHeight)
-            window.Height = maxHeight;
+        window.MaxWidth = Math.Max(window.MinWidth, maxWidth);
+        window.MaxHeight = Math.Max(window.MinHeight, maxHeight);
+
+        if (window.Width > window.MaxWidth)
+            window.Width = window.MaxWidth;
+        if (window.Height > window.MaxHeight)
+            window.Height = window.MaxHeight;
 
         // Recalcula límites cuando la ventana cambia de tamaño o monitor.
         window.SizeChanged -= WindowSizeChanged;
