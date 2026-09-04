@@ -59,7 +59,7 @@ public sealed class RemoteEndpointDiscoveryService : IRemoteCameraDiscoveryServi
 
         try
         {
-            await using var _ = new AsyncDisposableTcpClient(await ConnectAsync(target, cancellationToken));
+            await using var client = new AsyncDisposableTcpClient(await ConnectAsync(target, cancellationToken));
 
             var protocol = target.Protocol.Equals("AUTO", StringComparison.OrdinalIgnoreCase)
                 ? await DetectProtocolAsync(target, cancellationToken)
@@ -94,8 +94,8 @@ public sealed class RemoteEndpointDiscoveryService : IRemoteCameraDiscoveryServi
             var cameraEvidence = fingerprint.IsCamera;
             device.CameraEvidence = cameraEvidence;
             device.AddEvidence(
-                "RemoteEndpoint",
-                cameraEvidence ? 0.72 : 0.28,
+                cameraEvidence ? "RemoteCameraFingerprint" : "RemoteEndpoint",
+                cameraEvidence ? 0.92 : 0.28,
                 $"endpoint remoto {target.Host}:{target.Port} · protocolo {protocol}",
                 cameraEvidence);
 
@@ -199,9 +199,6 @@ public sealed class RemoteEndpointDiscoveryService : IRemoteCameraDiscoveryServi
         {
             using var client = await ConnectAsync(target, cancellationToken);
             using var stream = client.GetStream();
-            stream.ReadTimeout = 900;
-            stream.WriteTimeout = 900;
-
             var request = Encoding.ASCII.GetBytes(
                 $"HEAD / HTTP/1.1\r\nHost: {target.Host}\r\nConnection: close\r\nUser-Agent: CameraInspector/1.0\r\n\r\n");
             await stream.WriteAsync(request, cancellationToken);
@@ -262,8 +259,9 @@ public sealed class RemoteEndpointDiscoveryService : IRemoteCameraDiscoveryServi
 
             var server = http.Value.Server;
             var body = http.Value.Body;
-            var camera = ContainsCameraToken(server) || ContainsCameraToken(body);
-            var manufacturer = DetectManufacturer($"{server}\n{body}");
+            var combined = $"{server}\n{body}";
+            var camera = ContainsCameraToken(combined);
+            var manufacturer = DetectManufacturer(combined);
             return (camera, manufacturer, DetectModel(body), server);
         }
 
@@ -379,7 +377,8 @@ public sealed class RemoteEndpointDiscoveryService : IRemoteCameraDiscoveryServi
         var tokens = new[]
         {
             "vivotek", "hikvision", "dahua", "axis", "hanwha", "samsung", "uniview",
-            "reolink", "mobotix", "camera", "ipcam", "ip camera", "network camera"
+            "reolink", "mobotix", "camera", "ipcam", "ip camera", "network camera",
+            "onvif", "rtsp server", "network video"
         };
         return tokens.Any(token => value.Contains(token, StringComparison.OrdinalIgnoreCase));
     }
