@@ -1,6 +1,8 @@
 <Window x:Class="CameraInspector.App.PtzWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:responsive="clr-namespace:CameraInspector.App.Responsive"
+        responsive:ResponsiveWindowBehavior.Enable="True"
         Title="Control PTZ"
         Width="430"
         Height="430"
@@ -25,7 +27,8 @@
                        FontFamily="Consolas"
                        FontWeight="Bold"
                        FontSize="16"
-                       Foreground="{StaticResource AccentBrush}"/>
+                       Foreground="{StaticResource AccentBrush}"
+                       TextWrapping="Wrap"/>
             <TextBlock Text="ONVIF · MOVIMIENTO CONTINUO"
                        Margin="0,4,0,0"
                        FontFamily="Consolas"
