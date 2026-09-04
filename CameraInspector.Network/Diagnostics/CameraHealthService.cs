@@ -1,6 +1,5 @@
 using System.Net.Http.Headers;
 using System.Net.Sockets;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
@@ -47,28 +46,44 @@ public sealed class CameraHealthService : ICameraHealthService
         if (ports.Count == 0)
             return Result(CameraHealthState.NoResponse, false, false, false, null, null, "SIN RESPUESTA: no se pudo establecer comunicación TCP con puertos habituales.");
 
-        foreach (var port in ports)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
+        // Se prueban RTSP y HTTP en paralelo. Una cámara que tarda en responder por un
+        // protocolo no debe hacer que el diagnóstico completo espere innecesariamente al otro.
+        var rtspPorts = ports.Where(p => p is 554 or 8554).ToArray();
+        var httpPorts = ports.Where(p => p is 80 or 81 or 82 or 88 or 443 or 8000 or 8080 or 8081 or 8443 or 8888).ToArray();
 
-            if (port is 554 or 8554)
-            {
-                var rtsp = await ProbeRtspAsync(device.IpAddress, port, cancellationToken);
-                if (rtsp.VideoAvailable)
-                    return Result(CameraHealthState.Healthy, true, true, false, port, "RTSP", "Comunicación RTSP y vídeo disponibles.");
-                if (rtsp.AuthenticationRequired)
-                    return Result(CameraHealthState.AuthenticationRequired, true, false, true, port, "RTSP", "La cámara responde por RTSP pero solicita autenticación para entregar vídeo.");
-            }
-        }
-
-        foreach (var port in ports.Where(p => p is 80 or 81 or 82 or 88 or 443 or 8000 or 8080 or 8081 or 8443 or 8888))
+        var rtspTasks = rtspPorts.Select(async port =>
         {
-            var http = await ProbeHttpVideoAsync(device.IpAddress, port, cancellationToken);
-            if (http.VideoAvailable)
-                return Result(CameraHealthState.Healthy, true, true, false, port, http.Protocol, "Comunicación HTTP/HTTPS y vídeo disponibles.");
-            if (http.AuthenticationRequired)
-                return Result(CameraHealthState.AuthenticationRequired, true, false, true, port, http.Protocol, "La cámara responde por HTTP/HTTPS pero solicita autenticación para entregar vídeo.");
-        }
+            var result = await ProbeRtspAsync(device.IpAddress, port, cancellationToken);
+            return (Port: port, Result: result);
+        }).ToArray();
+
+        var httpTasks = httpPorts.Select(async port =>
+        {
+            var result = await ProbeHttpVideoAsync(device.IpAddress, port, cancellationToken);
+            return (Port: port, Result: result);
+        }).ToArray();
+
+        var allTasks = rtspTasks.Cast<Task<(int Port, (bool VideoAvailable, bool AuthenticationRequired, string Protocol) Result)>>()
+            .Concat(httpTasks.Cast<Task<(int Port, (bool VideoAvailable, bool AuthenticationRequired, string Protocol) Result)>>())
+            .ToArray();
+
+        var results = await Task.WhenAll(allTasks);
+
+        // Si hay vídeo real confirmado, tiene prioridad sobre una respuesta de autenticación
+        // encontrada en otro puerto.
+        var video = results
+            .Where(item => item.Result.VideoAvailable)
+            .OrderBy(item => item.Port)
+            .FirstOrDefault();
+        if (video.Result.VideoAvailable)
+            return Result(CameraHealthState.Healthy, true, true, false, video.Port, video.Result.Protocol, "Comunicación y vídeo disponibles.");
+
+        var auth = results
+            .Where(item => item.Result.AuthenticationRequired)
+            .OrderBy(item => item.Port)
+            .FirstOrDefault();
+        if (auth.Result.AuthenticationRequired)
+            return Result(CameraHealthState.AuthenticationRequired, true, false, true, auth.Port, auth.Result.Protocol, "El dispositivo responde pero solicita autenticación para entregar vídeo.");
 
         var hasKnownCameraEvidence = device.CameraEvidence
             || device.OnvifSupported
