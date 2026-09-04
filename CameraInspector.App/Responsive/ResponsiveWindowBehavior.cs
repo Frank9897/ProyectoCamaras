@@ -29,25 +29,66 @@ public static class ResponsiveWindowBehavior
             typeof(ResponsiveWindowBehavior),
             new PropertyMetadata(false));
 
+    private static readonly DependencyProperty OriginalMinWidthProperty =
+        DependencyProperty.RegisterAttached(
+            "OriginalMinWidth",
+            typeof(double),
+            typeof(ResponsiveWindowBehavior),
+            new PropertyMetadata(double.NaN));
+
+    private static readonly DependencyProperty OriginalMinHeightProperty =
+        DependencyProperty.RegisterAttached(
+            "OriginalMinHeight",
+            typeof(double),
+            typeof(ResponsiveWindowBehavior),
+            new PropertyMetadata(double.NaN));
+
     private static bool GetIsHooked(DependencyObject element)
         => (bool)element.GetValue(IsHookedProperty);
 
     private static void SetIsHooked(DependencyObject element, bool value)
         => element.SetValue(IsHookedProperty, value);
 
+    private static double GetOriginalMinWidth(DependencyObject element)
+        => (double)element.GetValue(OriginalMinWidthProperty);
+
+    private static void SetOriginalMinWidth(DependencyObject element, double value)
+        => element.SetValue(OriginalMinWidthProperty, value);
+
+    private static double GetOriginalMinHeight(DependencyObject element)
+        => (double)element.GetValue(OriginalMinHeightProperty);
+
+    private static void SetOriginalMinHeight(DependencyObject element, double value)
+        => element.SetValue(OriginalMinHeightProperty, value);
+
     private static void OnEnableChanged(DependencyObject dependencyObject, DependencyPropertyChangedEventArgs e)
     {
-        if (dependencyObject is not Window window || e.NewValue is not true)
+        if (dependencyObject is not Window window)
             return;
 
-        if (!GetIsHooked(window))
+        if (e.NewValue is true)
         {
-            window.Loaded += WindowLoaded;
-            window.Closed += WindowClosed;
-            SetIsHooked(window, true);
+            if (!GetIsHooked(window))
+            {
+                SetOriginalMinWidth(window, window.MinWidth);
+                SetOriginalMinHeight(window, window.MinHeight);
+                window.Loaded += WindowLoaded;
+                window.Closed += WindowClosed;
+                SetIsHooked(window, true);
+            }
+
+            ApplyBounds(window);
+            return;
         }
 
-        ApplyBounds(window);
+        if (GetIsHooked(window))
+        {
+            window.Loaded -= WindowLoaded;
+            window.Closed -= WindowClosed;
+            window.SizeChanged -= WindowSizeChanged;
+            window.StateChanged -= WindowStateChanged;
+            SetIsHooked(window, false);
+        }
     }
 
     private static void WindowLoaded(object sender, RoutedEventArgs e)
@@ -87,14 +128,17 @@ public static class ResponsiveWindowBehavior
         var maxWidth = Math.Max(360, workArea.Width - margin);
         var maxHeight = Math.Max(260, workArea.Height - margin);
 
-        // En pantallas muy pequeñas un MinWidth/MinHeight declarado por una
-        // ventana puede ser mayor que el área disponible. Lo reducimos de forma
-        // segura para que la ventana siga siendo utilizable y pueda desplazarse.
-        if (window.MinWidth > maxWidth)
-            window.MinWidth = maxWidth;
-        if (window.MinHeight > maxHeight)
-            window.MinHeight = maxHeight;
+        // Conserva los mínimos originales para que una ventana que se abrió en un
+        // monitor pequeño no quede permanentemente reducida al cambiar de monitor.
+        var originalMinWidth = GetOriginalMinWidth(window);
+        var originalMinHeight = GetOriginalMinHeight(window);
+        if (double.IsNaN(originalMinWidth))
+            originalMinWidth = window.MinWidth;
+        if (double.IsNaN(originalMinHeight))
+            originalMinHeight = window.MinHeight;
 
+        window.MinWidth = Math.Min(originalMinWidth, maxWidth);
+        window.MinHeight = Math.Min(originalMinHeight, maxHeight);
         window.MaxWidth = Math.Max(window.MinWidth, maxWidth);
         window.MaxHeight = Math.Max(window.MinHeight, maxHeight);
 
@@ -103,7 +147,6 @@ public static class ResponsiveWindowBehavior
         if (window.Height > window.MaxHeight)
             window.Height = window.MaxHeight;
 
-        // Recalcula límites cuando la ventana cambia de tamaño o monitor.
         window.SizeChanged -= WindowSizeChanged;
         window.StateChanged -= WindowStateChanged;
         window.SizeChanged += WindowSizeChanged;
