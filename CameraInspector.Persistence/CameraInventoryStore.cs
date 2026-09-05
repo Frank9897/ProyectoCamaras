@@ -64,16 +64,21 @@ public sealed class CameraInventoryStore : ICameraInventoryStore
         }
         else
         {
-            // Si la IP ya pertenece a otra MAC, no sobrescribimos la identidad histórica.
-            // Esto evita convertir un conflicto de IP en un falso cambio de cámara.
-            var ipConflict = !matchedByMac
-                && !string.IsNullOrWhiteSpace(camera.Mac)
-                && !string.IsNullOrWhiteSpace(device.MacAddress)
-                && !camera.Mac.Equals(device.MacAddress, StringComparison.OrdinalIgnoreCase);
+            // Si la nueva IP ya está ocupada por otra identidad persistente, también es conflicto.
+            var ipOwner = await db.Cameras
+                .FirstOrDefaultAsync(c => c.Ip == device.IpAddress && c.Id != camera.Id, cancellationToken);
+
+            var ipConflict = !string.IsNullOrWhiteSpace(device.MacAddress)
+                && (( !matchedByMac
+                    && !string.IsNullOrWhiteSpace(camera.Mac)
+                    && !camera.Mac.Equals(device.MacAddress, StringComparison.OrdinalIgnoreCase))
+                    || (ipOwner is not null
+                        && !string.IsNullOrWhiteSpace(ipOwner.Mac)
+                        && !ipOwner.Mac.Equals(device.MacAddress, StringComparison.OrdinalIgnoreCase)));
 
             if (ipConflict)
             {
-                await SaveIpConflictAsync(db, camera, device, cancellationToken);
+                await SaveIpConflictAsync(db, camera, device, ipOwner, cancellationToken);
             }
             else
             {
@@ -153,13 +158,19 @@ public sealed class CameraInventoryStore : ICameraInventoryStore
         CameraInspectorDbContext db,
         CameraEntity camera,
         DiscoveredDevice device,
+        CameraEntity? ipOwner,
         CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
+        var ownerText = ipOwner is null
+            ? string.Empty
+            : $" · registrada también en Camera ID {ipOwner.Id} (MAC {ipOwner.Mac ?? "sin MAC"})";
+        var description = $"IP {device.IpAddress}: MAC observada {device.MacAddress} · identidad histórica {camera.Mac ?? "sin MAC"}{ownerText}";
+
         var duplicateAlert = await db.CameraEvents.AnyAsync(
             e => e.CameraId == camera.Id
                 && e.EventType == "ALERT_IP_CONFLICT"
-                && e.Description == $"IP {device.IpAddress}: MAC histórica {camera.Mac} · MAC observada {device.MacAddress}",
+                && e.Description == description,
             cancellationToken);
 
         if (!duplicateAlert)
@@ -168,7 +179,7 @@ public sealed class CameraInventoryStore : ICameraInventoryStore
             {
                 CameraId = camera.Id,
                 EventType = "ALERT_IP_CONFLICT",
-                Description = $"IP {device.IpAddress}: MAC histórica {camera.Mac} · MAC observada {device.MacAddress}",
+                Description = description,
                 EventDate = now
             });
         }
