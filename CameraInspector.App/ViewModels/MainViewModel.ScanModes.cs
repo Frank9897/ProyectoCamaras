@@ -1,4 +1,5 @@
 using System.Net;
+using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
 using CameraInspector.Network;
 using CameraInspector.Network.Detection;
