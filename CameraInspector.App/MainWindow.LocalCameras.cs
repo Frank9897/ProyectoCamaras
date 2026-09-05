@@ -4,17 +4,20 @@ using System.Windows.Input;
 using System.Windows.Media;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.App.ViewModels;
+using CameraInspector.Video;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CameraInspector.App;
 
 /// <summary>
 /// Funciones auxiliares de la ventana principal relacionadas con la selección
-/// de dispositivos y acciones de red.
+/// de dispositivos, acciones de red y acceso al módulo de cámaras locales USB/UVC.
 /// La navegación y los perfiles de escaneo se mantienen directamente en MainWindow.xaml.
 /// </summary>
 public partial class MainWindow
 {
+    private Button? _usbNavigationButton;
+
     private static void OnDataGridPreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (sender is not DataGrid dataGrid) return;
@@ -24,6 +27,62 @@ public partial class MainWindow
         dataGrid.SelectedItem = row.Item;
         row.IsSelected = true;
         dataGrid.Focus();
+    }
+
+    private void ConfigureLocalCameraNavigation()
+    {
+        if (_usbNavigationButton is not null)
+            return;
+
+        // El encabezado actual de MainWindow es el primer Grid de la raíz.
+        // Agregamos aquí el acceso a USB para recuperar la navegación que existía
+        // antes del rediseño, sin volver a duplicar los perfiles de escaneo IP.
+        if (Content is not Grid root || root.Children.Count == 0 || root.Children[0] is not Grid header)
+            return;
+
+        if (header.Children.OfType<Button>().Any(button =>
+                string.Equals(button.Content?.ToString(), "CÁMARA USB", StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        header.ColumnDefinitions.Clear();
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        if (header.Children.OfType<TextBlock>().FirstOrDefault() is { } title)
+            Grid.SetColumn(title, 0);
+
+        _usbNavigationButton = new Button
+        {
+            Content = "CÁMARA USB",
+            MinWidth = 125,
+            Height = 32,
+            Margin = new Thickness(10, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Style = (Style)FindResource("SecondaryButton"),
+            ToolTip = "Abrir el módulo de cámaras locales USB/UVC, webcams y capturadoras."
+        };
+        _usbNavigationButton.Click += OpenUsbCameraWindow_Click;
+        Grid.SetColumn(_usbNavigationButton, 1);
+        header.Children.Add(_usbNavigationButton);
+    }
+
+    private void OpenUsbCameraWindow_Click(object sender, RoutedEventArgs e)
+    {
+        var service = App.Services?.GetService<LocalCameraService>();
+        if (service is null)
+        {
+            ShowInformation(
+                "El servicio de cámaras locales USB/UVC no está disponible.",
+                "Cámara USB");
+            return;
+        }
+
+        var window = new LocalCamerasWindow(service)
+        {
+            Owner = this,
+            ShowInTaskbar = true
+        };
+        window.Show();
     }
 
     private void NetworkConfigurationButton_Click(object sender, RoutedEventArgs e)
