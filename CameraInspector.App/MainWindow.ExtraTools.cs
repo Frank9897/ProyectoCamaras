@@ -28,22 +28,35 @@ public partial class MainWindow
         if (menu.Items.OfType<MenuItem>().Any(item => string.Equals(item.Header?.ToString(), "Ficha técnica", StringComparison.Ordinal)))
             return;
 
+        var scanProfilesItem = new MenuItem { Header = "Perfiles de escaneo" };
+        scanProfilesItem.Click += (_, _) => OpenScanProfilesWindow();
+
         var networkDiagnosticsItem = new MenuItem { Header = "Diagnóstico de red del PC" };
         networkDiagnosticsItem.Click += (_, _) => OpenNetworkDiagnosticsWindow();
 
         var technicalSheetItem = new MenuItem { Header = "Ficha técnica" };
         technicalSheetItem.Click += (_, _) => OpenTechnicalSheetWindow();
 
-        menu.Items.Insert(0, networkDiagnosticsItem);
-        menu.Items.Insert(1, technicalSheetItem);
-        menu.Items.Insert(2, new Separator());
+        menu.Items.Insert(0, scanProfilesItem);
+        menu.Items.Insert(1, networkDiagnosticsItem);
+        menu.Items.Insert(2, technicalSheetItem);
+        menu.Items.Insert(3, new Separator());
 
         menu.Opened += (_, _) =>
         {
             var viewModel = DataContext as MainViewModel;
+            scanProfilesItem.IsEnabled = viewModel is not null;
             networkDiagnosticsItem.IsEnabled = viewModel?.SelectedInterface is not null;
             technicalSheetItem.IsEnabled = viewModel?.SelectedDevice is not null;
         };
+    }
+
+    private void OpenScanProfilesWindow()
+    {
+        if (DataContext is not MainViewModel viewModel)
+            return;
+
+        new ScanProfilesWindow(viewModel) { Owner = this }.ShowDialog();
     }
 
     private void OpenNetworkDiagnosticsWindow()
