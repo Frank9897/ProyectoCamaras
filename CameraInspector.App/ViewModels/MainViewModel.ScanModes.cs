@@ -1,10 +1,8 @@
 using System.Net;
-using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
 using CameraInspector.Network;
 using CameraInspector.Network.Detection;
 using CommunityToolkit.Mvvm.Input;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace CameraInspector.App.ViewModels;
 
@@ -59,8 +57,6 @@ public sealed partial class MainViewModel
 
             if (targetAddress is not null && Devices.Count == 0)
             {
-                // En una prueba dirigida el técnico ya declaró que la IP corresponde al objetivo.
-                // Conservamos el objetivo aunque no responda para poder mostrar la alerta y las acciones.
                 var placeholder = new DiscoveredDevice { IpAddress = targetAddress.ToString(), Status = DeviceStatus.Error };
                 placeholder.HealthState = CameraHealthState.NoResponse;
                 placeholder.HealthMessage = "ALERTA: la IP objetivo no respondió durante la detección dirigida.";
@@ -84,7 +80,7 @@ public sealed partial class MainViewModel
             }
             else
             {
-                StatusText = $"Discovery directo completo: {Devices.Count} cámaras/dispositivos encontrados.";
+                StatusText = $"Discovery directo completo: {Devices.Count} cámara(s)/dispositivo(s) con evidencia suficiente.";
             }
         }
         catch (OperationCanceledException)
@@ -114,13 +110,13 @@ public sealed partial class MainViewModel
         await PrepareAlternativeScanAsync();
         try
         {
-            StatusText = $"Escaneando subred de {SelectedInterface}...";
+            StatusText = $"Escaneando subred {SelectedInterface.NetworkAddress}/{SelectedInterface.CidrPrefixLength} usando {SelectedInterface.Name} ({SelectedInterface.IpAddress})...";
             await foreach (var progress in _scanner.ScanAsync(SelectedInterface, cancellationToken: cancellationToken, mode: DiscoveryScanMode.NetworkSubnet))
             {
                 await ProcessScanProgressAsync(progress, cancellationToken);
-                StatusText = $"Subred · {progress.Scanned}/{Math.Max(progress.Total, 1)} candidatos · Cámaras visibles: {Devices.Count}";
+                StatusText = $"Subred {SelectedInterface.NetworkAddress}/{SelectedInterface.CidrPrefixLength} · {progress.Scanned}/{Math.Max(progress.Total, 1)} candidatos · Cámaras visibles: {Devices.Count}";
             }
-            StatusText = $"Escaneo de subred completo: {Devices.Count} cámara(s) encontrada(s).";
+            StatusText = $"Escaneo de subred completo: {SelectedInterface.NetworkAddress}/{SelectedInterface.CidrPrefixLength} · {Devices.Count} cámara(s) con evidencia suficiente.";
         }
         catch (OperationCanceledException)
         {
@@ -150,14 +146,14 @@ public sealed partial class MainViewModel
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 processedInterfaces++;
-                StatusText = $"Escaneo total · interfaz {processedInterfaces}/{AvailableInterfaces.Count}: {networkInterface}";
+                StatusText = $"Escaneo total · interfaz {processedInterfaces}/{AvailableInterfaces.Count}: {networkInterface.Name} · subred {networkInterface.NetworkAddress}/{networkInterface.CidrPrefixLength}";
                 await foreach (var progress in _scanner.ScanAsync(networkInterface, cancellationToken: cancellationToken, mode: DiscoveryScanMode.NetworkSubnet))
                 {
                     await ProcessScanProgressAsync(progress, cancellationToken);
-                    StatusText = $"Escaneo total · interfaz {processedInterfaces}/{AvailableInterfaces.Count} · Cámaras visibles: {Devices.Count}";
+                    StatusText = $"Escaneo total · interfaz {processedInterfaces}/{AvailableInterfaces.Count} · {networkInterface.NetworkAddress}/{networkInterface.CidrPrefixLength} · Cámaras visibles: {Devices.Count}";
                 }
             }
-            StatusText = $"Escaneo total completo: {Devices.Count} cámara(s) encontrada(s).";
+            StatusText = $"Escaneo total completo: {Devices.Count} cámara(s) con evidencia suficiente.";
         }
         catch (OperationCanceledException)
         {
@@ -259,6 +255,13 @@ public sealed partial class MainViewModel
         try
         {
             await _manufacturerResolver.ResolveAsync(device, cancellationToken);
+
+            // Las tareas de enriquecimiento son intencionalmente asíncronas para no frenar el
+            // discovery. Si comenzó un nuevo escaneo mientras esta tarea estaba esperando,
+            // su ViewModel ya no pertenece a la sesión actual y no debe volver a insertarse.
+            if (!_allDiscoveredDevices.Contains(viewModel))
+                return;
+
             viewModel.Refresh();
 
             var classification = CameraDetectionClassifier.Classify(device);
@@ -273,6 +276,10 @@ public sealed partial class MainViewModel
                 Devices.Add(viewModel);
 
             var cameraId = await _inventoryStore.UpsertAsync(device, cancellationToken);
+
+            if (!_allDiscoveredDevices.Contains(viewModel))
+                return;
+
             viewModel.SetCameraId(cameraId);
             viewModel.Refresh();
             await CheckDeviceHealthAsync(device, viewModel, cancellationToken);
@@ -282,6 +289,9 @@ public sealed partial class MainViewModel
         }
         catch
         {
+            if (!_allDiscoveredDevices.Contains(viewModel))
+                return;
+
             try { await CheckDeviceHealthAsync(device, viewModel, cancellationToken); } catch { }
         }
     }
@@ -295,6 +305,9 @@ public sealed partial class MainViewModel
         try
         {
             var health = await healthService.CheckAsync(device, cancellationToken);
+            if (!_allDiscoveredDevices.Contains(viewModel))
+                return;
+
             device.HealthState = health.State;
             device.CommunicationAvailable = health.CommunicationAvailable;
             device.VideoAvailable = health.VideoAvailable;
@@ -321,6 +334,9 @@ public sealed partial class MainViewModel
         }
         catch (Exception ex)
         {
+            if (!_allDiscoveredDevices.Contains(viewModel))
+                return;
+
             device.HealthState = CameraHealthState.Degraded;
             device.HealthMessage = $"ALERTA: no fue posible completar la comprobación de salud: {ex.Message}";
             device.LastHealthCheckAt = DateTimeOffset.UtcNow;
