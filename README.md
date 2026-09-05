@@ -144,7 +144,19 @@ El núcleo permanece desacoplado de WPF, SQLite y protocolos concretos. Los dete
 
 El escaneo utiliza operaciones concurrentes con límites de tiempo bajos para evitar que una IP lenta bloquee toda la búsqueda. Los puertos candidatos se consultan en paralelo y la interfaz puede mostrar una IP descubierta antes de terminar todo el enriquecimiento del dispositivo.
 
+En la ventana principal se exponen tres alcances de trabajo para que el técnico elija el menor impacto necesario:
+
+- **Cámara directa**: prueba una IP indicada o utiliza descubrimiento apropiado para un equipo conectado directamente.
+- **Red normal**: revisa la subred de la interfaz seleccionada.
+- **Red completa**: repite el escaneo de subred sobre cada interfaz IPv4 activa elegible.
+
+El panel superior también presenta el diagnóstico local de la interfaz elegida: IP, gateway y DNS. Puede actualizarse tras conectar un cable, cambiar de Wi-Fi o habilitar un adaptador, sin reiniciar la aplicación.
+
 El escaneo directo con IP explícita evita barrer innecesariamente toda la subred. Cuando no se especifica IP en modo directo, la aplicación prioriza descubrimientos adecuados en lugar de forzar un barrido completo.
+
+## Diagnóstico y ficha técnica
+
+La ficha de cada cámara reúne identificación, estado de salud, evidencias, servicios ONVIF y endpoints anunciados. La pestaña **DIAGNÓSTICO** ejecuta una batería sin credenciales de ping, HTTP/HTTPS cuando corresponde, RTSP, información ONVIF y capacidades ONVIF. El resultado distingue una capacidad no anunciada de un fallo de comunicación y muestra el detalle de Media, Imaging, PTZ y Events cuando el equipo responde.
 
 ## Requisitos
 

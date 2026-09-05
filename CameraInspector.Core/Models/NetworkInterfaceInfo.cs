@@ -35,6 +35,14 @@ public sealed class NetworkInterfaceInfo
     /// <summary>Gateway IPv4 preferido informado por Windows.</summary>
     public IPAddress? DefaultGateway { get; init; }
 
+    /// <summary>Servidores DNS IPv4 asociados a la interfaz.</summary>
+    public IReadOnlyList<IPAddress> DnsServers { get; init; } = Array.Empty<IPAddress>();
+
+    /// <summary>Texto listo para mostrar en el diagnóstico local.</summary>
+    public string DnsServersDisplay => DnsServers.Count == 0
+        ? "Sin DNS configurado"
+        : string.Join(", ", DnsServers);
+
     /// <summary>Indica si Windows informa que la interfaz obtiene su configuración mediante DHCP.</summary>
     public bool UsesDhcp { get; init; }
 

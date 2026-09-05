@@ -40,7 +40,7 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
             TestHttpAsync(device, cancellationToken),
             TestRtspPortAsync(device, cancellationToken),
             TestOnvifAsync(device, username, password, cancellationToken),
-            TestMediaServiceAsync(device, username, password, cancellationToken)
+            TestOnvifCapabilitiesAsync(device, username, password, cancellationToken)
         };
 
         var results = await Task.WhenAll(tests);
@@ -270,7 +270,7 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
         }
     }
 
-    private async Task<DiagnosticResult> TestMediaServiceAsync(
+    private async Task<DiagnosticResult> TestOnvifCapabilitiesAsync(
         DiscoveredDevice device,
         string? username,
         string? password,
@@ -285,31 +285,20 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
             {
                 return new DiagnosticResult
                 {
-                    TestName = "Media Service",
+                    TestName = "ONVIF capacidades",
                     Success = false,
                     Duration = stopwatch.Elapsed,
-                    Message = "No se pudieron consultar las capacidades ONVIF."
-                };
-            }
-
-            if (!capabilities.HasMediaService)
-            {
-                return new DiagnosticResult
-                {
-                    TestName = "Media Service",
-                    Success = false,
-                    NotSupported = true,
-                    Duration = stopwatch.Elapsed,
-                    Message = "El dispositivo ONVIF no anuncia Media Service."
+                    Message = "No se pudieron consultar las capacidades ONVIF. El servicio puede requerir autenticación."
                 };
             }
 
             return new DiagnosticResult
             {
-                TestName = "Media Service",
-                Success = true,
+                TestName = "ONVIF capacidades",
+                Success = capabilities.HasMediaService,
+                NotSupported = !capabilities.HasMediaService,
                 Duration = stopwatch.Elapsed,
-                Message = "Media Service disponible."
+                Message = BuildCapabilitiesMessage(capabilities)
             };
         }
         catch (OperationCanceledException)
@@ -321,11 +310,22 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
             stopwatch.Stop();
             return new DiagnosticResult
             {
-                TestName = "Media Service",
+                TestName = "ONVIF capacidades",
                 Success = false,
                 Duration = stopwatch.Elapsed,
                 Message = ex.Message
             };
         }
+    }
+
+    private static string BuildCapabilitiesMessage(OnvifServiceCapabilities capabilities)
+    {
+        static string State(bool available) => available ? "disponible" : "no anunciado";
+
+        return $"Device: {(!string.IsNullOrWhiteSpace(capabilities.DeviceServiceXAddr) ? "disponible" : "no anunciado")} · " +
+               $"Media: {State(capabilities.HasMediaService)} · " +
+               $"Imaging: {State(capabilities.HasImagingService)} · " +
+               $"PTZ: {State(capabilities.HasPtzService)} · " +
+               $"Events: {State(capabilities.HasEventsService)}";
     }
 }

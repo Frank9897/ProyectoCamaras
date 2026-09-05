@@ -294,6 +294,19 @@ public sealed partial class DeviceViewModel : ObservableObject
         }
     }
 
+    /// <summary>Resumen compacto para la ficha y el diagnóstico de la cámara.</summary>
+    public string TechnicalProfileSummary => string.Join(" · ", new[]
+    {
+        $"HTTP: {( _device.HttpSupported ? "sí" : "no")}",
+        $"HTTPS: {( _device.HttpsSupported ? "sí" : "no")}",
+        $"RTSP: {( _device.RtspSupported ? "sí" : "no")}",
+        $"ONVIF: {( _device.OnvifSupported ? "sí" : "no")}",
+        $"Media: {( _device.HasOnvifMediaService ? "sí" : "no")}",
+        $"PTZ: {( _device.HasOnvifPtzService ? "sí" : "no")}",
+        $"Imaging: {( _device.HasOnvifImagingService ? "sí" : "no")}",
+        $"Events: {( _device.HasOnvifEventsService ? "sí" : "no")}",
+    });
+
     public void SetCameraId(int cameraId)
     {
         if (cameraId <= 0)
@@ -326,5 +339,6 @@ public sealed partial class DeviceViewModel : ObservableObject
         OnPropertyChanged(nameof(LastSeenAt));
         OnPropertyChanged(nameof(DetectionReason));
         OnPropertyChanged(nameof(DetectionDetails));
+        OnPropertyChanged(nameof(TechnicalProfileSummary));
     }
 }

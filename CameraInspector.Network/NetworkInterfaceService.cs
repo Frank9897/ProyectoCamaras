@@ -45,6 +45,11 @@ public sealed class NetworkInterfaceService : INetworkInterfaceService
                 .FirstOrDefault(address =>
                     address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
 
+            var dnsServers = ipProperties.DnsAddresses
+                .Where(address => address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                .Distinct()
+                .ToArray();
+
             // usesDhcp usa directamente la propiedad que Windows expone para la interfaz IPv4.
             var ipv4Properties = ipProperties.GetIPv4Properties();
             var usesDhcp = ipv4Properties?.IsDhcpEnabled ?? false;
@@ -65,6 +70,7 @@ public sealed class NetworkInterfaceService : INetworkInterfaceService
                 CidrPrefixLength = prefixLength,
                 NetworkAddress = networkAddress,
                 DefaultGateway = gateway,
+                DnsServers = dnsServers,
                 UsesDhcp = usesDhcp,
                 IsWireless = nic.NetworkInterfaceType is NetworkInterfaceType.Wireless80211,
                 IsUp = true

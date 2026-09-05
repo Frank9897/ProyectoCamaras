@@ -32,7 +32,30 @@
         </Grid>
 
         <Border Grid.Row="1" Padding="9,7" Margin="0,0,0,8" BorderThickness="1" CornerRadius="4" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}">
-            <TextBlock Text="{Binding StatusText}" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
+            <StackPanel>
+                <TextBlock Text="{Binding StatusText}" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
+                <WrapPanel Margin="0,8,0,0">
+                    <TextBlock Text="INTERFAZ DEL PC" FontFamily="Consolas" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <ComboBox ItemsSource="{Binding AvailableInterfaces}" SelectedItem="{Binding SelectedInterface}" MinWidth="275" MaxWidth="440" Margin="0,0,7,4"/>
+                    <Button Content="ACTUALIZAR RED" Command="{Binding RefreshNetworkInterfacesCommand}" Height="30" Margin="0,0,12,4"/>
+                    <Button Content="CÁMARA DIRECTA" Command="{Binding ScanDirectCameraCommand}" Height="30" Margin="0,0,6,4" Style="{StaticResource PrimaryButton}"/>
+                    <Button Content="RED NORMAL" Command="{Binding ScanNetworkSubnetCommand}" Height="30" Margin="0,0,6,4" Style="{StaticResource PrimaryButton}"/>
+                    <Button Content="RED COMPLETA" Command="{Binding ScanFullNetworkCommand}" Height="30" Margin="0,0,6,4"/>
+                </WrapPanel>
+                <Grid DataContext="{Binding SelectedInterface}" Margin="0,4,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                    <TextBlock Text="IP / MÁSCARA" Foreground="{StaticResource TextDimBrush}" FontSize="10" Margin="0,0,6,0"/>
+                    <TextBlock Grid.Column="1" Text="{Binding IpAddress}" FontFamily="Consolas" FontSize="10"/>
+                    <TextBlock Grid.Column="2" Text="  GATEWAY " Foreground="{StaticResource TextDimBrush}" FontSize="10"/>
+                    <TextBlock Grid.Column="3" Text="{Binding DefaultGateway}" FontFamily="Consolas" FontSize="10"/>
+                    <TextBlock Grid.Row="1" Text="DNS" Foreground="{StaticResource TextDimBrush}" FontSize="10" Margin="0,3,6,0"/>
+                    <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding DnsServersDisplay}" FontFamily="Consolas" FontSize="10" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
+                </Grid>
+            </StackPanel>
         </Border>
 
         <Border Grid.Row="2" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="5" MinHeight="170">
@@ -125,6 +148,32 @@
                                 </Grid>
                             </StackPanel>
                         </ScrollViewer>
+                    </TabItem>
+                    <TabItem Header="DIAGNÓSTICO">
+                        <Grid Margin="12">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*" MinHeight="100"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Button Grid.Row="0" Content="EJECUTAR DIAGNÓSTICO" Command="{Binding DataContext.RunQuickDiagnosticsCommand, RelativeSource={RelativeSource AncestorType=Window}}" Width="180" Height="32" HorizontalAlignment="Left" Style="{StaticResource PrimaryButton}"/>
+                            <Border Grid.Row="1" Margin="0,9,0,9" Padding="8" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
+                                <StackPanel>
+                                    <TextBlock Text="ESTADO ACTUAL" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+                                    <TextBlock Text="{Binding AlertDisplay}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding TechnicalProfileSummary}" Margin="0,5,0,0" FontFamily="Consolas" FontSize="10" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+                            <DataGrid Grid.Row="2" ItemsSource="{Binding DataContext.DiagnosticResults, RelativeSource={RelativeSource AncestorType=Window}}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False" BorderThickness="1" BorderBrush="{StaticResource BorderBrush2}">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="PRUEBA" Binding="{Binding TestName}" Width="150"/>
+                                    <DataGridTextColumn Header="OK" Binding="{Binding Success}" Width="55"/>
+                                    <DataGridTextColumn Header="DETALLE" Binding="{Binding Message}" Width="*"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                            <TextBlock Grid.Row="3" Margin="0,9,0,0" Text="Las pruebas no requieren credenciales. Si el dispositivo pide acceso, se informa como tal sin marcarlo como error de red." Foreground="{StaticResource TextDimBrush}" FontSize="10" TextWrapping="Wrap"/>
+                        </Grid>
                     </TabItem>
                     <TabItem Header="CREDENCIALES">
                         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
