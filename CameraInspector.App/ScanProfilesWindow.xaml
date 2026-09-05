@@ -15,7 +15,6 @@
             <TextBlock Text="PERFILES DE ESCANEO" FontFamily="Consolas" FontSize="16" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
             <TextBlock Text="Elegí el alcance según la situación. La RED LOCAL siempre usa la subred de la interfaz seleccionada; RED COMPLETA recorre las interfaces activas." FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" Margin="0,4,0,0"/>
         </StackPanel>
-
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <StackPanel>
                 <Border Padding="10" Margin="0,0,0,8" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="4">
@@ -25,27 +24,24 @@
                         <WrapPanel>
                             <TextBlock Text="IP OBJETIVO" VerticalAlignment="Center" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold" Margin="0,0,8,4"/>
                             <TextBox Text="{Binding DirectCameraIp, UpdateSourceTrigger=PropertyChanged}" Width="190" Height="28" Margin="0,0,8,4"/>
-                            <Button Content="EJECUTAR DIRECTA" Click="Direct_Click" Height="28" Margin="0,0,0,4" Style="{StaticResource PrimaryButton}"/>
+                            <Button Content="EJECUTAR DIRECTA" Click="Direct_Click" Height="28" Margin="0,0,0,4"/>
                         </WrapPanel>
                     </StackPanel>
                 </Border>
-
                 <Border Padding="10" Margin="0,0,0,8" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="4">
                     <StackPanel>
                         <TextBlock Text="RED LOCAL" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
                         <TextBlock Text="Escanea la red calculada desde la interfaz seleccionada. Ejemplo: PC 192.168.0.106/24 → RED 192.168.0.0/24. La IP del PC no es la red objetivo." Margin="0,5,0,7" TextWrapping="Wrap"/>
-                        <Button Content="EJECUTAR RED LOCAL" Click="Subnet_Click" Height="30" HorizontalAlignment="Left" Style="{StaticResource PrimaryButton}"/>
+                        <Button Content="EJECUTAR RED LOCAL" Click="Subnet_Click" Height="30" HorizontalAlignment="Left"/>
                     </StackPanel>
                 </Border>
-
                 <Border Padding="10" Margin="0,0,0,8" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="4">
                     <StackPanel>
                         <TextBlock Text="RED COMPLETA" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
                         <TextBlock Text="Recorre las subredes de todas las interfaces IPv4 activas elegibles. Es el perfil de mayor alcance y puede tardar más." Margin="0,5,0,7" TextWrapping="Wrap"/>
-                        <Button Content="EJECUTAR RED COMPLETA" Click="Full_Click" Height="30" HorizontalAlignment="Left" Style="{StaticResource PrimaryButton}"/>
+                        <Button Content="EJECUTAR RED COMPLETA" Click="Full_Click" Height="30" HorizontalAlignment="Left"/>
                     </StackPanel>
                 </Border>
-
                 <Border Padding="10" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="4">
                     <StackPanel>
                         <TextBlock Text="INTERFAZ ACTUAL" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
@@ -55,7 +51,6 @@
                 </Border>
             </StackPanel>
         </ScrollViewer>
-
         <Button Grid.Row="2" Content="CERRAR" Click="Close_Click" HorizontalAlignment="Right" Width="100" Height="30" Margin="0,10,0,0"/>
     </Grid>
 </Window>
