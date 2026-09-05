@@ -129,6 +129,11 @@ public partial class MainWindow
         new ScanProfilesWindow(viewModel) { Owner = this }.ShowDialog();
     }
 
+    private void OpenScanProfilesFromMain_Click(object sender, RoutedEventArgs e)
+    {
+        OpenScanProfilesWindow();
+    }
+
     private void OpenNetworkDiagnosticsWindow()
     {
         if (DataContext is not MainViewModel viewModel || viewModel.SelectedInterface is null)
