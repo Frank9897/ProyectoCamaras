@@ -14,8 +14,8 @@ namespace CameraInspector.App;
 
 /// <summary>
 /// Code-behind mínimo de la ventana.
-/// Su responsabilidad visual adicional es conectar LibVLC y ofrecer acciones contextuales
-/// para capacidades avanzadas sin saturar el layout principal.
+/// Su responsabilidad visual adicional es conectar LibVLC y ofrecer acciones
+/// contextuales para capacidades avanzadas sin saturar el layout principal.
 /// </summary>
 public partial class MainWindow : Window
 {
@@ -29,6 +29,7 @@ public partial class MainWindow : Window
     private readonly IVivotekParameterService _vivotekParameterService;
     private readonly ICredentialStore _credentialStore;
     private readonly ICameraCredentialStore _cameraCredentialStore;
+    private readonly ICameraAlertStore _cameraAlertStore;
 
     public MainWindow(
         MainViewModel viewModel,
@@ -41,7 +42,8 @@ public partial class MainWindow : Window
         IVivotekPtzService vivotekPtzService,
         IVivotekParameterService vivotekParameterService,
         ICredentialStore credentialStore,
-        ICameraCredentialStore cameraCredentialStore)
+        ICameraCredentialStore cameraCredentialStore,
+        ICameraAlertStore cameraAlertStore)
     {
         InitializeComponent();
         ConfigureReadOnlyGridBindings();
@@ -56,6 +58,7 @@ public partial class MainWindow : Window
         _vivotekParameterService = vivotekParameterService;
         _credentialStore = credentialStore;
         _cameraCredentialStore = cameraCredentialStore;
+        _cameraAlertStore = cameraAlertStore;
 
         // La vista LibVLC se enlaza directamente al MediaPlayer desde MainWindow.xaml.
         Loaded += (_, _) =>
