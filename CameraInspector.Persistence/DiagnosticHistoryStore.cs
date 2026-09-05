@@ -66,6 +66,25 @@ public sealed class DiagnosticHistoryStore : IDiagnosticHistoryStore
         if (camera is null)
             return;
 
+        // Un fallo de diagnóstico también queda en el centro de alertas para no obligar a revisar
+        // manualmente toda la batería de pruebas cada vez.
+        var failedTests = results
+            .Where(result => !result.Success && !result.NotSupported)
+            .Select(result => result.TestName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (failedTests.Count > 0)
+        {
+            db.CameraEvents.Add(new CameraEventEntity
+            {
+                CameraId = cameraId,
+                EventType = "ALERT_DIAGNOSTIC",
+                Description = $"Fallaron {failedTests.Count} pruebas: {string.Join(", ", failedTests)}",
+                EventDate = testDate
+            });
+        }
+
         // LastTest permite mostrar rápidamente cuándo fue la última batería ejecutada.
         camera.LastTest = testDate;
         await db.SaveChangesAsync(cancellationToken);
