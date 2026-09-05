@@ -17,33 +17,26 @@ public partial class MainWindow
         if (menu.Items.OfType<MenuItem>().Any(item => string.Equals(item.Header?.ToString(), "Ficha técnica", StringComparison.Ordinal)))
             return;
 
-        var scanProfilesItem = new MenuItem { Header = "Perfiles de escaneo" };
-        scanProfilesItem.Click += (_, _) => OpenScanProfilesWindow();
-
         var networkDiagnosticsItem = new MenuItem { Header = "Diagnóstico de red del PC" };
         networkDiagnosticsItem.Click += (_, _) => OpenNetworkDiagnosticsWindow();
 
         var technicalSheetItem = new MenuItem { Header = "Ficha técnica" };
         technicalSheetItem.Click += (_, _) => OpenTechnicalSheetWindow();
 
-        menu.Items.Insert(0, scanProfilesItem);
-        menu.Items.Insert(1, networkDiagnosticsItem);
-        menu.Items.Insert(2, technicalSheetItem);
-        menu.Items.Insert(3, new Separator());
+        menu.Items.Insert(0, networkDiagnosticsItem);
+        menu.Items.Insert(1, technicalSheetItem);
+        menu.Items.Insert(2, new Separator());
 
         menu.Opened += (_, _) =>
         {
             if (DataContext is not MainViewModel viewModel)
             {
-                scanProfilesItem.Visibility = Visibility.Collapsed;
                 networkDiagnosticsItem.Visibility = Visibility.Collapsed;
                 technicalSheetItem.Visibility = Visibility.Collapsed;
                 return;
             }
 
             // No mostramos acciones que no tengan sentido en el estado actual.
-            // Esto evita el menú lleno de opciones grises que después no se pueden ejecutar.
-            scanProfilesItem.Visibility = Visibility.Visible;
             networkDiagnosticsItem.Visibility = viewModel.SelectedInterface is not null
                 ? Visibility.Visible
                 : Visibility.Collapsed;
@@ -53,11 +46,10 @@ public partial class MainWindow
 
             ApplyExistingContextMenuVisibility(menu, viewModel);
 
-            if (menu.Items[3] is Separator separator)
+            if (menu.Items[2] is Separator separator)
             {
                 var visibleTools = new[]
                 {
-                    scanProfilesItem,
                     networkDiagnosticsItem,
                     technicalSheetItem
                 }.Count(item => item.Visibility == Visibility.Visible);
@@ -119,19 +111,6 @@ public partial class MainWindow
         }
 
         return null;
-    }
-
-    private void OpenScanProfilesWindow()
-    {
-        if (DataContext is not MainViewModel viewModel)
-            return;
-
-        new ScanProfilesWindow(viewModel) { Owner = this }.ShowDialog();
-    }
-
-    private void OpenScanProfilesFromMain_Click(object sender, RoutedEventArgs e)
-    {
-        OpenScanProfilesWindow();
     }
 
     private void OpenNetworkDiagnosticsWindow()
