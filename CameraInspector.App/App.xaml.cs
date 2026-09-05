@@ -93,6 +93,7 @@ public partial class App : Application
                     services.AddDbContextFactory<CameraInspectorDbContext>(options => options.UseSqlite($"Data Source={CameraInspectorDbContext.GetDefaultDbPath()}"));
                     services.AddSingleton<ICameraInventoryStore, CameraInventoryStore>();
                     services.AddSingleton<IDiagnosticHistoryStore, DiagnosticHistoryStore>();
+                    services.AddSingleton<ICameraAlertStore, CameraAlertStore>();
                     services.AddSingleton<ICameraCredentialStore, CameraCredentialStore>();
                     services.AddSingleton(new HttpClient { Timeout = TimeSpan.FromSeconds(3) });
                     services.AddSingleton<ICredentialStore, WindowsCredentialStore>();
