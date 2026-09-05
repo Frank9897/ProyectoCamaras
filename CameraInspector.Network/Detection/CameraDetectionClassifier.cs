@@ -4,10 +4,8 @@ namespace CameraInspector.Network.Detection;
 
 /// <summary>
 /// Decide si un dispositivo debe mostrarse como cámara.
-/// Una sola señal genérica como RTSP, HTTP, OUI o SSDP nunca alcanza por sí sola.
-/// Las detecciones fuertes deben marcar explícitamente que la respuesta constituye
-/// evidencia de cámara; esto evita que un protocolo reutilizado por otros servicios
-/// sea tratado como identidad de cámara por el solo nombre del detector.
+/// Las señales genéricas de red nunca deben convertir por sí solas a un router,
+/// access point, extensor u otro equipo de infraestructura en una cámara.
 /// </summary>
 public static class CameraDetectionClassifier
 {
@@ -24,7 +22,6 @@ public static class CameraDetectionClassifier
         "Uniview",
         "MOBOTIX",
         "Reolink",
-        "LegacyCameraHttp",
         "RemoteCameraFingerprint"
     };
 
@@ -49,51 +46,80 @@ public static class CameraDetectionClassifier
         foreach (var evidence in device.DetectionEvidence)
         {
             var method = evidence.Method?.Trim() ?? string.Empty;
+            var normalizedMethod = method;
             var isVivotekEvidence = method.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase);
 
-            // El discovery propietario VIVOTEK no se acepta como evidencia fuerte cuando
-            // únicamente entrega el fabricante/proveedor. Debe existir identidad independiente.
-            if (isVivotekEvidence && !HasIndependentVivotekIdentity(device))
+            // Una respuesta 401/403 a un endpoint propietario no demuestra que el equipo
+            // sea de ese fabricante: routers, APs y otros servidores también pueden devolverla.
+            if (IsAuthenticationOnlyEvidence(evidence))
             {
                 weak++;
-                details.Add($"{evidence.Method} ({evidence.Confidence:P0})");
+                details.Add($"{method} · autenticación sin identidad ({evidence.Confidence:P0})");
                 continue;
             }
 
-            if (StrongMethods.Contains(method))
+            // El discovery propietario VIVOTEK no alcanza por sí solo si únicamente informa
+            // fabricante/proveedor. Se requiere identidad independiente.
+            if (isVivotekEvidence && !HasIndependentVivotekIdentity(device))
+            {
+                weak++;
+                details.Add($"{method} ({evidence.Confidence:P0})");
+                continue;
+            }
+
+            if (StrongMethods.Contains(normalizedMethod))
             {
                 if (evidence.IsCameraEvidence)
                 {
                     strong++;
-                    details.Add($"{evidence.Method} ({evidence.Confidence:P0})");
+                    details.Add($"{method} ({evidence.Confidence:P0})");
                 }
                 else
                 {
                     weak++;
-                    details.Add($"{evidence.Method} · no confirma cámara ({evidence.Confidence:P0})");
+                    details.Add($"{method} · no confirma cámara ({evidence.Confidence:P0})");
                 }
                 continue;
             }
 
-            if (WeakMethods.Contains(method))
+            // LegacyHttp solo es fuerte cuando hubo una respuesta de identidad real.
+            // Las respuestas de autenticación quedan deliberadamente como evidencia débil.
+            if (method.StartsWith("LegacyHttp:", StringComparison.OrdinalIgnoreCase))
+            {
+                if (evidence.IsCameraEvidence && evidence.Confidence >= 0.99)
+                {
+                    strong++;
+                    details.Add($"{method} ({evidence.Confidence:P0})");
+                }
+                else
+                {
+                    weak++;
+                    details.Add($"{method} · identidad insuficiente ({evidence.Confidence:P0})");
+                }
+                continue;
+            }
+
+            if (WeakMethods.Contains(normalizedMethod))
             {
                 weak++;
-                details.Add($"{evidence.Method} ({evidence.Confidence:P0})");
+                details.Add($"{method} ({evidence.Confidence:P0})");
                 continue;
             }
 
             if (evidence.IsCameraEvidence && evidence.Confidence >= 0.9)
             {
                 strong++;
-                details.Add($"{evidence.Method} ({evidence.Confidence:P0})");
+                details.Add($"{method} ({evidence.Confidence:P0})");
             }
             else if (evidence.IsCameraEvidence)
             {
                 weak++;
-                details.Add($"{evidence.Method} ({evidence.Confidence:P0})");
+                details.Add($"{method} ({evidence.Confidence:P0})");
             }
         }
 
+        // Estas propiedades solo representan evidencia fuerte cuando realmente proceden de
+        // ONVIF confirmado. El resolver ya no las eleva por una respuesta 401/403.
         if (device.OnvifSupported)
             strong++;
         if (device.HasOnvifMediaService)
@@ -105,9 +131,11 @@ public static class CameraDetectionClassifier
 
         var score = Math.Min(100, strong * 40 + Math.Min(20, weak * 5));
         var hasCorroboration = strong >= 2 || (strong >= 1 && weak >= 1);
+
+        // El fabricante por OUI/banner no es identidad suficiente. La identidad útil debe
+        // venir acompañada de una evidencia específica de cámara.
         var hasCameraIdentity = !string.IsNullOrWhiteSpace(device.Model)
-            || !string.IsNullOrWhiteSpace(device.SerialNumber)
-            || !string.IsNullOrWhiteSpace(device.Manufacturer);
+            || !string.IsNullOrWhiteSpace(device.SerialNumber);
 
         var isLikelyCamera = device.OnvifSupported
             || device.HasOnvifMediaService
@@ -124,6 +152,16 @@ public static class CameraDetectionClassifier
             WeakEvidenceCount = weak,
             Reason = details.Count == 0 ? "Sin evidencia de cámara" : string.Join(" + ", details.Distinct(StringComparer.OrdinalIgnoreCase))
         };
+    }
+
+    private static bool IsAuthenticationOnlyEvidence(CameraDetectionEvidence evidence)
+    {
+        var details = evidence.Details ?? string.Empty;
+        return details.Contains("401", StringComparison.OrdinalIgnoreCase)
+            || details.Contains("403", StringComparison.OrdinalIgnoreCase)
+            || details.Contains("autentic", StringComparison.OrdinalIgnoreCase)
+            || details.Contains("authentication", StringComparison.OrdinalIgnoreCase)
+            || details.Contains("requiere acceso", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool HasIndependentVivotekIdentity(DiscoveredDevice device)
