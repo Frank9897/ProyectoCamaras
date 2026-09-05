@@ -3,14 +3,15 @@ using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Text;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
 
 namespace CameraInspector.Network.Diagnostics;
 
 /// <summary>
-/// Implementación de la batería de diagnóstico rápido.
-/// Las pruebas son independientes y se ejecutan en paralelo para reducir el tiempo total.
+/// Implementación de la batería de diagnóstico profesional.
+/// Las pruebas independientes se ejecutan en paralelo para reducir el tiempo total.
 /// </summary>
 public sealed class CameraDiagnosticService : ICameraDiagnosticService
 {
@@ -39,8 +40,10 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
             TestPingAsync(device.IpAddress, cancellationToken),
             TestHttpAsync(device, cancellationToken),
             TestRtspPortAsync(device, cancellationToken),
+            TestRtspProtocolAsync(device, cancellationToken),
             TestOnvifAsync(device, username, password, cancellationToken),
-            TestOnvifCapabilitiesAsync(device, username, password, cancellationToken)
+            TestOnvifCapabilitiesAsync(device, username, password, cancellationToken),
+            TestOnvifNetworkAsync(device, username, password, cancellationToken)
         };
 
         var results = await Task.WhenAll(tests);
@@ -142,12 +145,18 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                 cancellationToken);
 
             stopwatch.Stop();
+            var authenticationRequired = response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden;
+            var server = response.Headers.Server.ToString();
+            var serverText = string.IsNullOrWhiteSpace(server) ? string.Empty : $" · Server: {server}";
+
             return new DiagnosticResult
             {
                 TestName = "HTTP",
                 Success = true,
                 Duration = stopwatch.Elapsed,
-                Message = $"HTTP respondió {(int)response.StatusCode} ({response.StatusCode})"
+                Message = authenticationRequired
+                    ? $"HTTP respondió {(int)response.StatusCode} ({response.StatusCode}) · autenticación requerida{serverText}"
+                    : $"HTTP respondió {(int)response.StatusCode} ({response.StatusCode}){serverText}"
             };
         }
         catch (OperationCanceledException)
@@ -185,7 +194,7 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                 stopwatch.Stop();
                 return new DiagnosticResult
                 {
-                    TestName = "RTSP",
+                    TestName = "RTSP TCP",
                     Success = false,
                     Duration = stopwatch.Elapsed,
                     Message = $"La dirección IP '{device.IpAddress}' no es válida."
@@ -198,7 +207,7 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
             stopwatch.Stop();
             return new DiagnosticResult
             {
-                TestName = "RTSP",
+                TestName = "RTSP TCP",
                 Success = client.Connected,
                 Duration = stopwatch.Elapsed,
                 Message = client.Connected
@@ -215,10 +224,107 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
             stopwatch.Stop();
             return new DiagnosticResult
             {
-                TestName = "RTSP",
+                TestName = "RTSP TCP",
                 Success = false,
                 Duration = stopwatch.Elapsed,
                 Message = $"Puerto {port}: {ex.Message}"
+            };
+        }
+    }
+
+    /// <summary>
+    /// Realiza un OPTIONS RTSP real para diferenciar un puerto abierto de un servidor RTSP que entiende el protocolo.
+    /// </summary>
+    private static async Task<DiagnosticResult> TestRtspProtocolAsync(
+        DiscoveredDevice device,
+        CancellationToken cancellationToken)
+    {
+        var port = device.RtspPort ?? 554;
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            if (!IPAddress.TryParse(device.IpAddress, out var parsedAddress))
+            {
+                stopwatch.Stop();
+                return new DiagnosticResult
+                {
+                    TestName = "RTSP protocolo",
+                    Success = false,
+                    Duration = stopwatch.Elapsed,
+                    Message = $"La dirección IP '{device.IpAddress}' no es válida."
+                };
+            }
+
+            using var client = new TcpClient();
+            await client.ConnectAsync(parsedAddress, port, cancellationToken);
+            using var stream = client.GetStream();
+            stream.ReadTimeout = 1500;
+            stream.WriteTimeout = 1500;
+
+            var request = Encoding.ASCII.GetBytes(
+                $"OPTIONS rtsp://{device.IpAddress}:{port}/ RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: CameraInspector\r\n\r\n");
+            await stream.WriteAsync(request, cancellationToken);
+            await stream.FlushAsync(cancellationToken);
+
+            var buffer = new byte[4096];
+            var bytesRead = await stream.ReadAsync(buffer, cancellationToken);
+            stopwatch.Stop();
+
+            if (bytesRead <= 0)
+            {
+                return new DiagnosticResult
+                {
+                    TestName = "RTSP protocolo",
+                    Success = false,
+                    Duration = stopwatch.Elapsed,
+                    Message = "El puerto aceptó TCP pero no devolvió respuesta RTSP."
+                };
+            }
+
+            var response = Encoding.ASCII.GetString(buffer, 0, bytesRead);
+            var statusLine = response
+                .Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)
+                .FirstOrDefault(line => line.StartsWith("RTSP/", StringComparison.OrdinalIgnoreCase));
+
+            if (string.IsNullOrWhiteSpace(statusLine))
+            {
+                return new DiagnosticResult
+                {
+                    TestName = "RTSP protocolo",
+                    Success = false,
+                    Duration = stopwatch.Elapsed,
+                    Message = "El servicio respondió, pero no se reconoció una respuesta RTSP válida."
+                };
+            }
+
+            var parts = statusLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var statusCode = parts.Length >= 2 && int.TryParse(parts[1], out var parsedCode) ? parsedCode : 0;
+            var authenticationRequired = statusCode is 401 or 403;
+
+            return new DiagnosticResult
+            {
+                TestName = "RTSP protocolo",
+                Success = statusCode is >= 200 and < 500,
+                Duration = stopwatch.Elapsed,
+                Message = authenticationRequired
+                    ? $"RTSP respondió {statusCode}: autenticación requerida"
+                    : $"Respuesta RTSP válida: {statusCode}"
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            return new DiagnosticResult
+            {
+                TestName = "RTSP protocolo",
+                Success = false,
+                Duration = stopwatch.Elapsed,
+                Message = $"RTSP {device.IpAddress}:{port}: {ex.Message}"
             };
         }
     }
@@ -238,7 +344,7 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
             {
                 return new DiagnosticResult
                 {
-                    TestName = "ONVIF",
+                    TestName = "ONVIF Device",
                     Success = false,
                     Duration = stopwatch.Elapsed,
                     Message = "Device Service no respondió correctamente o requiere autenticación."
@@ -247,10 +353,10 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
 
             return new DiagnosticResult
             {
-                TestName = "ONVIF",
+                TestName = "ONVIF Device",
                 Success = true,
                 Duration = stopwatch.Elapsed,
-                Message = $"ONVIF OK: {info.Manufacturer ?? "Fabricante desconocido"} {info.Model ?? "Modelo desconocido"}"
+                Message = $"ONVIF OK: {info.Manufacturer ?? "Fabricante desconocido"} {info.Model ?? "Modelo desconocido"} · Firmware: {info.FirmwareVersion ?? "sin dato"} · Serial: {info.SerialNumber ?? "sin dato"}"
             };
         }
         catch (OperationCanceledException)
@@ -262,7 +368,7 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
             stopwatch.Stop();
             return new DiagnosticResult
             {
-                TestName = "ONVIF",
+                TestName = "ONVIF Device",
                 Success = false,
                 Duration = stopwatch.Elapsed,
                 Message = ex.Message
@@ -311,6 +417,75 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
             return new DiagnosticResult
             {
                 TestName = "ONVIF capacidades",
+                Success = false,
+                Duration = stopwatch.Elapsed,
+                Message = ex.Message
+            };
+        }
+    }
+
+    /// <summary>
+    /// Consulta la configuración de red ONVIF en modo lectura para detectar gateway e interfaces anunciadas.
+    /// </summary>
+    private async Task<DiagnosticResult> TestOnvifNetworkAsync(
+        DiscoveredDevice device,
+        string? username,
+        string? password,
+        CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+            {
+                return new DiagnosticResult
+                {
+                    TestName = "ONVIF red",
+                    Success = false,
+                    NotSupported = true,
+                    Duration = stopwatch.Elapsed,
+                    Message = "Se omitió la consulta de red ONVIF porque no hay credenciales disponibles."
+                };
+            }
+
+            var configuration = await _onvifDeviceService.GetNetworkConfigurationAsync(
+                device,
+                username,
+                password,
+                cancellationToken);
+            stopwatch.Stop();
+
+            if (configuration is null)
+            {
+                return new DiagnosticResult
+                {
+                    TestName = "ONVIF red",
+                    Success = false,
+                    Duration = stopwatch.Elapsed,
+                    Message = "La cámara no devolvió una configuración de red ONVIF válida."
+                };
+            }
+
+            var interfaces = configuration.Interfaces?.Count ?? 0;
+            var gateways = configuration.Gateways?.Count ?? 0;
+            return new DiagnosticResult
+            {
+                TestName = "ONVIF red",
+                Success = true,
+                Duration = stopwatch.Elapsed,
+                Message = $"Configuración ONVIF de red disponible · Interfaces: {interfaces} · Gateways: {gateways}"
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            return new DiagnosticResult
+            {
+                TestName = "ONVIF red",
                 Success = false,
                 Duration = stopwatch.Elapsed,
                 Message = ex.Message
