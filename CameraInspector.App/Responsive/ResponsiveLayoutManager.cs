@@ -6,43 +6,150 @@ using System.Windows.Media;
 namespace CameraInspector.App.Responsive;
 
 /// <summary>
-/// Ajustes de composición que complementan el comportamiento de tamaño de la ventana.
-/// Mantiene la interfaz utilizable cuando el usuario reduce el ancho disponible y evita
-/// que los bloques con acciones laterales queden comprimidos o se corten.
+/// Motor de composición responsive de la aplicación.
+/// Adapta los bloques existentes sin depender de tamaños fijos para que las
+/// futuras secciones puedan reutilizar el mismo comportamiento.
 /// </summary>
 internal static class ResponsiveLayoutManager
 {
     private sealed class LayoutState
     {
-        public readonly Dictionary<UIElement, (int Row, int Column)> Positions = new();
+        public readonly Dictionary<UIElement, (int Row, int Column, Thickness Margin)> Positions = new();
         public readonly List<RowDefinition> AddedRows = new();
+        public readonly List<ColumnDefinition> AddedColumns = new();
     }
 
     private static readonly ConditionalWeakTable<Grid, LayoutState> States = new();
 
     public static void Apply(Window window)
     {
-        if (!window.IsLoaded)
+        if (!window.IsLoaded || window.Content is not DependencyObject root)
             return;
 
-        var compact = window.ActualWidth < 1050;
-        var veryCompact = window.ActualWidth < 860;
-
-        if (window.Content is not DependencyObject root)
-            return;
+        var width = window.ActualWidth;
+        var height = window.ActualHeight;
+        var compact = width < 1120;
+        var veryCompact = width < 900;
+        var short = height < 760;
+        var veryShort = height < 650;
 
         foreach (var grid in FindVisualChildren<Grid>(root))
         {
+            AdaptAdapterGrid(grid, veryCompact);
+            AdaptNetworkSummaryGrid(grid, veryCompact);
             AdaptActionGrid(grid, compact);
             AdaptHeaderGrid(grid, veryCompact);
         }
 
-        // Los DataGrid ya tienen scroll horizontal; aquí nos aseguramos de que no
-        // intenten ocupar menos de un ancho razonable dentro de la ventana.
+        foreach (var tabControl in FindVisualChildren<TabControl>(root))
+            AdaptTabControl(tabControl, compact, short);
+
         foreach (var dataGrid in FindVisualChildren<DataGrid>(root))
         {
             dataGrid.MinColumnWidth = 55;
+            dataGrid.MinHeight = veryShort ? 110 : 130;
         }
+
+        // El detalle necesita menos altura mínima cuando la ventana es baja;
+        // su contenido interno ya dispone de scroll vertical.
+        foreach (var border in FindVisualChildren<Border>(root))
+        {
+            if (border.Child is not Grid grid || grid.RowDefinitions.Count < 2)
+                continue;
+
+            if (border.MinHeight >= 190)
+                border.MinHeight = veryShort ? 150 : 180;
+        }
+    }
+
+    private static void AdaptAdapterGrid(Grid grid, bool veryCompact)
+    {
+        if (grid.ColumnDefinitions.Count != 3 || grid.RowDefinitions.Count != 0)
+            return;
+
+        var combo = grid.Children.OfType<ComboBox>().FirstOrDefault();
+        var button = grid.Children.OfType<Button>().FirstOrDefault();
+        var label = grid.Children.OfType<StackPanel>().FirstOrDefault();
+        if (combo is null || button is null || label is null)
+            return;
+
+        var state = States.GetOrCreateValue(grid);
+
+        if (!veryCompact)
+        {
+            Restore(grid, state);
+            return;
+        }
+
+        Capture(grid, state);
+        EnsureRow(grid, state, 0);
+        EnsureRow(grid, state, 1);
+
+        Grid.SetRow(label, 0);
+        Grid.SetColumn(label, 0);
+        Grid.SetColumnSpan(label, 2);
+        label.Margin = new Thickness(0, 0, 0, 6);
+
+        Grid.SetRow(combo, 1);
+        Grid.SetColumn(combo, 0);
+        Grid.SetColumnSpan(combo, 2);
+        combo.HorizontalAlignment = HorizontalAlignment.Stretch;
+        combo.MinWidth = 0;
+        combo.MaxWidth = double.PositiveInfinity;
+
+        Grid.SetRow(button, 1);
+        Grid.SetColumn(button, 2);
+        button.HorizontalAlignment = HorizontalAlignment.Left;
+        button.Margin = new Thickness(10, 0, 0, 0);
+
+        if (grid.ColumnDefinitions.Count == 3)
+        {
+            grid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+            grid.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Star);
+            grid.ColumnDefinitions[2].Width = GridLength.Auto;
+        }
+    }
+
+    private static void AdaptNetworkSummaryGrid(Grid grid, bool veryCompact)
+    {
+        if (grid.ColumnDefinitions.Count != 4 || grid.RowDefinitions.Count != 2)
+            return;
+
+        var textBlocks = grid.Children.OfType<TextBlock>().ToList();
+        if (textBlocks.Count < 8)
+            return;
+
+        var state = States.GetOrCreateValue(grid);
+        if (!veryCompact)
+        {
+            Restore(grid, state);
+            return;
+        }
+
+        Capture(grid, state);
+
+        while (grid.RowDefinitions.Count < 4)
+            EnsureRow(grid, state, grid.RowDefinitions.Count);
+
+        foreach (var text in textBlocks)
+        {
+            var originalColumn = state.Positions.TryGetValue(text, out var position) ? position.Column : Grid.GetColumn(text);
+            var originalRow = state.Positions.TryGetValue(text, out position) ? position.Row : Grid.GetRow(text);
+            var isValue = originalColumn is 1 or 3;
+            var pair = originalColumn >= 2 ? 1 : 0;
+            var row = pair * 2 + (originalRow == 1 ? 1 : 0);
+
+            // Reorganizamos cada par en su propia fila: etiqueta | valor.
+            Grid.SetRow(text, row);
+            Grid.SetColumn(text, isValue ? 1 : 0);
+            Grid.SetColumnSpan(text, 1);
+            text.Margin = new Thickness(0, row > 0 ? 3 : 0, isValue ? 0 : 7, 0);
+        }
+
+        grid.ColumnDefinitions[0].Width = GridLength.Auto;
+        grid.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Star);
+        grid.ColumnDefinitions[2].Width = new GridLength(0);
+        grid.ColumnDefinitions[3].Width = new GridLength(0);
     }
 
     private static void AdaptActionGrid(Grid grid, bool compact)
@@ -65,21 +172,8 @@ internal static class ResponsiveLayoutManager
             return;
         }
 
-        if (state.Positions.Count == 0)
-        {
-            foreach (UIElement child in grid.Children)
-                state.Positions[child] = (Grid.GetRow(child), Grid.GetColumn(child));
-        }
-
-        // En ancho reducido, las acciones pasan debajo del contenido en vez de
-        // forzar una segunda columna estrecha. Esto permite que futuras acciones
-        // agregadas a estos bloques sigan el mismo patrón.
-        if (grid.RowDefinitions.Count < 2)
-        {
-            var row = new RowDefinition { Height = GridLength.Auto };
-            grid.RowDefinitions.Add(row);
-            state.AddedRows.Add(row);
-        }
+        Capture(grid, state);
+        EnsureRow(grid, state, 1);
 
         foreach (UIElement child in grid.Children)
         {
@@ -87,13 +181,15 @@ internal static class ResponsiveLayoutManager
             {
                 Grid.SetRow(child, 1);
                 Grid.SetColumn(child, 0);
-                button.HorizontalAlignment = HorizontalAlignment.Left;
-                button.Margin = new Thickness(0, 8, 0, 0);
+                Grid.SetColumnSpan(child, grid.ColumnDefinitions.Count);
+                child.HorizontalAlignment = HorizontalAlignment.Left;
+                child.Margin = new Thickness(0, 8, 0, 0);
             }
             else
             {
                 Grid.SetRow(child, 0);
                 Grid.SetColumn(child, 0);
+                Grid.SetColumnSpan(child, grid.ColumnDefinitions.Count);
             }
         }
     }
@@ -112,25 +208,91 @@ internal static class ResponsiveLayoutManager
             return;
 
         var state = States.GetOrCreateValue(grid);
-
         if (!veryCompact)
         {
             Restore(grid, state);
             return;
         }
 
-        if (state.Positions.Count == 0)
-        {
-            foreach (UIElement child in grid.Children)
-                state.Positions[child] = (Grid.GetRow(child), Grid.GetColumn(child));
-        }
+        Capture(grid, state);
+        EnsureRow(grid, state, 1);
 
         Grid.SetRow(right, 1);
         Grid.SetColumn(right, 0);
         right.HorizontalAlignment = HorizontalAlignment.Left;
         right.Margin = new Thickness(0, 4, 0, 0);
+    }
 
-        if (grid.RowDefinitions.Count < 2)
+    private static void AdaptTabControl(TabControl tabControl, bool compact, bool shortWindow)
+    {
+        var headers = tabControl.Items
+            .OfType<TabItem>()
+            .Select(item => item.Header?.ToString())
+            .Where(header => header is not null)
+            .ToList();
+
+        if (headers.Count == 0)
+            return;
+
+        var isProfileTabs = headers.Contains("DIRECTA", StringComparer.OrdinalIgnoreCase)
+            && headers.Contains("RED LOCAL", StringComparer.OrdinalIgnoreCase)
+            && headers.Contains("RED COMPLETA", StringComparer.OrdinalIgnoreCase);
+
+        if (!isProfileTabs)
+            return;
+
+        // Nunca fijamos una altura rígida: el contenido determina la altura base.
+        // En ventanas bajas se reduce el espacio reservado y los bloques internos
+        // se encargan de desplazarse si hace falta.
+        tabControl.ClearValue(FrameworkElement.HeightProperty);
+        tabControl.MinHeight = shortWindow ? 82 : 92;
+        tabControl.MaxHeight = shortWindow ? 145 : 180;
+
+        foreach (var tab in tabControl.Items.OfType<TabItem>())
+        {
+            if (tab.Content is not Grid grid)
+                continue;
+
+            var button = grid.Children.OfType<Button>().FirstOrDefault();
+            var content = grid.Children.OfType<StackPanel>().FirstOrDefault();
+            if (button is null || content is null)
+                continue;
+
+            var state = States.GetOrCreateValue(grid);
+            if (!compact)
+            {
+                Restore(grid, state);
+                continue;
+            }
+
+            Capture(grid, state);
+            EnsureRow(grid, state, 1);
+
+            Grid.SetRow(content, 0);
+            Grid.SetColumn(content, 0);
+            Grid.SetColumnSpan(content, 2);
+            content.Margin = new Thickness(0);
+
+            Grid.SetRow(button, 1);
+            Grid.SetColumn(button, 0);
+            Grid.SetColumnSpan(button, 2);
+            button.HorizontalAlignment = HorizontalAlignment.Left;
+            button.Margin = new Thickness(0, 8, 0, 0);
+        }
+    }
+
+    private static void Capture(Grid grid, LayoutState state)
+    {
+        if (state.Positions.Count != 0)
+            return;
+
+        foreach (UIElement child in grid.Children)
+            state.Positions[child] = (Grid.GetRow(child), Grid.GetColumn(child), child is FrameworkElement element ? element.Margin : default);
+    }
+
+    private static void EnsureRow(Grid grid, LayoutState state, int index)
+    {
+        while (grid.RowDefinitions.Count <= index)
         {
             var row = new RowDefinition { Height = GridLength.Auto };
             grid.RowDefinitions.Add(row);
@@ -150,17 +312,17 @@ internal static class ResponsiveLayoutManager
 
             Grid.SetRow(child, position.Row);
             Grid.SetColumn(child, position.Column);
+            Grid.SetColumnSpan(child, 1);
 
-            if (child is Button)
-                child.ClearValue(FrameworkElement.MarginProperty);
-            else if (child is TextBlock)
-                child.ClearValue(FrameworkElement.MarginProperty);
+            if (child is FrameworkElement element)
+                element.Margin = position.Margin;
         }
 
         foreach (var row in state.AddedRows)
             grid.RowDefinitions.Remove(row);
 
         state.AddedRows.Clear();
+        state.AddedColumns.Clear();
         state.Positions.Clear();
     }
 
