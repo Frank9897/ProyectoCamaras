@@ -53,13 +53,13 @@ public sealed class NetworkInterfaceInfo
     public bool IsWireless { get; init; }
 
     /// <summary>
-    /// Texto compacto para el selector. Primero se muestra el nombre del puerto
-    /// y después su red calculada, sin convertir la IP en el título principal.
+    /// Texto compacto para el selector. Diferencia explícitamente la IP del PC
+    /// de la subred que será recorrida por el escaneo normal.
     /// </summary>
     public override string ToString()
     {
         var gatewayText = DefaultGateway is null ? "sin gateway" : $"GW {DefaultGateway}";
         var dhcpText = UsesDhcp ? "DHCP" : "FIJA";
-        return $"{Name} · {IpAddress}/{CidrPrefixLength} · {dhcpText} · {gatewayText}";
+        return $"{Name} · PC {IpAddress}/{CidrPrefixLength} · RED {NetworkAddress}/{CidrPrefixLength} · {dhcpText} · {gatewayText}";
     }
 }
