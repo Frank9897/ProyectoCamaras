@@ -1,23 +1,12 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Threading;
 using CameraInspector.App.ViewModels;
 
 namespace CameraInspector.App;
 
 public partial class MainWindow
 {
-    // Se ejecuta antes del constructor y deja el enganche preparado sin tocar el layout XAML existente.
-    private readonly bool _extraToolsHook = HookExtraTools();
-
-    private bool HookExtraTools()
-    {
-        Loaded += (_, _) => Dispatcher.BeginInvoke(
-            DispatcherPriority.Background,
-            new Action(ConfigureExtraContextMenu));
-        return true;
-    }
-
+    // Se conecta desde el Loaded principal de MainWindow para respetar el orden en que se crea el ContextMenu.
     private void ConfigureExtraContextMenu()
     {
         var dataGrid = FindVisualChild<DataGrid>(this);
