@@ -61,6 +61,7 @@ public partial class MainWindow : Window
         Loaded += (_, _) =>
         {
             ConfigureCameraContextMenu();
+            ConfigureExtraContextMenu();
             ConfigureHealthUi();
             EnsureRemoteAccessTab();
         };
