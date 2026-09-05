@@ -3,6 +3,7 @@ using CameraInspector.Core.Models;
 using CameraInspector.Network;
 using CameraInspector.Network.Detection;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace CameraInspector.App.ViewModels;
 
