@@ -164,7 +164,7 @@ internal static class ResponsiveLayoutManager
         Capture(grid, state);
         EnsureRow(grid, state, 1);
 
-        foreach (UIElement child in grid.Children)
+        foreach (var child in grid.Children.OfType<FrameworkElement>())
         {
             if (ReferenceEquals(child, button))
             {
