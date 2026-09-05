@@ -34,7 +34,6 @@
         <Border Grid.Row="1" Padding="10,9" Margin="0,0,0,8" BorderThickness="1" CornerRadius="5" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}">
             <StackPanel>
                 <TextBlock Text="{Binding StatusText}" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
-
                 <Grid Margin="0,9,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -42,13 +41,11 @@
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-
                     <TextBlock Text="ADAPTADOR DE RED" FontFamily="Consolas" FontSize="10" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                    <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableInterfaces}" SelectedItem="{Binding SelectedInterface}" MinWidth="330" MaxWidth="460" Margin="0,0,7,0}"/>
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableInterfaces}" SelectedItem="{Binding SelectedInterface}" MinWidth="330" MaxWidth="460" Margin="0,0,7,0"/>
                     <Button Grid.Column="2" Content="ACTUALIZAR RED" Command="{Binding RefreshNetworkInterfacesCommand}" Height="30" Margin="0,0,8,0"/>
                     <Button Grid.Column="3" Content="PERFILES DE ESCANEO" Click="OpenScanProfilesFromMain_Click" Height="30" MinWidth="180" HorizontalAlignment="Left" Style="{StaticResource PrimaryButton}"/>
                 </Grid>
-
                 <Border Margin="0,9,0,0" Padding="8,7" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="4">
                     <Grid DataContext="{Binding SelectedInterface}">
                         <Grid.ColumnDefinitions>
@@ -66,29 +63,12 @@
                         <TextBlock Grid.Row="1" Grid.Column="3" Text="{Binding DnsServersDisplay}" FontFamily="Consolas" FontSize="10" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
                     </Grid>
                 </Border>
-
-                <TextBlock Margin="2,6,0,0"
-                           Text="El adaptador es el camino de salida. El perfil de escaneo define el alcance: una IP, la red de ese adaptador o todas las redes activas."
-                           FontSize="9"
-                           Foreground="{StaticResource TextDimBrush}"
-                           TextWrapping="Wrap"/>
+                <TextBlock Margin="2,6,0,0" Text="El adaptador es el camino de salida. El perfil de escaneo define el alcance: una IP, la red de ese adaptador o todas las redes activas." FontSize="9" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
             </StackPanel>
         </Border>
 
         <Border Grid.Row="2" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="5" MinHeight="170">
-            <DataGrid ItemsSource="{Binding Devices}"
-                      SelectedItem="{Binding SelectedDevice}"
-                      IsReadOnly="True"
-                      AutoGenerateColumns="False"
-                      HeadersVisibility="Column"
-                      CanUserAddRows="False"
-                      CanUserResizeRows="False"
-                      CanUserSortColumns="True"
-                      RowHeight="27"
-                      ColumnHeaderHeight="29"
-                      HorizontalScrollBarVisibility="Auto"
-                      VerticalScrollBarVisibility="Auto"
-                      BorderThickness="0">
+            <DataGrid ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" IsReadOnly="True" AutoGenerateColumns="False" HeadersVisibility="Column" CanUserAddRows="False" CanUserResizeRows="False" CanUserSortColumns="True" RowHeight="27" ColumnHeaderHeight="29" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" BorderThickness="0">
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="ESTADO" Binding="{Binding Status}" Width="80"/>
                     <DataGridTextColumn Header="IP" Binding="{Binding IpAddress}" Width="115"/>
@@ -121,7 +101,6 @@
                     </TextBlock>
                     <TextBlock Grid.Column="1" Text="{Binding IpAddress}" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}"/>
                 </Grid>
-
                 <TabControl x:Name="DeviceDetailTabs" Grid.Row="1" Margin="7,0,7,7" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}">
                     <TabItem Header="GENERAL">
                         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -168,27 +147,10 @@
                     </TabItem>
                     <TabItem Header="DIAGNÓSTICO">
                         <Grid Margin="12">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*" MinHeight="100"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*" MinHeight="100"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                             <Button Grid.Row="0" Content="EJECUTAR DIAGNÓSTICO" Command="{Binding DataContext.RunQuickDiagnosticsCommand, RelativeSource={RelativeSource AncestorType=Window}}" Width="180" Height="32" HorizontalAlignment="Left" Style="{StaticResource PrimaryButton}"/>
-                            <Border Grid.Row="1" Margin="0,9,0,9" Padding="8" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1">
-                                <StackPanel>
-                                    <TextBlock Text="ESTADO ACTUAL" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
-                                    <TextBlock Text="{Binding AlertDisplay}" Margin="0,4,0,0" TextWrapping="Wrap"/>
-                                    <TextBlock Text="{Binding TechnicalProfileSummary}" Margin="0,5,0,0" FontFamily="Consolas" FontSize="10" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
-                                </StackPanel>
-                            </Border>
-                            <DataGrid Grid.Row="2" ItemsSource="{Binding DataContext.DiagnosticResults, RelativeSource={RelativeSource AncestorType=Window}}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False" BorderThickness="1" BorderBrush="{StaticResource BorderBrush2}">
-                                <DataGrid.Columns>
-                                    <DataGridTextColumn Header="PRUEBA" Binding="{Binding TestName}" Width="150"/>
-                                    <DataGridTextColumn Header="OK" Binding="{Binding Success}" Width="55"/>
-                                    <DataGridTextColumn Header="DETALLE" Binding="{Binding Message}" Width="*"/>
-                                </DataGrid.Columns>
-                            </DataGrid>
+                            <Border Grid.Row="1" Margin="0,9,0,9" Padding="8" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1"><StackPanel><TextBlock Text="ESTADO ACTUAL" FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/><TextBlock Text="{Binding AlertDisplay}" Margin="0,4,0,0" TextWrapping="Wrap"/><TextBlock Text="{Binding TechnicalProfileSummary}" Margin="0,5,0,0" FontFamily="Consolas" FontSize="10" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/></StackPanel></Border>
+                            <DataGrid Grid.Row="2" ItemsSource="{Binding DataContext.DiagnosticResults, RelativeSource={RelativeSource AncestorType=Window}}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False" BorderThickness="1" BorderBrush="{StaticResource BorderBrush2}"><DataGrid.Columns><DataGridTextColumn Header="PRUEBA" Binding="{Binding TestName}" Width="150"/><DataGridTextColumn Header="OK" Binding="{Binding Success}" Width="55"/><DataGridTextColumn Header="DETALLE" Binding="{Binding Message}" Width="*"/></DataGrid.Columns></DataGrid>
                             <TextBlock Grid.Row="3" Margin="0,9,0,0" Text="Las pruebas no requieren credenciales. Si el dispositivo pide acceso, se informa como tal sin marcarlo como error de red." Foreground="{StaticResource TextDimBrush}" FontSize="10" TextWrapping="Wrap"/>
                         </Grid>
                     </TabItem>
