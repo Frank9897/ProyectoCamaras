@@ -6,9 +6,8 @@ using System.Windows.Media;
 namespace CameraInspector.App.Responsive;
 
 /// <summary>
-/// Ajusta una ventana al área de trabajo del monitor sin forzar cambios de tamaño
-/// durante un resize manual. El contenido debe aportar sus propios ScrollViewer,
-/// DataGrid o ListBox cuando pueda superar el espacio disponible.
+/// Ajusta una ventana al área de trabajo del monitor y coordina la adaptación
+/// interna del contenido durante cambios de tamaño o monitor.
 /// </summary>
 public static class ResponsiveWindowBehavior
 {
@@ -106,6 +105,7 @@ public static class ResponsiveWindowBehavior
                 window.Closed += WindowClosed;
                 window.LocationChanged += WindowLocationChanged;
                 window.StateChanged += WindowStateChanged;
+                window.SizeChanged += WindowSizeChanged;
                 SetIsHooked(window, true);
             }
 
@@ -120,13 +120,17 @@ public static class ResponsiveWindowBehavior
         window.Closed -= WindowClosed;
         window.LocationChanged -= WindowLocationChanged;
         window.StateChanged -= WindowStateChanged;
+        window.SizeChanged -= WindowSizeChanged;
         SetIsHooked(window, false);
     }
 
     private static void WindowLoaded(object sender, RoutedEventArgs e)
     {
         if (sender is Window window)
+        {
             ApplyBounds(window, force: true);
+            ResponsiveLayoutManager.Apply(window);
+        }
     }
 
     private static void WindowClosed(object? sender, EventArgs e)
@@ -135,6 +139,7 @@ public static class ResponsiveWindowBehavior
         {
             window.LocationChanged -= WindowLocationChanged;
             window.StateChanged -= WindowStateChanged;
+            window.SizeChanged -= WindowSizeChanged;
         }
     }
 
@@ -147,7 +152,16 @@ public static class ResponsiveWindowBehavior
     private static void WindowStateChanged(object? sender, EventArgs e)
     {
         if (sender is Window window && window.WindowState == WindowState.Normal)
+        {
             ApplyBounds(window, force: true);
+            ResponsiveLayoutManager.Apply(window);
+        }
+    }
+
+    private static void WindowSizeChanged(object? sender, SizeChangedEventArgs e)
+    {
+        if (sender is Window window && window.WindowState == WindowState.Normal)
+            ResponsiveLayoutManager.Apply(window);
     }
 
     private static void ApplyBounds(Window window, bool force)
@@ -222,8 +236,6 @@ public static class ResponsiveWindowBehavior
         if (width <= maxWidth && height <= maxHeight)
             return;
 
-        // Cuando el tamaño inicial no entra, reduce ambos ejes conservando la
-        // relación de aspecto para evitar ventanas deformadas o saltos bruscos.
         var scaleX = maxWidth / width;
         var scaleY = maxHeight / height;
         var scale = Math.Min(scaleX, scaleY);
@@ -234,8 +246,6 @@ public static class ResponsiveWindowBehavior
         var newWidth = Math.Max(window.MinWidth, width * scale);
         var newHeight = Math.Max(window.MinHeight, height * scale);
 
-        // El mínimo puede impedir mantener exactamente la relación de aspecto.
-        // En ese caso ajustamos el eje restante al máximo que permite el monitor.
         if (newWidth > maxWidth)
             newWidth = maxWidth;
         if (newHeight > maxHeight)
@@ -307,7 +317,6 @@ public static class ResponsiveWindowBehavior
         }
         catch
         {
-            // Fallback para entornos donde user32/DPI no esté disponible como se espera.
         }
 
         return new MonitorMetrics(SystemParameters.WorkArea);
