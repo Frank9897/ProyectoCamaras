@@ -1,0 +1,82 @@
+<Window x:Class="CameraInspector.App.NetworkDiagnosticsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Camera Inspector — Diagnóstico de red"
+        Width="760"
+        Height="650"
+        MinWidth="620"
+        MinHeight="520"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BgBrush}"
+        Foreground="{StaticResource TextBrush}">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="0,0,0,10">
+            <TextBlock Text="DIAGNÓSTICO DE RED DEL PC" FontFamily="Consolas" FontSize="16" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+            <TextBlock Text="Estado del adaptador seleccionado, direccionamiento IPv4 y conectividad básica." FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+                <Border Padding="10" Margin="0,0,0,8" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="4">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="145"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="INTERFAZ" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                        <TextBlock Grid.Column="1" Text="{Binding InterfaceName}" FontFamily="Consolas" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Row="1" Text="DESCRIPCIÓN" Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Description}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Row="2" Text="ESTADO" Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding LinkState}" Margin="0,6,0,0" FontFamily="Consolas"/>
+                        <TextBlock Grid.Row="3" Text="MAC" Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding MacAddress}" Margin="0,6,0,0" FontFamily="Consolas"/>
+                        <TextBlock Grid.Row="4" Text="IP DEL PC" Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                        <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding IpAddress}" Margin="0,6,0,0" FontFamily="Consolas"/>
+                        <TextBlock Grid.Row="5" Text="MÁSCARA / CIDR" Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                        <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding SubnetDisplay}" Margin="0,6,0,0" FontFamily="Consolas"/>
+                        <TextBlock Grid.Row="6" Text="RED OBJETIVO" Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                        <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding NetworkDisplay}" Margin="0,6,0,0" FontFamily="Consolas"/>
+                        <TextBlock Grid.Row="7" Text="DHCP / TIPO" Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                        <TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding ConfigurationDisplay}" Margin="0,6,0,0" FontFamily="Consolas"/>
+                    </Grid>
+                </Border>
+
+                <Border Padding="10" Margin="0,0,0,8" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="4">
+                    <StackPanel>
+                        <TextBlock Text="RUTA Y RESOLUCIÓN" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontWeight="Bold"/>
+                        <Grid Margin="0,7,0,0">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="145"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="GATEWAY" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                            <TextBlock Grid.Column="1" Text="{Binding GatewayDisplay}" FontFamily="Consolas"/>
+                            <TextBlock Grid.Row="1" Text="DNS" Margin="0,6,0,0" Foreground="{StaticResource TextDimBrush}" FontWeight="Bold"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding DnsDisplay}" Margin="0,6,0,0" FontFamily="Consolas" TextWrapping="Wrap"/>
+                        </Grid>
+                        <WrapPanel Margin="0,10,0,0">
+                            <Button Content="PROBAR GATEWAY" Click="PingGateway_Click" Height="30" Margin="0,0,7,4" Style="{StaticResource PrimaryButton}"/>
+                            <Button Content="PROBAR DNS" Click="PingDns_Click" Height="30" Margin="0,0,7,4"/>
+                            <Button Content="PROBAR TODO" Click="PingAll_Click" Height="30" Margin="0,0,7,4"/>
+                        </WrapPanel>
+                        <TextBlock Text="{Binding TestStatus}" Margin="0,7,0,0" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Padding="10" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="4">
+                    <StackPanel>
+                        <TextBlock Text="INTERPRETACIÓN" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontWeight="Bold"/>
+                        <TextBlock Text="{Binding Interpretation}" Margin="0,7,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <Button Grid.Row="2" Content="CERRAR" Click="Close_Click" HorizontalAlignment="Right" Width="100" Height="30" Margin="0,10,0,0"/>
+    </Grid>
+</Window>
