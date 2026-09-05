@@ -30,7 +30,7 @@ internal static class ResponsiveLayoutManager
         var height = window.ActualHeight;
         var compact = width < 1120;
         var veryCompact = width < 900;
-        var short = height < 760;
+        var shortWindow = height < 760;
         var veryShort = height < 650;
 
         foreach (var grid in FindVisualChildren<Grid>(root))
@@ -42,7 +42,7 @@ internal static class ResponsiveLayoutManager
         }
 
         foreach (var tabControl in FindVisualChildren<TabControl>(root))
-            AdaptTabControl(tabControl, compact, short);
+            AdaptTabControl(tabControl, compact, shortWindow);
 
         foreach (var dataGrid in FindVisualChildren<DataGrid>(root))
         {
@@ -50,8 +50,6 @@ internal static class ResponsiveLayoutManager
             dataGrid.MinHeight = veryShort ? 110 : 130;
         }
 
-        // El detalle necesita menos altura mínima cuando la ventana es baja;
-        // su contenido interno ya dispone de scroll vertical.
         foreach (var border in FindVisualChildren<Border>(root))
         {
             if (border.Child is not Grid grid || grid.RowDefinitions.Count < 2)
@@ -102,12 +100,9 @@ internal static class ResponsiveLayoutManager
         button.HorizontalAlignment = HorizontalAlignment.Left;
         button.Margin = new Thickness(10, 0, 0, 0);
 
-        if (grid.ColumnDefinitions.Count == 3)
-        {
-            grid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
-            grid.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Star);
-            grid.ColumnDefinitions[2].Width = GridLength.Auto;
-        }
+        grid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+        grid.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Star);
+        grid.ColumnDefinitions[2].Width = GridLength.Auto;
     }
 
     private static void AdaptNetworkSummaryGrid(Grid grid, bool veryCompact)
@@ -127,7 +122,6 @@ internal static class ResponsiveLayoutManager
         }
 
         Capture(grid, state);
-
         while (grid.RowDefinitions.Count < 4)
             EnsureRow(grid, state, grid.RowDefinitions.Count);
 
@@ -139,7 +133,6 @@ internal static class ResponsiveLayoutManager
             var pair = originalColumn >= 2 ? 1 : 0;
             var row = pair * 2 + (originalRow == 1 ? 1 : 0);
 
-            // Reorganizamos cada par en su propia fila: etiqueta | valor.
             Grid.SetRow(text, row);
             Grid.SetColumn(text, isValue ? 1 : 0);
             Grid.SetColumnSpan(text, 1);
@@ -157,15 +150,11 @@ internal static class ResponsiveLayoutManager
         if (grid.ColumnDefinitions.Count < 2 || grid.ColumnDefinitions.Count > 3)
             return;
 
-        var button = grid.Children
-            .OfType<Button>()
-            .FirstOrDefault(child => Grid.GetColumn(child) > 0);
-
+        var button = grid.Children.OfType<Button>().FirstOrDefault(child => Grid.GetColumn(child) > 0);
         if (button is null)
             return;
 
         var state = States.GetOrCreateValue(grid);
-
         if (!compact)
         {
             Restore(grid, state);
@@ -216,7 +205,6 @@ internal static class ResponsiveLayoutManager
 
         Capture(grid, state);
         EnsureRow(grid, state, 1);
-
         Grid.SetRow(right, 1);
         Grid.SetColumn(right, 0);
         right.HorizontalAlignment = HorizontalAlignment.Left;
@@ -241,9 +229,6 @@ internal static class ResponsiveLayoutManager
         if (!isProfileTabs)
             return;
 
-        // Nunca fijamos una altura rígida: el contenido determina la altura base.
-        // En ventanas bajas se reduce el espacio reservado y los bloques internos
-        // se encargan de desplazarse si hace falta.
         tabControl.ClearValue(FrameworkElement.HeightProperty);
         tabControl.MinHeight = shortWindow ? 82 : 92;
         tabControl.MaxHeight = shortWindow ? 145 : 180;
@@ -313,7 +298,6 @@ internal static class ResponsiveLayoutManager
             Grid.SetRow(child, position.Row);
             Grid.SetColumn(child, position.Column);
             Grid.SetColumnSpan(child, 1);
-
             if (child is FrameworkElement element)
                 element.Margin = position.Margin;
         }
