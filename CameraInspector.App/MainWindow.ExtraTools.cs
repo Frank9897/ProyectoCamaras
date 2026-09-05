@@ -33,10 +33,36 @@ public partial class MainWindow
 
         menu.Opened += (_, _) =>
         {
-            var viewModel = DataContext as MainViewModel;
-            scanProfilesItem.IsEnabled = viewModel is not null;
-            networkDiagnosticsItem.IsEnabled = viewModel?.SelectedInterface is not null;
-            technicalSheetItem.IsEnabled = viewModel?.SelectedDevice is not null;
+            if (DataContext is not MainViewModel viewModel)
+            {
+                scanProfilesItem.Visibility = Visibility.Collapsed;
+                networkDiagnosticsItem.Visibility = Visibility.Collapsed;
+                technicalSheetItem.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            // No mostramos acciones que no tengan sentido en el estado actual.
+            // Esto evita el menú lleno de opciones grises que después no se pueden ejecutar.
+            scanProfilesItem.Visibility = Visibility.Visible;
+            networkDiagnosticsItem.Visibility = viewModel.SelectedInterface is not null
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            technicalSheetItem.Visibility = viewModel.SelectedDevice is not null
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+
+            // El separador solo aparece si hay más de una herramienta visible.
+            if (menu.Items[3] is Separator separator)
+            {
+                var visibleTools = new[]
+                {
+                    scanProfilesItem,
+                    networkDiagnosticsItem,
+                    technicalSheetItem
+                }.Count(item => item.Visibility == Visibility.Visible);
+
+                separator.Visibility = visibleTools > 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
         };
     }
 
@@ -51,14 +77,7 @@ public partial class MainWindow
     private void OpenNetworkDiagnosticsWindow()
     {
         if (DataContext is not MainViewModel viewModel || viewModel.SelectedInterface is null)
-        {
-            MessageBox.Show(
-                "No hay una interfaz de red seleccionada.",
-                "Camera Inspector — Diagnóstico de red",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
             return;
-        }
 
         new NetworkDiagnosticsWindow(viewModel.SelectedInterface) { Owner = this }.ShowDialog();
     }
