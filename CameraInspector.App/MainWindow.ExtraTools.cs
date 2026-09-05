@@ -17,26 +17,33 @@ public partial class MainWindow
         if (menu.Items.OfType<MenuItem>().Any(item => string.Equals(item.Header?.ToString(), "Ficha técnica", StringComparison.Ordinal)))
             return;
 
+        var alertCenterItem = new MenuItem { Header = "Centro de alertas" };
+        alertCenterItem.Click += (_, _) => OpenAlertCenterWindow();
+
         var networkDiagnosticsItem = new MenuItem { Header = "Diagnóstico de red del PC" };
         networkDiagnosticsItem.Click += (_, _) => OpenNetworkDiagnosticsWindow();
 
         var technicalSheetItem = new MenuItem { Header = "Ficha técnica" };
         technicalSheetItem.Click += (_, _) => OpenTechnicalSheetWindow();
 
-        menu.Items.Insert(0, networkDiagnosticsItem);
-        menu.Items.Insert(1, technicalSheetItem);
-        menu.Items.Insert(2, new Separator());
+        menu.Items.Insert(0, alertCenterItem);
+        menu.Items.Insert(1, networkDiagnosticsItem);
+        menu.Items.Insert(2, technicalSheetItem);
+        menu.Items.Insert(3, new Separator());
 
         menu.Opened += (_, _) =>
         {
             if (DataContext is not MainViewModel viewModel)
             {
+                alertCenterItem.Visibility = Visibility.Visible;
                 networkDiagnosticsItem.Visibility = Visibility.Collapsed;
                 technicalSheetItem.Visibility = Visibility.Collapsed;
                 return;
             }
 
-            // No mostramos acciones que no tengan sentido en el estado actual.
+            // El centro de alertas siempre está disponible porque consulta el historial persistente,
+            // mientras que las demás acciones dependen del estado actual de la selección.
+            alertCenterItem.Visibility = Visibility.Visible;
             networkDiagnosticsItem.Visibility = viewModel.SelectedInterface is not null
                 ? Visibility.Visible
                 : Visibility.Collapsed;
@@ -46,10 +53,11 @@ public partial class MainWindow
 
             ApplyExistingContextMenuVisibility(menu, viewModel);
 
-            if (menu.Items[2] is Separator separator)
+            if (menu.Items[3] is Separator separator)
             {
                 var visibleTools = new[]
                 {
+                    alertCenterItem,
                     networkDiagnosticsItem,
                     technicalSheetItem
                 }.Count(item => item.Visibility == Visibility.Visible);
@@ -111,6 +119,11 @@ public partial class MainWindow
         }
 
         return null;
+    }
+
+    private void OpenAlertCenterWindow()
+    {
+        new AlertCenterWindow(_cameraAlertStore) { Owner = this }.ShowDialog();
     }
 
     private void OpenNetworkDiagnosticsWindow()
