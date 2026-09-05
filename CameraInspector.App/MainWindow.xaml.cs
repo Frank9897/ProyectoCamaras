@@ -65,6 +65,7 @@ public partial class MainWindow : Window
         {
             ConfigureCameraContextMenu();
             ConfigureExtraContextMenu();
+            ConfigureLocalCameraNavigation();
             ConfigureHealthUi();
             EnsureRemoteAccessTab();
         };
