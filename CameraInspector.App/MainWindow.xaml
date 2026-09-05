@@ -31,30 +31,47 @@
             </TextBlock>
         </Grid>
 
-        <Border Grid.Row="1" Padding="9,7" Margin="0,0,0,8" BorderThickness="1" CornerRadius="4" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}">
+        <Border Grid.Row="1" Padding="10,9" Margin="0,0,0,8" BorderThickness="1" CornerRadius="5" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush2}">
             <StackPanel>
                 <TextBlock Text="{Binding StatusText}" FontFamily="Consolas" FontSize="11" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap"/>
-                <WrapPanel Margin="0,8,0,0">
-                    <TextBlock Text="INTERFAZ DEL PC" FontFamily="Consolas" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                    <ComboBox ItemsSource="{Binding AvailableInterfaces}" SelectedItem="{Binding SelectedInterface}" MinWidth="275" MaxWidth="440" Margin="0,0,7,4"/>
-                    <Button Content="ACTUALIZAR RED" Command="{Binding RefreshNetworkInterfacesCommand}" Height="30" Margin="0,0,12,4"/>
-                    <Button Content="CÁMARA DIRECTA" Command="{Binding ScanDirectCameraCommand}" Height="30" Margin="0,0,6,4" Style="{StaticResource PrimaryButton}"/>
-                    <Button Content="RED NORMAL" Command="{Binding ScanNetworkSubnetCommand}" Height="30" Margin="0,0,6,4" Style="{StaticResource PrimaryButton}"/>
-                    <Button Content="RED COMPLETA" Command="{Binding ScanFullNetworkCommand}" Height="30" Margin="0,0,6,4"/>
-                </WrapPanel>
-                <Grid DataContext="{Binding SelectedInterface}" Margin="0,4,0,0">
+
+                <Grid Margin="0,9,0,0">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                    <TextBlock Text="IP / MÁSCARA" Foreground="{StaticResource TextDimBrush}" FontSize="10" Margin="0,0,6,0"/>
-                    <TextBlock Grid.Column="1" Text="{Binding IpAddress}" FontFamily="Consolas" FontSize="10"/>
-                    <TextBlock Grid.Column="2" Text="  GATEWAY " Foreground="{StaticResource TextDimBrush}" FontSize="10"/>
-                    <TextBlock Grid.Column="3" Text="{Binding DefaultGateway}" FontFamily="Consolas" FontSize="10"/>
-                    <TextBlock Grid.Row="1" Text="DNS" Foreground="{StaticResource TextDimBrush}" FontSize="10" Margin="0,3,6,0"/>
-                    <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding DnsServersDisplay}" FontFamily="Consolas" FontSize="10" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
+
+                    <TextBlock Text="ADAPTADOR DE RED" FontFamily="Consolas" FontSize="10" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableInterfaces}" SelectedItem="{Binding SelectedInterface}" MinWidth="330" MaxWidth="460" Margin="0,0,7,0}"/>
+                    <Button Grid.Column="2" Content="ACTUALIZAR RED" Command="{Binding RefreshNetworkInterfacesCommand}" Height="30" Margin="0,0,8,0"/>
+                    <Button Grid.Column="3" Content="PERFILES DE ESCANEO" Click="OpenScanProfilesFromMain_Click" Height="30" MinWidth="180" HorizontalAlignment="Left" Style="{StaticResource PrimaryButton}"/>
                 </Grid>
+
+                <Border Margin="0,9,0,0" Padding="8,7" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" CornerRadius="4">
+                    <Grid DataContext="{Binding SelectedInterface}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                        <TextBlock Text="IP DEL PC" Foreground="{StaticResource TextDimBrush}" FontSize="10" Margin="0,0,7,0"/>
+                        <TextBlock Grid.Column="1" Text="{Binding IpAddress}" FontFamily="Consolas" FontSize="10"/>
+                        <TextBlock Grid.Column="2" Text="RED " Foreground="{StaticResource TextDimBrush}" FontSize="10" Margin="18,0,7,0"/>
+                        <TextBlock Grid.Column="3" Text="{Binding NetworkAddress}" FontFamily="Consolas" FontSize="10"/>
+                        <TextBlock Grid.Row="1" Text="GATEWAY" Foreground="{StaticResource TextDimBrush}" FontSize="10" Margin="0,3,7,0"/>
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding DefaultGateway}" FontFamily="Consolas" FontSize="10" Margin="0,3,0,0"/>
+                        <TextBlock Grid.Row="1" Grid.Column="2" Text="DNS " Foreground="{StaticResource TextDimBrush}" FontSize="10" Margin="18,3,7,0"/>
+                        <TextBlock Grid.Row="1" Grid.Column="3" Text="{Binding DnsServersDisplay}" FontFamily="Consolas" FontSize="10" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
+                    </Grid>
+                </Border>
+
+                <TextBlock Margin="2,6,0,0"
+                           Text="El adaptador es el camino de salida. El perfil de escaneo define el alcance: una IP, la red de ese adaptador o todas las redes activas."
+                           FontSize="9"
+                           Foreground="{StaticResource TextDimBrush}"
+                           TextWrapping="Wrap"/>
             </StackPanel>
         </Border>
 
