@@ -23,11 +23,6 @@ public partial class MainWindow
             typeof(DataGrid),
             FrameworkElement.PreviewMouseRightButtonDownEvent,
             new System.Windows.Input.MouseButtonEventHandler(OnDataGridPreviewMouseRightButtonDown));
-
-        EventManager.RegisterClassHandler(
-            typeof(MainWindow),
-            FrameworkElement.LoadedEvent,
-            new RoutedEventHandler(OnMainWindowLoadedForModules));
     }
 
     private static void OnMainWindowLoadedForCredentials(object sender, RoutedEventArgs e)
