@@ -425,7 +425,7 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
     }
 
     /// <summary>
-    /// Consulta la configuración de red ONVIF en modo lectura para detectar gateway e interfaces anunciadas.
+    /// Consulta la configuración de red ONVIF en modo lectura para detectar interfaces y gateways anunciados.
     /// </summary>
     private async Task<DiagnosticResult> TestOnvifNetworkAsync(
         DiscoveredDevice device,
@@ -466,14 +466,15 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                 };
             }
 
-            var interfaces = configuration.Interfaces?.Count ?? 0;
-            var gateways = configuration.Gateways?.Count ?? 0;
+            var interfaces = configuration.Interfaces.Count;
+            var gateways = configuration.IPv4Gateways.Count;
+            var protocols = configuration.Protocols.Count;
             return new DiagnosticResult
             {
                 TestName = "ONVIF red",
                 Success = true,
                 Duration = stopwatch.Elapsed,
-                Message = $"Configuración ONVIF de red disponible · Interfaces: {interfaces} · Gateways: {gateways}"
+                Message = $"Configuración ONVIF de red disponible · Interfaces: {interfaces} · Gateways IPv4: {gateways} · Protocolos: {protocols}"
             };
         }
         catch (OperationCanceledException)
