@@ -44,10 +44,13 @@ internal static class ResponsiveLayoutManager
         foreach (var tabControl in FindVisualChildren<TabControl>(root))
             AdaptTabControl(tabControl, compact, shortWindow);
 
+        // La tabla y el detalle son las dos zonas que deben absorber el espacio
+        // restante. Sus mínimos bajan cuando la ventana es pequeña para evitar
+        // que las secciones superiores queden recortadas.
         foreach (var dataGrid in FindVisualChildren<DataGrid>(root))
         {
             dataGrid.MinColumnWidth = 55;
-            dataGrid.MinHeight = veryShort ? 110 : 130;
+            dataGrid.MinHeight = veryShort ? 90 : shortWindow ? 110 : 130;
         }
 
         foreach (var border in FindVisualChildren<Border>(root))
@@ -56,7 +59,20 @@ internal static class ResponsiveLayoutManager
                 continue;
 
             if (border.MinHeight >= 190)
-                border.MinHeight = veryShort ? 150 : 180;
+                border.MinHeight = veryShort ? 125 : shortWindow ? 150 : 180;
+            else if (border.MinHeight >= 160)
+                border.MinHeight = veryShort ? 90 : shortWindow ? 110 : 130;
+        }
+
+        // MainWindow usa seis filas: encabezado, adaptador, perfiles, tabla,
+        // detalle y estado. Las dos zonas grandes reciben todo el espacio libre.
+        var rootGrid = root as Grid ?? FindVisualChildren<Grid>(root).FirstOrDefault();
+        if (rootGrid is not null && rootGrid.RowDefinitions.Count == 6)
+        {
+            rootGrid.RowDefinitions[3].Height = new GridLength(1, GridUnitType.Star);
+            rootGrid.RowDefinitions[4].Height = new GridLength(1, GridUnitType.Star);
+            rootGrid.RowDefinitions[3].MinHeight = veryShort ? 90 : shortWindow ? 110 : 130;
+            rootGrid.RowDefinitions[4].MinHeight = veryShort ? 105 : shortWindow ? 130 : 160;
         }
     }
 
@@ -150,6 +166,11 @@ internal static class ResponsiveLayoutManager
         if (grid.ColumnDefinitions.Count < 2 || grid.ColumnDefinitions.Count > 3)
             return;
 
+        // Los perfiles tienen su propia adaptación para evitar que esta rutina
+        // y AdaptTabControl compitan por las mismas filas.
+        if (IsScanProfileGrid(grid))
+            return;
+
         var button = grid.Children.OfType<Button>().FirstOrDefault(child => Grid.GetColumn(child) > 0);
         if (button is null)
             return;
@@ -181,6 +202,18 @@ internal static class ResponsiveLayoutManager
                 Grid.SetColumnSpan(child, grid.ColumnDefinitions.Count);
             }
         }
+    }
+
+    private static bool IsScanProfileGrid(Grid grid)
+    {
+        var stack = grid.Children.OfType<StackPanel>().FirstOrDefault();
+        if (stack is null)
+            return false;
+
+        return stack.Children.OfType<TextBlock>().Any(text =>
+            string.Equals(text.Text, "UNA SOLA IP", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(text.Text, "SUBRED DEL ADAPTADOR", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(text.Text, "TODOS LOS ADAPTADORES ACTIVOS", StringComparison.OrdinalIgnoreCase));
     }
 
     private static void AdaptHeaderGrid(Grid grid, bool veryCompact)
@@ -229,9 +262,12 @@ internal static class ResponsiveLayoutManager
         if (!isProfileTabs)
             return;
 
+        // Nunca recortar el contenido del perfil por un Height/MaxHeight fijo.
+        // La fila superior de MainWindow es Auto y debe crecer con el perfil.
         tabControl.ClearValue(FrameworkElement.HeightProperty);
-        tabControl.MinHeight = shortWindow ? 82 : 92;
-        tabControl.MaxHeight = shortWindow ? 145 : 180;
+        tabControl.ClearValue(FrameworkElement.MaxHeightProperty);
+        tabControl.MinHeight = 0;
+        tabControl.VerticalAlignment = VerticalAlignment.Stretch;
 
         foreach (var tab in tabControl.Items.OfType<TabItem>())
         {
@@ -257,6 +293,7 @@ internal static class ResponsiveLayoutManager
             Grid.SetColumn(content, 0);
             Grid.SetColumnSpan(content, 2);
             content.Margin = new Thickness(0);
+            content.VerticalAlignment = VerticalAlignment.Top;
 
             Grid.SetRow(button, 1);
             Grid.SetColumn(button, 0);
