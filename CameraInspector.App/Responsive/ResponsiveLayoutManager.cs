@@ -68,9 +68,7 @@ internal static class ResponsiveLayoutManager
         if (state.Positions.Count == 0)
         {
             foreach (UIElement child in grid.Children)
-            {
                 state.Positions[child] = (Grid.GetRow(child), Grid.GetColumn(child));
-            }
         }
 
         // En ancho reducido, las acciones pasan debajo del contenido en vez de
@@ -102,7 +100,7 @@ internal static class ResponsiveLayoutManager
 
     private static void AdaptHeaderGrid(Grid grid, bool veryCompact)
     {
-        if (!veryCompact || grid.ColumnDefinitions.Count != 2)
+        if (grid.ColumnDefinitions.Count != 2)
             return;
 
         var textBlocks = grid.Children.OfType<TextBlock>().ToList();
@@ -114,6 +112,13 @@ internal static class ResponsiveLayoutManager
             return;
 
         var state = States.GetOrCreateValue(grid);
+
+        if (!veryCompact)
+        {
+            Restore(grid, state);
+            return;
+        }
+
         if (state.Positions.Count == 0)
         {
             foreach (UIElement child in grid.Children)
@@ -146,8 +151,10 @@ internal static class ResponsiveLayoutManager
             Grid.SetRow(child, position.Row);
             Grid.SetColumn(child, position.Column);
 
-            if (child is Button button)
-                button.Margin = new Thickness(0);
+            if (child is Button)
+                child.ClearValue(FrameworkElement.MarginProperty);
+            else if (child is TextBlock)
+                child.ClearValue(FrameworkElement.MarginProperty);
         }
 
         foreach (var row in state.AddedRows)
