@@ -391,13 +391,12 @@ public partial class IpCameraVideoWindow : Window
         var playing = _videoPlayerService.Player.IsPlaying;
         var recording = _viewModel.IsRecording;
 
-        MainStreamButton.IsEnabled = hasDevice && !playing && !recording;
-        SubStreamButton.IsEnabled = hasDevice && !recording;
+        // Los controles de selección de stream e información pertenecían a la interfaz anterior.
+        // La nueva interfaz integra esas funciones en el panel de video y en DISPOSITIVO.
         SnapshotButton.IsEnabled = hasDevice && playing;
         RecordButton.IsEnabled = hasDevice && playing && hasStream && !recording;
         StopRecordButton.IsEnabled = recording;
         StopButton.IsEnabled = hasDevice && playing;
-        InfoButton.IsEnabled = hasDevice;
         HealthButton.IsEnabled = hasDevice;
     }
 
