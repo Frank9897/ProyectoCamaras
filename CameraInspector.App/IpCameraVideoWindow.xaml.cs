@@ -409,7 +409,9 @@ public partial class IpCameraVideoWindow : Window
         if (Uri.TryCreate(_viewModel.ResolvedMainStream?.RtspUri, UriKind.Absolute, out var uri) && uri.Port > 0)
             port = uri.Port;
 
-        _viewModel.MarkVideoConfirmed("RTSP", port, "OK: vídeo confirmado por reproducción real de LibVLC. La comprobación rápida no se utiliza para bloquear operaciones.");
+        var message = "OK: vídeo confirmado mediante reproducción RTSP real de LibVLC. El resultado de una comprobación ligera anterior no puede sobrescribir esta evidencia.";
+        _viewModel.SelectedDevice.ConfirmVideoAvailable(message, port);
+        _viewModel.MarkVideoConfirmed("RTSP", port, message);
     }
 
     private void RefreshCredentialsButton()
