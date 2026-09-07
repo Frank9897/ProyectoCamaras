@@ -7,8 +7,8 @@ namespace CameraInspector.App;
 
 /// <summary>
 /// Configura el acceso administrativo real de una cámara VIVOTEK legacy.
-/// Primero modifica la cuenta root en la cámara y después sincroniza la credencial
-/// con el almacén seguro utilizado por Camera Inspector.
+/// Primero intenta modificar root sin contraseña y, solamente si la cámara lo rechaza,
+/// solicita las credenciales actuales para editar un perfil ya existente.
 /// </summary>
 public partial class CameraAccessSetupWindow : Window
 {
@@ -34,14 +34,13 @@ public partial class CameraAccessSetupWindow : Window
 
         Loaded += (_, _) =>
         {
-            StatusTextBlock.Text = "Listo. En cámaras VIVOTEK nuevas o recién reiniciadas, la contraseña root puede estar vacía.";
-            CurrentPasswordBox.Focus();
+            StatusTextBlock.Text = "Listo. Primero se probará root sin contraseña, que es el acceso esperado para una cámara sin credenciales configuradas.";
+            NewPasswordBox.Focus();
         };
     }
 
     private async void ApplyButton_Click(object sender, RoutedEventArgs e)
     {
-        var currentPassword = CurrentPasswordBox.Password ?? string.Empty;
         var newPassword = NewPasswordBox.Password ?? string.Empty;
         var confirmPassword = ConfirmPasswordBox.Password ?? string.Empty;
 
@@ -62,7 +61,7 @@ public partial class CameraAccessSetupWindow : Window
         var confirm = MessageBox.Show(
             this,
             "Se modificará la contraseña de la cuenta administrativa root directamente en la cámara.\n\n" +
-            "La conexión puede requerir autenticación inmediatamente después del cambio.\n\n" +
+            "La aplicación probará primero con root sin contraseña. Si la cámara exige autenticación, solicitará las credenciales actuales únicamente en ese momento.\n\n" +
             "¿Desea continuar?",
             "Camera Inspector — Confirmar acceso",
             MessageBoxButton.YesNo,
@@ -74,12 +73,28 @@ public partial class CameraAccessSetupWindow : Window
         try
         {
             ApplyButton.IsEnabled = false;
-            SetStatus("Configurando acceso administrativo en la cámara... no cierre esta ventana.");
+            SetStatus("Paso 1/2: intentando configurar root sin contraseña...");
 
             var result = await _service.SetRootPasswordAsync(
                 _device,
-                currentPassword,
+                string.Empty,
                 newPassword);
+
+            if (!result.Succeeded && result.Message.Contains("HTTP 401", StringComparison.OrdinalIgnoreCase))
+            {
+                SetStatus("La cámara exige autenticación para modificar root. Solicitando credenciales actuales...");
+                var credentials = await _viewModel.RequestCredentialsForOperationAsync();
+                if (credentials is null)
+                {
+                    SetStatus("Configuración cancelada: no se proporcionaron las credenciales actuales.", true);
+                    return;
+                }
+
+                result = await _service.SetRootPasswordAsync(
+                    _device,
+                    credentials.Value.Password,
+                    newPassword);
+            }
 
             if (!result.Succeeded)
             {
@@ -87,11 +102,11 @@ public partial class CameraAccessSetupWindow : Window
                 return;
             }
 
-            SetStatus("Contraseña root aceptada por la cámara. Guardando la misma credencial en Windows Credential Manager...");
+            SetStatus("Paso 2/2: contraseña root aceptada por la cámara. Sincronizando credencial local...");
 
             if (!await _viewModel.StoreCredentialsAsync("root", newPassword, _viewModel.SelectedDevice?.CameraId))
             {
-                SetStatus("ATENCIÓN: la cámara cambió correctamente su contraseña, pero no se pudo sincronizar la credencial local. Vuelva a guardar CREDENCIALES.", true);
+                SetStatus("ATENCIÓN: la cámara cambió correctamente su contraseña, pero no se pudo sincronizar la credencial local. Vuelva a revisar ACCESO.", true);
                 return;
             }
 
