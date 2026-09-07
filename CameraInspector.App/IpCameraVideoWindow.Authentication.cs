@@ -99,8 +99,16 @@ public partial class IpCameraVideoWindow
 
     private void AuthenticationViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(MainViewModel.AuthenticationRequired))
-            Dispatcher.BeginInvoke(new Action(RefreshCredentialsButton));
+        if (e.PropertyName is nameof(MainViewModel.AuthenticationRequired)
+            or nameof(MainViewModel.HasSavedCredentials)
+            or nameof(MainViewModel.SelectedDevice))
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                RefreshCredentialsButton();
+                RefreshCameraAccessButton();
+            }));
+        }
     }
 
     private async void CredentialsButton_Click(object sender, RoutedEventArgs e)
@@ -173,7 +181,7 @@ public partial class IpCameraVideoWindow
                 return;
 
             var ip = viewModel.SelectedDevice?.IpAddress ?? "cámara seleccionada";
-            viewModel.StatusText = $"ALERTA: no se pudo iniciar el video de {ip}. Puede requerir usuario/contraseña, RTSP habilitado o una ruta de stream compatible. Puede abrir CREDENCIALES y volver a intentar.";
+            viewModel.StatusText = $"ALERTA: no se pudo iniciar el video de {ip}. Puede requerir usuario/contraseña, RTSP habilitado o una ruta de stream compatible. Puede abrir ACCESO y volver a intentar.";
             RefreshCredentialsButton();
             RefreshCameraAccessButton();
             RefreshButtons();
@@ -192,11 +200,11 @@ public partial class IpCameraVideoWindow
         _cameraAccessButton = new Button
         {
             Content = "CONFIGURAR ACCESO",
-            MinWidth = 145,
+            MinWidth = 165,
             Height = 34,
             Margin = new Thickness(0, 0, 5, 5),
             Style = (Style)FindResource("PrimaryButton"),
-            ToolTip = "Configura en la propia cámara VIVOTEK el usuario root y su contraseña."
+            ToolTip = "Configura en la propia cámara VIVOTEK el acceso administrativo de root."
         };
         _cameraAccessButton.Click += CameraAccessButton_Click;
         panel.Children.Add(_cameraAccessButton);
@@ -209,8 +217,50 @@ public partial class IpCameraVideoWindow
 
         var device = _viewModel.SelectedDevice?.Device;
         var supported = device is not null && IsLegacyVivotek(device);
-        _cameraAccessButton.Visibility = supported ? Visibility.Visible : Visibility.Collapsed;
-        _cameraAccessButton.IsEnabled = supported;
+        var hasProfile = _viewModel.HasSavedCredentials;
+
+        if (!supported)
+        {
+            _cameraAccessButton.Visibility = Visibility.Collapsed;
+            _cameraAccessButton.IsEnabled = false;
+            return;
+        }
+
+        _cameraAccessButton.Content = hasProfile
+            ? "EDITAR PERFIL DE ACCESO"
+            : "CONFIGURAR ACCESO";
+        _cameraAccessButton.ToolTip = hasProfile
+            ? "Edita la cuenta de acceso de la cámara VIVOTEK y cambia su contraseña root."
+            : "Configura por primera vez el acceso administrativo de la cámara VIVOTEK.";
+        _cameraAccessButton.Visibility = Visibility.Visible;
+        _cameraAccessButton.IsEnabled = true;
+    }
+
+    private void RefreshCredentialsButton()
+    {
+        if (_credentialsButton is null)
+            return;
+
+        var hasDevice = _viewModel.SelectedDevice is not null;
+        var hasProfile = _viewModel.HasSavedCredentials;
+        var supported = hasDevice && IsLegacyVivotek(_viewModel.SelectedDevice!.Device);
+
+        // Sin perfil local guardado, para VIVOTEK legacy se muestra solamente CONFIGURAR ACCESO.
+        // Una vez creado el perfil, ACCESO permite editar las credenciales guardadas y se habilita
+        // por separado EDITAR PERFIL DE ACCESO para modificar la cuenta de la propia cámara.
+        if (supported && !hasProfile)
+        {
+            _credentialsButton.Visibility = Visibility.Collapsed;
+            _credentialsButton.IsEnabled = false;
+            return;
+        }
+
+        _credentialsButton.Visibility = hasDevice ? Visibility.Visible : Visibility.Collapsed;
+        _credentialsButton.IsEnabled = hasDevice;
+        _credentialsButton.Content = "ACCESO";
+        _credentialsButton.ToolTip = _viewModel.AuthenticationRequired
+            ? "Edita usuario y contraseña guardados para autenticar las operaciones de Camera Inspector."
+            : "Edita las credenciales guardadas para acceder a la cámara.";
     }
 
     private static bool IsLegacyVivotek(CameraInspector.Core.Models.DiscoveredDevice device)
