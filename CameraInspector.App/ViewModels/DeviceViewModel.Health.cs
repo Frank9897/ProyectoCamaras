@@ -40,6 +40,30 @@ public sealed partial class DeviceViewModel
         _ => "ALERTA"
     };
 
+    /// <summary>
+    /// La reproducción real de LibVLC es evidencia directa de que el stream existe.
+    /// Corrige cualquier resultado previo de una comprobación ligera que haya quedado obsoleto.
+    /// </summary>
+    public void ConfirmVideoAvailable(string message, int? port = null)
+    {
+        _device.VideoAvailable = true;
+        _device.RtspSupported = true;
+        _device.AuthenticationRequired = false;
+        _device.Status = DeviceStatus.Online;
+        _device.CommunicationPort = port ?? _device.CommunicationPort;
+        _device.CommunicationProtocol = "RTSP";
+        _device.HealthMessage = message;
+        _device.LastHealthCheckAt = DateTimeOffset.Now;
+
+        // Si la comunicación ya estaba disponible, el estado global puede volver a HEALTHY.
+        // No inventamos disponibilidad de comunicación cuando todavía no existe evidencia de ella.
+        _device.HealthState = _device.CommunicationAvailable
+            ? CameraHealthState.Healthy
+            : CameraHealthState.CommunicationOnly;
+
+        RefreshHealth();
+    }
+
     public void RefreshHealth()
     {
         OnPropertyChanged(nameof(HealthState));
