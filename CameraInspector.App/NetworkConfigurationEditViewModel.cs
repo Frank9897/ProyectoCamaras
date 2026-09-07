@@ -5,6 +5,7 @@ using CameraInspector.App.ViewModels;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
 using CameraInspector.Network.OnvifMedia;
+using CameraInspector.Network.Providers.Vivotek;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -13,6 +14,7 @@ namespace CameraInspector.App;
 /// <summary>
 /// ViewModel específico para edición controlada de red ONVIF.
 /// La interfaz prioriza lectura, validación y confirmación antes de cualquier escritura.
+/// En cámaras VIVOTEK legacy utiliza CGI cuando ONVIF no está disponible.
 /// </summary>
 public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
 {
@@ -21,6 +23,7 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
     private readonly ICredentialStore _credentialStore;
     private readonly ICameraCredentialStore _cameraCredentialStore;
     private readonly IOnvifNetworkConfigurationService _writer;
+    private readonly VivotekLegacyConfigurationService _legacyWriter;
 
     [ObservableProperty] private string _statusText = "Listo. Consulte la configuración actual antes de modificarla.";
     [ObservableProperty] private OnvifNetworkConfiguration? _configuration;
@@ -44,6 +47,11 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
     public ObservableCollection<OnvifNetworkProtocolInfo> Protocols { get; } = new();
     public ObservableCollection<string> Gateways { get; } = new();
 
+    private bool IsLegacyVivotek =>
+        (_deviceViewModel.Manufacturer ?? string.Empty).Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase)
+        || (_deviceViewModel.Model ?? string.Empty).Contains("IP7133", StringComparison.OrdinalIgnoreCase)
+        || (_deviceViewModel.Model ?? string.Empty).Contains("IP7134", StringComparison.OrdinalIgnoreCase);
+
     public event EventHandler? RequestClose;
 
     public NetworkConfigurationEditViewModel(
@@ -57,6 +65,7 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
         _credentialStore = credentialStore;
         _cameraCredentialStore = cameraCredentialStore;
         _writer = new OnvifNetworkConfigurationService();
+        _legacyWriter = new VivotekLegacyConfigurationService();
     }
 
     partial void OnSelectedInterfaceChanged(OnvifNetworkInterfaceInfo? value)
@@ -82,6 +91,27 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
         IsStatusError = error;
     }
 
+    private void ApplyLoadedConfiguration(OnvifNetworkConfiguration loaded, string source)
+    {
+        Configuration = loaded;
+        Interfaces.Clear();
+        foreach (var item in loaded.Interfaces)
+            Interfaces.Add(item);
+
+        Protocols.Clear();
+        foreach (var item in loaded.Protocols)
+            Protocols.Add(item);
+
+        Gateways.Clear();
+        foreach (var item in loaded.IPv4Gateways)
+            Gateways.Add(item);
+
+        SelectedInterface = Interfaces.FirstOrDefault();
+        GatewayAddress = Gateways.FirstOrDefault() ?? string.Empty;
+        HasUnsavedChanges = false;
+        SetStatus($"OK: configuración leída mediante {source}. {Interfaces.Count} interfaz(es), {Protocols.Count} protocolo(s), {Gateways.Count} gateway(s).");
+    }
+
     [RelayCommand]
     private async Task LoadAsync()
     {
@@ -97,6 +127,23 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
             if (credentials is null)
                 return;
 
+            // Las VIVOTEK legacy no dependen de ONVIF para administrar la red.
+            if (IsLegacyVivotek)
+            {
+                var legacyLoaded = await _legacyWriter.GetNetworkConfigurationAsync(
+                    _deviceViewModel.Device,
+                    credentials.Value.Username,
+                    credentials.Value.Password);
+
+                if (legacyLoaded is not null)
+                {
+                    ApplyLoadedConfiguration(legacyLoaded, "CGI VIVOTEK legacy");
+                    return;
+                }
+
+                SetStatus("ONVIF/CGI VIVOTEK no devolvieron la configuración actual. Se intentará ONVIF como respaldo...");
+            }
+
             var loaded = await _onvifDeviceService.GetNetworkConfigurationAsync(
                 _deviceViewModel.Device,
                 credentials.Value.Username,
@@ -104,27 +151,11 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
 
             if (loaded is null)
             {
-                SetStatus("ALERTA: la cámara no devolvió información de red ONVIF. Compruebe credenciales, Device Service y compatibilidad ONVIF.", true);
+                SetStatus("ALERTA: la cámara no devolvió información de red. En VIVOTEK legacy verifique que la administración HTTP esté disponible y que root tenga privilegios de administrador.", true);
                 return;
             }
 
-            Configuration = loaded;
-            Interfaces.Clear();
-            foreach (var item in loaded.Interfaces)
-                Interfaces.Add(item);
-
-            Protocols.Clear();
-            foreach (var item in loaded.Protocols)
-                Protocols.Add(item);
-
-            Gateways.Clear();
-            foreach (var item in loaded.IPv4Gateways)
-                Gateways.Add(item);
-
-            SelectedInterface = Interfaces.FirstOrDefault();
-            GatewayAddress = Gateways.FirstOrDefault() ?? string.Empty;
-            HasUnsavedChanges = false;
-            SetStatus($"OK: configuración leída. {Interfaces.Count} interfaz(es), {Protocols.Count} protocolo(s), {Gateways.Count} gateway(s).");
+            ApplyLoadedConfiguration(loaded, "ONVIF");
         }
         catch (Exception ex)
         {
@@ -230,11 +261,44 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
         try
         {
             IsApplying = true;
-            SetStatus("Aplicando configuración de red... no cierre esta ventana.");
+            SetStatus(IsLegacyVivotek
+                ? "Aplicando configuración mediante CGI VIVOTEK... no cierre esta ventana."
+                : "Aplicando configuración de red mediante ONVIF... no cierre esta ventana.");
 
             var credentials = await GetCredentialsAsync();
             if (credentials is null)
                 return;
+
+            if (IsLegacyVivotek)
+            {
+                int? prefix = null;
+                if (!UseDhcp && int.TryParse(PrefixLength.Trim(), out var prefixValue))
+                    prefix = prefixValue;
+
+                var legacyResult = await _legacyWriter.SetNetworkAsync(
+                    _deviceViewModel.Device,
+                    credentials.Value.Username,
+                    credentials.Value.Password,
+                    UseDhcp,
+                    UseDhcp ? null : Ipv4Address.Trim(),
+                    prefix,
+                    string.IsNullOrWhiteSpace(GatewayAddress) ? null : GatewayAddress.Trim());
+
+                if (!legacyResult.Succeeded)
+                {
+                    SetStatus($"ALERTA: el CGI VIVOTEK rechazó el cambio. Motivo: {legacyResult.Message}", true);
+                    return;
+                }
+
+                if (!UseDhcp && !string.IsNullOrWhiteSpace(Ipv4Address))
+                    _deviceViewModel.IpAddress = Ipv4Address.Trim();
+
+                HasUnsavedChanges = false;
+                SetStatus(legacyResult.RebootNeeded
+                    ? "OK: VIVOTEK aceptó la nueva red. La cámara puede reiniciar o quedar momentáneamente inaccesible en la IP anterior."
+                    : "OK: VIVOTEK aceptó los cambios de red mediante CGI.");
+                return;
+            }
 
             SetStatus("Paso 1/2: aplicando gateway...");
             var gatewayResult = await _writer.SetDefaultGatewayAsync(
@@ -250,9 +314,9 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
             }
 
             SetStatus("Paso 2/2: aplicando IPv4...");
-            int? prefix = null;
-            if (!UseDhcp && int.TryParse(PrefixLength.Trim(), out var prefixValue))
-                prefix = prefixValue;
+            int? onvifPrefix = null;
+            if (!UseDhcp && int.TryParse(PrefixLength.Trim(), out var onvifPrefixValue))
+                onvifPrefix = onvifPrefixValue;
 
             var interfaceResult = await _writer.SetIPv4Async(
                 _deviceViewModel.Device,
@@ -261,7 +325,7 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
                 SelectedInterface.Token,
                 UseDhcp,
                 UseDhcp ? null : Ipv4Address.Trim(),
-                prefix);
+                onvifPrefix);
 
             if (!interfaceResult.Succeeded)
             {
@@ -289,26 +353,23 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
 
     private async Task<(string Username, string Password)?> GetCredentialsAsync()
     {
-        if (_deviceViewModel.CameraId is not int cameraId)
+        if (_deviceViewModel.CameraId is int cameraId)
         {
-            SetStatus("ALERTA: la cámara todavía no tiene identidad persistente para asociar credenciales.", true);
-            return null;
+            var savedInfo = await _cameraCredentialStore.GetAsync(cameraId);
+            if (savedInfo is not null)
+            {
+                var stored = await _credentialStore.GetAsync(savedInfo.CredentialRef);
+                if (stored is not null)
+                    return (stored.Username, stored.Password);
+            }
         }
 
-        var savedInfo = await _cameraCredentialStore.GetAsync(cameraId);
-        if (savedInfo is null)
-        {
-            SetStatus("ALERTA: no hay credenciales guardadas para esta cámara. Configure las credenciales desde VIDEO antes de administrar la red.", true);
-            return null;
-        }
+        // IP7133/IP7134 puede operar de fábrica con root sin contraseña. En este caso
+        // se prueba el acceso administrativo legacy sin exigir que primero se guarde la credencial.
+        if (IsLegacyVivotek)
+            return ("root", string.Empty);
 
-        var stored = await _credentialStore.GetAsync(savedInfo.CredentialRef);
-        if (stored is null)
-        {
-            SetStatus("ALERTA: la referencia de credenciales existe, pero el secreto ya no está disponible en Windows Credential Manager.", true);
-            return null;
-        }
-
-        return (stored.Username, stored.Password);
+        SetStatus("ALERTA: no hay credenciales guardadas para esta cámara. Configure el acceso antes de administrar la red.", true);
+        return null;
     }
 }
