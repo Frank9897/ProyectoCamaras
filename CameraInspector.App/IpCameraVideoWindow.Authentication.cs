@@ -9,8 +9,10 @@ public partial class IpCameraVideoWindow
 {
     private bool _authenticationUiConfigured;
     private bool _playerErrorHooked;
+    private bool _playerPlayingHooked;
     private bool _autoPlaybackStarted;
     private Button? _credentialsButton;
+    private Button? _cameraAccessButton;
     private MainViewModel? _authenticationViewModel;
 
     static IpCameraVideoWindow()
@@ -48,6 +50,7 @@ public partial class IpCameraVideoWindow
                 _authenticationViewModel.PropertyChanged += AuthenticationViewModel_PropertyChanged;
             }
 
+            AddCameraAccessButton();
             _authenticationUiConfigured = true;
         }
 
@@ -57,7 +60,14 @@ public partial class IpCameraVideoWindow
             _playerErrorHooked = true;
         }
 
+        if (!_playerPlayingHooked)
+        {
+            _videoPlayerService.Player.Playing += Player_Playing;
+            _playerPlayingHooked = true;
+        }
+
         RefreshCredentialsButton();
+        RefreshCameraAccessButton();
 
         if (!_autoPlaybackStarted)
         {
@@ -78,7 +88,9 @@ public partial class IpCameraVideoWindow
                 }
                 finally
                 {
+                    ConfirmPlayingVideoHealth();
                     RefreshCredentialsButton();
+                    RefreshCameraAccessButton();
                     RefreshButtons();
                 }
             }));
@@ -111,9 +123,46 @@ public partial class IpCameraVideoWindow
         }
         finally
         {
+            ConfirmPlayingVideoHealth();
             RefreshCredentialsButton();
+            RefreshCameraAccessButton();
             RefreshButtons();
         }
+    }
+
+    private async void CameraAccessButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedDevice is null)
+            return;
+
+        try
+        {
+            var dialog = new CameraAccessSetupWindow(_viewModel, _viewModel.SelectedDevice.Device)
+            {
+                Owner = this,
+                ShowInTaskbar = false
+            };
+            dialog.ShowDialog();
+
+            RefreshCredentialsButton();
+            RefreshCameraAccessButton();
+            await _viewModel.TryStartIpVideoAutomaticallyAsync();
+            ConfirmPlayingVideoHealth();
+            RefreshButtons();
+        }
+        catch (Exception ex)
+        {
+            _viewModel.StatusText = $"ALERTA: no se pudo abrir la configuración de acceso de la cámara: {ex.Message}";
+        }
+    }
+
+    private void Player_Playing(object? sender, EventArgs e)
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            ConfirmPlayingVideoHealth();
+            RefreshButtons();
+        }));
     }
 
     private void Player_EncounteredError(object? sender, EventArgs e)
@@ -126,8 +175,52 @@ public partial class IpCameraVideoWindow
             var ip = viewModel.SelectedDevice?.IpAddress ?? "cámara seleccionada";
             viewModel.StatusText = $"ALERTA: no se pudo iniciar el video de {ip}. Puede requerir usuario/contraseña, RTSP habilitado o una ruta de stream compatible. Puede abrir CREDENCIALES y volver a intentar.";
             RefreshCredentialsButton();
+            RefreshCameraAccessButton();
             RefreshButtons();
         }));
+    }
+
+    private void AddCameraAccessButton()
+    {
+        if (_cameraAccessButton is not null)
+            return;
+
+        var credentialsButton = _credentialsButton ?? FindButtonByContent(this, "CREDENCIALES");
+        if (credentialsButton?.Parent is not Panel panel)
+            return;
+
+        _cameraAccessButton = new Button
+        {
+            Content = "CONFIGURAR ACCESO",
+            MinWidth = 145,
+            Height = 34,
+            Margin = new Thickness(0, 0, 5, 5),
+            Style = (Style)FindResource("PrimaryButton"),
+            ToolTip = "Configura en la propia cámara VIVOTEK el usuario root y su contraseña."
+        };
+        _cameraAccessButton.Click += CameraAccessButton_Click;
+        panel.Children.Add(_cameraAccessButton);
+    }
+
+    private void RefreshCameraAccessButton()
+    {
+        if (_cameraAccessButton is null)
+            return;
+
+        var device = _viewModel.SelectedDevice?.Device;
+        var supported = device is not null && IsLegacyVivotek(device);
+        _cameraAccessButton.Visibility = supported ? Visibility.Visible : Visibility.Collapsed;
+        _cameraAccessButton.IsEnabled = supported;
+    }
+
+    private static bool IsLegacyVivotek(CameraInspector.Core.Models.DiscoveredDevice device)
+    {
+        var manufacturer = device.Manufacturer ?? string.Empty;
+        var model = device.Model ?? string.Empty;
+
+        return manufacturer.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase)
+               || model.Contains("IP7133", StringComparison.OrdinalIgnoreCase)
+               || model.Contains("IP7134", StringComparison.OrdinalIgnoreCase);
     }
 
     private void DetachAuthenticationHandlers()
@@ -136,6 +229,12 @@ public partial class IpCameraVideoWindow
         {
             _videoPlayerService.Player.EncounteredError -= Player_EncounteredError;
             _playerErrorHooked = false;
+        }
+
+        if (_playerPlayingHooked)
+        {
+            _videoPlayerService.Player.Playing -= Player_Playing;
+            _playerPlayingHooked = false;
         }
 
         if (_authenticationViewModel is not null)
