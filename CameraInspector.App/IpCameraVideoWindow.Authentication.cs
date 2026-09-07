@@ -66,8 +66,7 @@ public partial class IpCameraVideoWindow
             _playerPlayingHooked = true;
         }
 
-        RefreshCredentialsButton();
-        RefreshCameraAccessButton();
+        RefreshAccessButtons();
 
         if (!_autoPlaybackStarted)
         {
@@ -89,8 +88,7 @@ public partial class IpCameraVideoWindow
                 finally
                 {
                     ConfirmPlayingVideoHealth();
-                    RefreshCredentialsButton();
-                    RefreshCameraAccessButton();
+                    RefreshAccessButtons();
                     RefreshButtons();
                 }
             }));
@@ -103,11 +101,7 @@ public partial class IpCameraVideoWindow
             or nameof(MainViewModel.HasSavedCredentials)
             or nameof(MainViewModel.SelectedDevice))
         {
-            Dispatcher.BeginInvoke(new Action(() =>
-            {
-                RefreshCredentialsButton();
-                RefreshCameraAccessButton();
-            }));
+            Dispatcher.BeginInvoke(new Action(RefreshAccessButtons));
         }
     }
 
@@ -132,8 +126,7 @@ public partial class IpCameraVideoWindow
         finally
         {
             ConfirmPlayingVideoHealth();
-            RefreshCredentialsButton();
-            RefreshCameraAccessButton();
+            RefreshAccessButtons();
             RefreshButtons();
         }
     }
@@ -152,8 +145,7 @@ public partial class IpCameraVideoWindow
             };
             dialog.ShowDialog();
 
-            RefreshCredentialsButton();
-            RefreshCameraAccessButton();
+            RefreshAccessButtons();
             await _viewModel.TryStartIpVideoAutomaticallyAsync();
             ConfirmPlayingVideoHealth();
             RefreshButtons();
@@ -182,8 +174,7 @@ public partial class IpCameraVideoWindow
 
             var ip = viewModel.SelectedDevice?.IpAddress ?? "cámara seleccionada";
             viewModel.StatusText = $"ALERTA: no se pudo iniciar el video de {ip}. Puede requerir usuario/contraseña, RTSP habilitado o una ruta de stream compatible. Puede abrir ACCESO y volver a intentar.";
-            RefreshCredentialsButton();
-            RefreshCameraAccessButton();
+            RefreshAccessButtons();
             RefreshButtons();
         }));
     }
@@ -236,31 +227,23 @@ public partial class IpCameraVideoWindow
         _cameraAccessButton.IsEnabled = true;
     }
 
-    private void RefreshCredentialsButton()
+    private void RefreshAccessButtons()
     {
-        if (_credentialsButton is null)
-            return;
+        RefreshCredentialsButton();
+        RefreshCameraAccessButton();
 
-        var hasDevice = _viewModel.SelectedDevice is not null;
+        var device = _viewModel.SelectedDevice?.Device;
+        var supported = device is not null && IsLegacyVivotek(device);
         var hasProfile = _viewModel.HasSavedCredentials;
-        var supported = hasDevice && IsLegacyVivotek(_viewModel.SelectedDevice!.Device);
 
-        // Sin perfil local guardado, para VIVOTEK legacy se muestra solamente CONFIGURAR ACCESO.
-        // Una vez creado el perfil, ACCESO permite editar las credenciales guardadas y se habilita
-        // por separado EDITAR PERFIL DE ACCESO para modificar la cuenta de la propia cámara.
-        if (supported && !hasProfile)
+        // Sin perfil local guardado, una VIVOTEK legacy muestra únicamente CONFIGURAR ACCESO.
+        // Una vez creado, ACCESO administra las credenciales guardadas y EDITAR PERFIL DE ACCESO
+        // modifica el acceso administrativo de la propia cámara.
+        if (_credentialsButton is not null && supported && !hasProfile)
         {
             _credentialsButton.Visibility = Visibility.Collapsed;
             _credentialsButton.IsEnabled = false;
-            return;
         }
-
-        _credentialsButton.Visibility = hasDevice ? Visibility.Visible : Visibility.Collapsed;
-        _credentialsButton.IsEnabled = hasDevice;
-        _credentialsButton.Content = "ACCESO";
-        _credentialsButton.ToolTip = _viewModel.AuthenticationRequired
-            ? "Edita usuario y contraseña guardados para autenticar las operaciones de Camera Inspector."
-            : "Edita las credenciales guardadas para acceder a la cámara.";
     }
 
     private static bool IsLegacyVivotek(CameraInspector.Core.Models.DiscoveredDevice device)
