@@ -17,6 +17,12 @@ public partial class MainWindow
     private IpCameraVideoWindow? _ipCameraVideoWindow;
     private bool _videoTabOpening;
 
+    protected override void OnInitialized(EventArgs e)
+    {
+        base.OnInitialized(e);
+        ConfigureIpVideoUi();
+    }
+
     private void ConfigureIpVideoUi()
     {
         var dataGrid = FindVisualChild<DataGrid>(this);
@@ -24,6 +30,12 @@ public partial class MainWindow
         {
             dataGrid.MouseDoubleClick -= CamerasDataGrid_MouseDoubleClick;
             dataGrid.MouseDoubleClick += CamerasDataGrid_MouseDoubleClick;
+        }
+
+        if (DeviceDetailTabs is not null)
+        {
+            DeviceDetailTabs.SelectionChanged -= DeviceDetailTabs_SelectionChanged;
+            DeviceDetailTabs.SelectionChanged += DeviceDetailTabs_SelectionChanged;
         }
 
         ConfigureVideoTab();
@@ -61,14 +73,14 @@ public partial class MainWindow
             FontFamily = new FontFamily("Consolas"),
             FontSize = 13,
             FontWeight = FontWeights.Bold,
-            Foreground = (System.Windows.Media.Brush)FindResource("AccentBrush")
+            Foreground = (Brush)FindResource("AccentBrush")
         });
         infoPanel.Children.Add(new TextBlock
         {
             Text = "Abrir la reproducción de la cámara seleccionada en la ventana de video.",
             Margin = new Thickness(0, 3, 0, 0),
             FontSize = 10,
-            Foreground = (System.Windows.Media.Brush)FindResource("TextDimBrush")
+            Foreground = (Brush)FindResource("TextDimBrush")
         });
 
         var playButton = new Button
