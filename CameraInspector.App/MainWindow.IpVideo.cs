@@ -17,13 +17,7 @@ public partial class MainWindow
     private IpCameraVideoWindow? _ipCameraVideoWindow;
     private bool _videoTabOpening;
 
-    protected override void OnInitialized(EventArgs e)
-    {
-        base.OnInitialized(e);
-        ConfigureIpVideoUi();
-    }
-
-    private void ConfigureIpVideoUi()
+    private void ConfigureIpVideoUi(object? sender, RoutedEventArgs e)
     {
         var dataGrid = FindVisualChild<DataGrid>(this);
         if (dataGrid is not null)
