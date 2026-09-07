@@ -23,6 +23,7 @@ public partial class MainWindow
 
         // Loaded se ejecuta después de que el menú contextual principal haya sido creado.
         Loaded += ConfigureRecordingContextMenu;
+        Loaded += ConfigureIpVideoUi;
         // Closed garantiza que una grabación activa se cierre correctamente al salir de la aplicación.
         Closed += (_, _) =>
         {
