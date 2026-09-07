@@ -41,13 +41,13 @@
                                Foreground="{StaticResource AccentBrush}"/>
                     <TextBlock Margin="0,5,0,0" TextWrapping="Wrap">
                         <Run Text="IP: "/>
-                        <Run Text="{Binding CameraIpAddress}" FontFamily="Consolas"/>
+                        <Run Text="{Binding CameraIpAddress, Mode=OneWay}" FontFamily="Consolas"/>
                     </TextBlock>
                     <TextBlock Margin="0,2,0,0" Foreground="{StaticResource TextDimBrush}" TextWrapping="Wrap">
                         <Run Text="Fabricante: "/>
-                        <Run Text="{Binding CameraManufacturer}"/>
+                        <Run Text="{Binding CameraManufacturer, Mode=OneWay}"/>
                         <Run Text=" · Modelo: "/>
-                        <Run Text="{Binding CameraModel}"/>
+                        <Run Text="{Binding CameraModel, Mode=OneWay}"/>
                     </TextBlock>
                 </StackPanel>
             </Border>
