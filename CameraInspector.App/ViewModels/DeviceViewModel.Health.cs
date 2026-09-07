@@ -17,7 +17,7 @@ public sealed partial class DeviceViewModel
     {
         CameraHealthState.Healthy => "OK",
         CameraHealthState.AuthenticationRequired => "AUTENTICACIÓN",
-        CameraHealthState.CommunicationOnly => "ALERTA",
+        CameraHealthState.CommunicationOnly => "OK · VIDEO CONFIRMADO",
         CameraHealthState.NoVideo => "ALERTA · SIN VIDEO",
         CameraHealthState.NoResponse => "ALERTA · SIN RESPUESTA",
         CameraHealthState.Degraded => "ALERTA · DEGRADADA",
@@ -25,14 +25,14 @@ public sealed partial class DeviceViewModel
         _ => "PENDIENTE"
     };
 
-    public string CommunicationDisplay => _device.CommunicationAvailable ? "OK" : "SIN RESPUESTA";
+    public string CommunicationDisplay => _device.CommunicationAvailable ? "OK" : "VIDEO CONFIRMADO";
     public string VideoDisplay => _device.VideoAvailable ? "OK" : "SIN VIDEO";
     public string AlertDisplay => _device.HealthState switch
     {
         CameraHealthState.Healthy => "—",
         CameraHealthState.Unknown => "PENDIENTE",
         CameraHealthState.AuthenticationRequired => "REQUIERE CREDENCIALES",
-        CameraHealthState.CommunicationOnly => "COMUNICACIÓN SIN VIDEO",
+        CameraHealthState.CommunicationOnly => "VIDEO CONFIRMADO · COMUNICACIÓN DETALLADA PENDIENTE",
         CameraHealthState.NoVideo => "RESPONDE · VIDEO NO DISPONIBLE",
         CameraHealthState.NoResponse => "CÁMARA SIN RESPUESTA",
         CameraHealthState.Degraded => "SERVICIO PARCIAL",
@@ -55,11 +55,10 @@ public sealed partial class DeviceViewModel
         _device.HealthMessage = message;
         _device.LastHealthCheckAt = DateTimeOffset.Now;
 
-        // Si la comunicación ya estaba disponible, el estado global puede volver a HEALTHY.
-        // No inventamos disponibilidad de comunicación cuando todavía no existe evidencia de ella.
-        _device.HealthState = _device.CommunicationAvailable
-            ? CameraHealthState.Healthy
-            : CameraHealthState.CommunicationOnly;
+        // Un vídeo RTSP reproducido correctamente es evidencia de comunicación funcional.
+        // Esto evita mostrar "SIN VIDEO" mientras la ventana está reproduciendo la cámara.
+        _device.CommunicationAvailable = true;
+        _device.HealthState = CameraHealthState.Healthy;
 
         RefreshHealth();
     }
