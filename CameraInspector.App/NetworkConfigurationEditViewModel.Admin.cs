@@ -24,6 +24,21 @@ public sealed partial class NetworkConfigurationEditViewModel
             if (credentials is null)
                 return;
 
+            if (IsLegacyVivotek)
+            {
+                var legacyConfiguration = await _legacyWriter.GetNetworkConfigurationAsync(
+                    _deviceViewModel.Device,
+                    credentials.Value.Username,
+                    credentials.Value.Password);
+
+                Hostname = legacyConfiguration?.Hostname ?? string.Empty;
+                HasUnsavedChanges = false;
+                SetStatus(string.IsNullOrWhiteSpace(Hostname)
+                    ? "ALERTA: VIVOTEK no devolvió el nombre actual."
+                    : $"OK: nombre actual = {Hostname}");
+                return;
+            }
+
             var value = await _writer.GetHostnameAsync(
                 _deviceViewModel.Device,
                 credentials.Value.Username,
@@ -78,11 +93,9 @@ public sealed partial class NetworkConfigurationEditViewModel
             if (credentials is null)
                 return;
 
-            var result = await _writer.SetHostnameAsync(
-                _deviceViewModel.Device,
-                credentials.Value.Username,
-                credentials.Value.Password,
-                value);
+            var result = IsLegacyVivotek
+                ? await _legacyWriter.SetHostnameAsync(_deviceViewModel.Device, credentials.Value.Username, credentials.Value.Password, value)
+                : await _writer.SetHostnameAsync(_deviceViewModel.Device, credentials.Value.Username, credentials.Value.Password, value);
 
             if (!result.Succeeded)
             {
@@ -127,14 +140,16 @@ public sealed partial class NetworkConfigurationEditViewModel
             if (credentials is null)
                 return;
 
-            SetStatus("Solicitando reinicio de la cámara...");
-            var result = await _writer.RebootAsync(
-                _deviceViewModel.Device,
-                credentials.Value.Username,
-                credentials.Value.Password);
+            SetStatus(IsLegacyVivotek
+                ? "Solicitando reinicio mediante CGI VIVOTEK..."
+                : "Solicitando reinicio mediante ONVIF...");
+
+            var result = IsLegacyVivotek
+                ? await _legacyWriter.RebootAsync(_deviceViewModel.Device, credentials.Value.Username, credentials.Value.Password)
+                : await _writer.RebootAsync(_deviceViewModel.Device, credentials.Value.Username, credentials.Value.Password);
 
             SetStatus(result.Succeeded
-                ? "OK: reinicio solicitado. Espere a que la cámara vuelva a responder antes de actualizar."
+                ? $"OK: reinicio solicitado. Espere a que la cámara vuelva a responder. {result.Message}"
                 : $"ALERTA: la cámara no confirmó el reinicio: {result.Message}", !result.Succeeded);
         }
         catch (Exception ex)
@@ -182,14 +197,16 @@ public sealed partial class NetworkConfigurationEditViewModel
             if (credentials is null)
                 return;
 
-            SetStatus("Solicitando restablecimiento de fábrica...");
-            var result = await _writer.FactoryResetAsync(
-                _deviceViewModel.Device,
-                credentials.Value.Username,
-                credentials.Value.Password);
+            SetStatus(IsLegacyVivotek
+                ? "Solicitando restablecimiento mediante CGI VIVOTEK..."
+                : "Solicitando restablecimiento mediante ONVIF...");
+
+            var result = IsLegacyVivotek
+                ? await _legacyWriter.FactoryResetAsync(_deviceViewModel.Device, credentials.Value.Username, credentials.Value.Password)
+                : await _writer.FactoryResetAsync(_deviceViewModel.Device, credentials.Value.Username, credentials.Value.Password);
 
             SetStatus(result.Succeeded
-                ? "OK: restablecimiento solicitado. La cámara puede perder la IP y volver a su configuración inicial."
+                ? $"OK: restablecimiento solicitado. La cámara puede perder la IP. {result.Message}"
                 : $"ALERTA: no se pudo restablecer la cámara: {result.Message}", !result.Succeeded);
         }
         catch (Exception ex)
