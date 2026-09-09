@@ -142,9 +142,8 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
                 }
 
                 // Si root vacío fue rechazado, recién ahora se solicita una credencial administrativa.
-                if (credentials.Value.Username == "root"
-                    && string.IsNullOrEmpty(credentials.Value.Password)
-                    && !HasSavedCameraCredential())
+                if (credentials.Value.Username.Equals("root", StringComparison.OrdinalIgnoreCase)
+                    && string.IsNullOrEmpty(credentials.Value.Password))
                 {
                     SetStatus("La administración VIVOTEK solicita autenticación. Ingrese las credenciales actuales para continuar.");
                     var authenticated = await RequestAdministrativeCredentialsAsync();
@@ -308,7 +307,8 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
                     string.IsNullOrWhiteSpace(GatewayAddress) ? null : GatewayAddress.Trim());
 
                 if (!legacyResult.Succeeded && legacyResult.Message.Contains("HTTP 401", StringComparison.OrdinalIgnoreCase)
-                    && credentials.Value.Username == "root" && string.IsNullOrEmpty(credentials.Value.Password))
+                    && credentials.Value.Username.Equals("root", StringComparison.OrdinalIgnoreCase)
+                    && string.IsNullOrEmpty(credentials.Value.Password))
                 {
                     SetStatus("La cámara exige autenticación administrativa. Ingrese las credenciales actuales para aplicar la red.");
                     var authenticated = await RequestAdministrativeCredentialsAsync();
@@ -392,23 +392,24 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
     [RelayCommand]
     private void Close() => RequestClose?.Invoke(this, EventArgs.Empty);
 
-    private bool HasSavedCameraCredential()
-    {
-        return _deviceViewModel.CameraId is int cameraId
-               && _cameraCredentialStore.GetAsync(cameraId).GetAwaiter().GetResult() is not null;
-    }
-
     private async Task<(string Username, string Password)?> RequestAdministrativeCredentialsAsync()
     {
-        try
+        var dialog = new CredentialsDialog("root")
         {
-            var credentials = await _deviceViewModel.RequestCredentialsAsync();
-            return credentials;
-        }
-        catch
+            Owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(window => window.IsActive)
+                     ?? Application.Current?.MainWindow
+        };
+
+        if (dialog.ShowDialog() != true)
+            return null;
+
+        if (string.IsNullOrWhiteSpace(dialog.Username))
         {
+            SetStatus("ALERTA: el usuario administrativo no puede quedar vacío.", true);
             return null;
         }
+
+        return (dialog.Username.Trim(), dialog.Password ?? string.Empty);
     }
 
     private async Task<(string Username, string Password)?> GetCredentialsAsync()
