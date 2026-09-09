@@ -26,6 +26,7 @@ public sealed class VivotekLegacyConfigurationService
         // Esto evita exigir credenciales solamente para leer la configuración actual.
         var parameters = await GetParametersAsync(
             device.IpAddress,
+            device.HttpPort ?? 80,
             "/cgi-bin/anonymous/getparam.cgi?network_ipaddress&network_subnet&network_router&network_resetip&network_dns1&network_dns2&system_hostname",
             string.Empty,
             string.Empty,
@@ -36,6 +37,7 @@ public sealed class VivotekLegacyConfigurationService
         {
             parameters = await GetParametersAsync(
                 device.IpAddress,
+                device.HttpPort ?? 80,
                 "/cgi-bin/admin/getparam.cgi?network_ipaddress&network_subnet&network_router&network_resetip&network_dns1&network_dns2&system_hostname",
                 username,
                 password,
@@ -178,11 +180,27 @@ public sealed class VivotekLegacyConfigurationService
         string password,
         CancellationToken cancellationToken = default)
     {
+        // Primero verificamos que HTTP realmente responde. Así un timeout no se interpreta
+        // automáticamente como reinicio aceptado cuando el CGI estaba inaccesible.
+        if (!await IsHttpReachableAsync(device, cancellationToken))
+            return Failure("El servicio HTTP/CGI de la cámara no responde. El vídeo RTSP puede seguir disponible, pero no es posible confirmar una operación administrativa.");
+
         // La documentación legacy expone la acción directamente mediante system_reset=1.
         var endpoint = BuildHttpEndpoint(device, "/cgi-bin/admin/setparam.cgi?system_reset=1");
         var result = await SendAsync(endpoint, username, password, cancellationToken);
-        if (result.Success || IsExpectedDisconnectAfterSystemAction(result))
+        if (result.Success)
             return new OnvifNetworkChangeResult { Succeeded = true, Message = "La cámara aceptó la orden de reinicio mediante CGI VIVOTEK." };
+
+        if (IsExpectedDisconnectAfterSystemAction(result)
+            && await WaitForHttpCycleAsync(device.IpAddress.Trim(), device.HttpPort ?? 80, cancellationToken))
+        {
+            return new OnvifNetworkChangeResult
+            {
+                Succeeded = true,
+                Message = "El CGI cerró la conexión y la cámara volvió a responder después del reinicio. Operación confirmada."
+            };
+        }
+
         return Failure(result.Message);
     }
 
@@ -192,11 +210,27 @@ public sealed class VivotekLegacyConfigurationService
         string password,
         CancellationToken cancellationToken = default)
     {
+        // La restauración de fábrica es destructiva: exigimos que HTTP esté vivo antes de enviarla.
+        if (!await IsHttpReachableAsync(device, cancellationToken))
+            return Failure("El servicio HTTP/CGI de la cámara no responde. No se envió el restablecimiento de fábrica.");
+
         // El firmware legacy documenta system_restore=1 como restauración de fábrica.
         var endpoint = BuildHttpEndpoint(device, "/cgi-bin/admin/setparam.cgi?system_restore=1");
         var result = await SendAsync(endpoint, username, password, cancellationToken);
-        if (result.Success || IsExpectedDisconnectAfterSystemAction(result))
+        if (result.Success)
             return new OnvifNetworkChangeResult { Succeeded = true, RebootNeeded = true, Message = "La cámara aceptó el restablecimiento de fábrica mediante CGI VIVOTEK." };
+
+        if (IsExpectedDisconnectAfterSystemAction(result)
+            && await WaitForHttpCycleAsync(device.IpAddress.Trim(), device.HttpPort ?? 80, cancellationToken))
+        {
+            return new OnvifNetworkChangeResult
+            {
+                Succeeded = true,
+                RebootNeeded = true,
+                Message = "El CGI cerró la conexión y la cámara volvió a responder después de la restauración. Operación confirmada."
+            };
+        }
+
         return Failure(result.Message);
     }
 
@@ -215,19 +249,44 @@ public sealed class VivotekLegacyConfigurationService
             device,
             $"/cgi-bin/admin/editaccount.cgi?method=edit&username=root&userpass={Uri.EscapeDataString(newPassword)}&privilege=admin");
         var result = await SendAsync(endpoint, "root", currentPassword ?? string.Empty, cancellationToken);
-        return result.Success
-            ? new OnvifNetworkChangeResult { Succeeded = true, Message = "La contraseña del usuario root fue aceptada por la cámara." }
-            : Failure(result.Message);
+
+        if (result.Success)
+            return new OnvifNetworkChangeResult { Succeeded = true, Message = "La contraseña del usuario root fue aceptada por la cámara." };
+
+        // Algunos firmwares legacy cambian la contraseña y cierran el CGI antes de devolver
+        // una respuesta completa. Confirmamos con la nueva credencial antes de declarar fallo.
+        if (IsExpectedDisconnectAfterSystemAction(result))
+        {
+            var verified = await GetParametersAsync(
+                device.IpAddress.Trim(),
+                device.HttpPort ?? 80,
+                "/cgi-bin/admin/getparam.cgi?system_hostname",
+                "root",
+                newPassword,
+                cancellationToken);
+
+            if (verified.Count > 0)
+            {
+                return new OnvifNetworkChangeResult
+                {
+                    Succeeded = true,
+                    Message = "La respuesta del cambio de contraseña se perdió, pero la nueva credencial root fue confirmada por el CGI."
+                };
+            }
+        }
+
+        return Failure(result.Message);
     }
 
     private async Task<Dictionary<string, string>> GetParametersAsync(
         string ip,
+        int port,
         string relativePath,
         string username,
         string password,
         CancellationToken cancellationToken)
     {
-        var endpoint = BuildHttpEndpoint(ip, 80, relativePath);
+        var endpoint = BuildHttpEndpoint(ip, port, relativePath);
         var result = await SendAsync(endpoint, username, password, cancellationToken);
         if (!result.Success || string.IsNullOrWhiteSpace(result.Body))
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -309,6 +368,45 @@ public sealed class VivotekLegacyConfigurationService
         }
     }
 
+    private static async Task<bool> IsHttpReachableAsync(
+        DiscoveredDevice device,
+        CancellationToken cancellationToken)
+    {
+        return await IsHttpReachableAsync(device.IpAddress.Trim(), device.HttpPort ?? 80, cancellationToken);
+    }
+
+    private static async Task<bool> IsHttpReachableAsync(
+        string ip,
+        int port,
+        CancellationToken cancellationToken)
+    {
+        using var client = new HttpClient(new HttpClientHandler
+        {
+            UseProxy = false,
+            AllowAutoRedirect = false
+        })
+        {
+            Timeout = TimeSpan.FromSeconds(2)
+        };
+
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("CameraInspector/1.0");
+
+        try
+        {
+            // Cualquier respuesta HTTP, incluso 401/403/404, demuestra que el servicio web está vivo.
+            using var response = await client.GetAsync(BuildHttpEndpoint(ip, port, "/"), cancellationToken);
+            return true;
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (HttpRequestException)
+        {
+            return false;
+        }
+    }
+
     private static async Task<bool> WaitForHttpResponseAsync(
         string ip,
         int port,
@@ -344,6 +442,72 @@ public sealed class VivotekLegacyConfigurationService
             }
 
             await Task.Delay(350, cancellationToken);
+        }
+
+        return false;
+    }
+
+    private static async Task<bool> WaitForHttpCycleAsync(
+        string ip,
+        int port,
+        CancellationToken cancellationToken)
+    {
+        var wasDown = false;
+
+        using var client = new HttpClient(new HttpClientHandler
+        {
+            UseProxy = false,
+            AllowAutoRedirect = false
+        })
+        {
+            Timeout = TimeSpan.FromSeconds(1.2)
+        };
+
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("CameraInspector/1.0");
+        var endpoint = BuildHttpEndpoint(ip, port, "/");
+
+        // Esperamos primero la caída del servicio, que es la evidencia más útil de un reinicio.
+        for (var attempt = 0; attempt < 12; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                using var response = await client.GetAsync(endpoint, cancellationToken);
+            }
+            catch (HttpRequestException)
+            {
+                wasDown = true;
+                break;
+            }
+            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                wasDown = true;
+                break;
+            }
+
+            await Task.Delay(500, cancellationToken);
+        }
+
+        if (!wasDown)
+            return false;
+
+        // Luego esperamos que el HTTP vuelva a responder.
+        for (var attempt = 0; attempt < 30; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                using var response = await client.GetAsync(endpoint, cancellationToken);
+                return true;
+            }
+            catch (HttpRequestException)
+            {
+            }
+            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+            }
+
+            await Task.Delay(500, cancellationToken);
         }
 
         return false;
