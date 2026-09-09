@@ -13,12 +13,12 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
 {
     private static readonly int[] DirectFastPorts =
     {
-        80, 443, 554, 8000, 8080, 8554, 37777, 9000
+        80, 443, 554, 8000, 8080, 8554, 37777, 37778, 34567, 7001, 9000
     };
 
     private static readonly int[] DirectArpPorts =
     {
-        80, 443, 554, 8080
+        80, 443, 554, 8080, 8000, 37777, 34567
     };
 
     private readonly ISubnetCalculator _subnetCalculator;
@@ -291,7 +291,19 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         target.RtspPort ??= source.RtspPort;
         target.CameraEvidence |= source.CameraEvidence;
         target.OnvifDeviceServiceXAddr ??= source.OnvifDeviceServiceXAddr;
+        target.OnvifMediaServiceXAddr ??= source.OnvifMediaServiceXAddr;
+        target.OnvifImagingServiceXAddr ??= source.OnvifImagingServiceXAddr;
+        target.OnvifPtzServiceXAddr ??= source.OnvifPtzServiceXAddr;
+        target.OnvifEventsServiceXAddr ??= source.OnvifEventsServiceXAddr;
         target.OnvifProfile ??= source.OnvifProfile;
+        target.HealthState = source.HealthState != CameraHealthState.Unknown ? source.HealthState : target.HealthState;
+        target.CommunicationAvailable |= source.CommunicationAvailable;
+        target.VideoAvailable |= source.VideoAvailable;
+        target.AuthenticationRequired |= source.AuthenticationRequired;
+        target.CommunicationPort ??= source.CommunicationPort;
+        target.CommunicationProtocol ??= source.CommunicationProtocol;
+        target.HealthMessage ??= source.HealthMessage;
+        target.LastHealthCheckAt ??= source.LastHealthCheckAt;
 
         foreach (var evidence in source.DetectionEvidence)
             target.AddEvidence(evidence.Method, evidence.Confidence, evidence.Details, evidence.IsCameraEvidence);
@@ -345,10 +357,24 @@ public sealed class NetworkScanOrchestrator : INetworkScanner
         if (portResult.Ports.Contains(554)) device.RtspPort ??= 554;
         else if (portResult.Ports.Contains(8554)) device.RtspPort ??= 8554;
 
+        // Los puertos propietarios no prueban por sí solos que exista ONVIF, pero sí aportan
+        // evidencia útil para identificar cámaras/NVR que nunca responden a WS-Discovery.
+        if (portResult.Ports.Contains(8000))
+            device.AddEvidence("TCP/Hikvision", 0.72, "puerto propietario 8000 abierto", true);
+        if (portResult.Ports.Contains(37777) || portResult.Ports.Contains(37778))
+            device.AddEvidence("TCP/Dahua", 0.72, "puerto propietario 37777/37778 abierto", true);
+        if (portResult.Ports.Contains(34567))
+            device.AddEvidence("TCP/XMEye/legacy", 0.58, "puerto propietario 34567 abierto", true);
+        if (portResult.Ports.Contains(7001))
+            device.AddEvidence("TCP/vendor camera", 0.35, "servicio propietario 7001 abierto", true);
+
         if (device.RtspSupported)
             device.AddEvidence("TCP/RTSP", 0.45, $"puerto RTSP abierto ({device.RtspPort ?? 554})", false);
         if (device.HttpSupported || device.HttpsSupported)
             device.AddEvidence("TCP/HTTP", 0.2, "servicio web abierto", false);
+
+        device.CameraEvidence |= portResult.Ports.Any(port =>
+            port is 554 or 8554 or 8000 or 37777 or 37778 or 34567);
         device.Status = DeviceStatus.Online;
     }
 }
