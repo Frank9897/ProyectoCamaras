@@ -138,6 +138,7 @@ public sealed partial class DeviceViewModel : ObservableObject
                 _device.OnvifDeviceServiceXAddr = null;
             OnPropertyChanged();
             OnPropertyChanged(nameof(HasMediaService));
+            OnPropertyChanged(nameof(ManagementProfileSummary));
         }
     }
 
@@ -195,6 +196,7 @@ public sealed partial class DeviceViewModel : ObservableObject
             _device.OnvifDeviceServiceXAddr = normalized;
             OnPropertyChanged();
             OnPropertyChanged(nameof(DiscoveredByOnvif));
+            OnPropertyChanged(nameof(ManagementProfileSummary));
         }
     }
 
@@ -294,9 +296,56 @@ public sealed partial class DeviceViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Resume cómo puede hablar Camera Inspector con la cámara.
+    /// ONVIF es solamente una de las vías; RTSP y HTTP/CGI también cuentan como capacidades reales.
+    /// </summary>
+    public string ManagementProfileSummary
+    {
+        get
+        {
+            var protocols = new List<string>();
+
+            if (_device.OnvifSupported || _device.HasOnvifMediaService)
+                protocols.Add("ONVIF");
+            if (_device.RtspSupported)
+                protocols.Add($"RTSP:{_device.RtspPort ?? 554}");
+            if (_device.HttpSupported)
+                protocols.Add($"HTTP:{_device.HttpPort ?? 80}");
+            if (_device.HttpsSupported)
+                protocols.Add("HTTPS");
+
+            var manufacturer = _device.Manufacturer ?? string.Empty;
+            var model = _device.Model ?? string.Empty;
+            var evidence = string.Join(" ", _device.DetectionEvidence.Select(item => item.Method));
+
+            if (manufacturer.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase)
+                || model.Contains("IP7133", StringComparison.OrdinalIgnoreCase)
+                || model.Contains("IP7134", StringComparison.OrdinalIgnoreCase)
+                || evidence.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase))
+                protocols.Add("VIVOTEK CGI");
+            else if (manufacturer.Contains("Hikvision", StringComparison.OrdinalIgnoreCase)
+                     || model.StartsWith("DS-", StringComparison.OrdinalIgnoreCase)
+                     || evidence.Contains("Hikvision", StringComparison.OrdinalIgnoreCase))
+                protocols.Add("Hikvision ISAPI/SDK");
+            else if (manufacturer.Contains("Dahua", StringComparison.OrdinalIgnoreCase)
+                     || evidence.Contains("Dahua", StringComparison.OrdinalIgnoreCase))
+                protocols.Add("Dahua SDK");
+            else if (evidence.Contains("XMEye", StringComparison.OrdinalIgnoreCase))
+                protocols.Add("XMEye/legacy");
+
+            return protocols.Count == 0 ? "Sin protocolo confirmado" : string.Join(" + ", protocols.Distinct(StringComparer.OrdinalIgnoreCase));
+        }
+        set
+        {
+            // Propiedad calculada: el setter existe solo para evitar fallos TwoWay inesperados.
+        }
+    }
+
     /// <summary>Resumen compacto para la ficha y el diagnóstico de la cámara.</summary>
     public string TechnicalProfileSummary => string.Join(" · ", new[]
     {
+        $"ADMIN: {ManagementProfileSummary}",
         $"HTTP: {( _device.HttpSupported ? "sí" : "no")}",
         $"HTTPS: {( _device.HttpsSupported ? "sí" : "no")}",
         $"RTSP: {( _device.RtspSupported ? "sí" : "no")}",
@@ -335,6 +384,7 @@ public sealed partial class DeviceViewModel : ObservableObject
         OnPropertyChanged(nameof(OnvifImagingServiceXAddr));
         OnPropertyChanged(nameof(OnvifPtzServiceXAddr));
         OnPropertyChanged(nameof(OnvifEventsServiceXAddr));
+        OnPropertyChanged(nameof(ManagementProfileSummary));
         OnPropertyChanged(nameof(Status));
         OnPropertyChanged(nameof(LastSeenAt));
         OnPropertyChanged(nameof(DetectionReason));
