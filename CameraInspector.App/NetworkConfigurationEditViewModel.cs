@@ -141,7 +141,30 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
                     return;
                 }
 
-                SetStatus("ONVIF/CGI VIVOTEK no devolvieron la configuración actual. Se intentará ONVIF como respaldo...");
+                // Si root vacío fue rechazado, recién ahora se solicita una credencial administrativa.
+                if (credentials.Value.Username == "root"
+                    && string.IsNullOrEmpty(credentials.Value.Password)
+                    && !HasSavedCameraCredential())
+                {
+                    SetStatus("La administración VIVOTEK solicita autenticación. Ingrese las credenciales actuales para continuar.");
+                    var authenticated = await RequestAdministrativeCredentialsAsync();
+                    if (authenticated is not null)
+                    {
+                        legacyLoaded = await _legacyWriter.GetNetworkConfigurationAsync(
+                            _deviceViewModel.Device,
+                            authenticated.Value.Username,
+                            authenticated.Value.Password);
+
+                        if (legacyLoaded is not null)
+                        {
+                            ApplyLoadedConfiguration(legacyLoaded, "CGI VIVOTEK autenticado");
+                            return;
+                        }
+                    }
+                }
+
+                SetStatus("ALERTA: VIVOTEK no devolvió la configuración de red. Puede requerir autenticación administrativa o una interfaz HTTP/CGI habilitada.", true);
+                return;
             }
 
             var loaded = await _onvifDeviceService.GetNetworkConfigurationAsync(
@@ -151,7 +174,7 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
 
             if (loaded is null)
             {
-                SetStatus("ALERTA: la cámara no devolvió información de red. En VIVOTEK legacy verifique que la administración HTTP esté disponible y que root tenga privilegios de administrador.", true);
+                SetStatus("ALERTA: la cámara no devolvió información de red. Configure el acceso antes de administrar la red.", true);
                 return;
             }
 
@@ -284,6 +307,24 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
                     prefix,
                     string.IsNullOrWhiteSpace(GatewayAddress) ? null : GatewayAddress.Trim());
 
+                if (!legacyResult.Succeeded && legacyResult.Message.Contains("HTTP 401", StringComparison.OrdinalIgnoreCase)
+                    && credentials.Value.Username == "root" && string.IsNullOrEmpty(credentials.Value.Password))
+                {
+                    SetStatus("La cámara exige autenticación administrativa. Ingrese las credenciales actuales para aplicar la red.");
+                    var authenticated = await RequestAdministrativeCredentialsAsync();
+                    if (authenticated is not null)
+                    {
+                        legacyResult = await _legacyWriter.SetNetworkAsync(
+                            _deviceViewModel.Device,
+                            authenticated.Value.Username,
+                            authenticated.Value.Password,
+                            UseDhcp,
+                            UseDhcp ? null : Ipv4Address.Trim(),
+                            prefix,
+                            string.IsNullOrWhiteSpace(GatewayAddress) ? null : GatewayAddress.Trim());
+                    }
+                }
+
                 if (!legacyResult.Succeeded)
                 {
                     SetStatus($"ALERTA: el CGI VIVOTEK rechazó el cambio. Motivo: {legacyResult.Message}", true);
@@ -350,6 +391,25 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
 
     [RelayCommand]
     private void Close() => RequestClose?.Invoke(this, EventArgs.Empty);
+
+    private bool HasSavedCameraCredential()
+    {
+        return _deviceViewModel.CameraId is int cameraId
+               && _cameraCredentialStore.GetAsync(cameraId).GetAwaiter().GetResult() is not null;
+    }
+
+    private async Task<(string Username, string Password)?> RequestAdministrativeCredentialsAsync()
+    {
+        try
+        {
+            var credentials = await _deviceViewModel.RequestCredentialsAsync();
+            return credentials;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     private async Task<(string Username, string Password)?> GetCredentialsAsync()
     {
