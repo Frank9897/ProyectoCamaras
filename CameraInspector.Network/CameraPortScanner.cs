@@ -12,8 +12,8 @@ public sealed class CameraPortScanner
 {
     private static readonly int[] CameraPorts =
     {
-        80, 81, 82, 88, 443, 5000, 554, 8000,
-        8080, 8081, 8443, 8554, 37777, 37778, 8888, 9000
+        80, 81, 82, 88, 443, 5000, 554, 7001, 8000,
+        8080, 8081, 8443, 8554, 34567, 37777, 37778, 8888, 9000
     };
 
     public async Task<IReadOnlyList<CameraPortScanResult>> ScanAsync(
