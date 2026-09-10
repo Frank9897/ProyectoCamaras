@@ -47,10 +47,17 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
     public ObservableCollection<OnvifNetworkProtocolInfo> Protocols { get; } = new();
     public ObservableCollection<string> Gateways { get; } = new();
 
+    // NOTA (fix conflicto config. VIVOTEK 7122): antes esta propiedad solo reconocía
+    // "IP7133"/"IP7134" como modelos legacy explícitos. La familia fija VIVOTEK IP71xx
+    // (7122, 7123, 7133, 7134, 7136, etc.) comparte el mismo firmware/CGI y NINGUNA de
+    // ellas habla ONVIF. Si el fabricante no llegó a etiquetarse como "VIVOTEK" durante
+    // el descubrimiento (por ejemplo, cuando el dispositivo se agrega manualmente por IP
+    // en vez de detectarse por el protocolo propietario), el modelo "IP71" sigue siendo
+    // una señal válida y evita que la app intente hablar ONVIF con una cámara que no lo
+    // soporta, que era exactamente el conflicto reportado.
     private bool IsLegacyVivotek =>
         (_deviceViewModel.Manufacturer ?? string.Empty).Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase)
-        || (_deviceViewModel.Model ?? string.Empty).Contains("IP7133", StringComparison.OrdinalIgnoreCase)
-        || (_deviceViewModel.Model ?? string.Empty).Contains("IP7134", StringComparison.OrdinalIgnoreCase);
+        || (_deviceViewModel.Model ?? string.Empty).Contains("IP71", StringComparison.OrdinalIgnoreCase);
 
     public event EventHandler? RequestClose;
 
@@ -173,6 +180,22 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
 
             if (loaded is null)
             {
+                // Auto-recuperación: si ONVIF no respondió y el dispositivo NO fue reconocido
+                // como VIVOTEK legacy de antemano (manufacturer/model desconocidos o incompletos
+                // al momento del descubrimiento), probamos igual el CGI VIVOTEK antes de rendirnos.
+                // Esto cubre cámaras como la IP7122 agregadas manualmente por IP, sin depender
+                // de que el descubrimiento haya etiquetado bien el fabricante.
+                var legacyFallback = await _legacyWriter.GetNetworkConfigurationAsync(
+                    _deviceViewModel.Device,
+                    credentials.Value.Username,
+                    credentials.Value.Password);
+
+                if (legacyFallback is not null)
+                {
+                    ApplyLoadedConfiguration(legacyFallback, "CGI VIVOTEK (fallback tras fallo ONVIF)");
+                    return;
+                }
+
                 SetStatus("ALERTA: la cámara no devolvió información de red. Configure el acceso antes de administrar la red.", true);
                 return;
             }
