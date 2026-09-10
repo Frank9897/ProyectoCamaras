@@ -19,48 +19,79 @@ public sealed class VivotekParameterService : IVivotekParameterService
         string group,
         CancellationToken cancellationToken = default)
     {
-        // group define el conjunto CGI que queremos consultar, por ejemplo "image" o "system.info".
         if (string.IsNullOrWhiteSpace(device.IpAddress) || string.IsNullOrWhiteSpace(group))
             return [];
 
-        // El grupo se codifica como query para evitar problemas con caracteres reservados.
         var encodedGroup = Uri.EscapeDataString(group.Trim());
+        var port = device.HttpPort ?? 80;
 
+        // Primero intentamos anonymous para no exigir credenciales cuando el firmware lo permite.
+        var anonymous = await SendAsync(
+            device.IpAddress.Trim(),
+            port,
+            $"/cgi-bin/anonymous/getparam.cgi?{encodedGroup}",
+            string.Empty,
+            string.Empty,
+            cancellationToken);
+
+        if (anonymous.Success && !string.IsNullOrWhiteSpace(anonymous.Body))
+            return Parse(group.Trim(), anonymous.Body);
+
+        // Algunos firmwares responden correctamente a anonymous para ciertos grupos pero
+        // protegen otros. En ese caso reintentamos como admin usando Basic/Digest negociado.
+        if (string.IsNullOrWhiteSpace(username))
+            return [];
+
+        var admin = await SendAsync(
+            device.IpAddress.Trim(),
+            port,
+            $"/cgi-bin/admin/getparam.cgi?{encodedGroup}",
+            username,
+            password,
+            cancellationToken);
+
+        return admin.Success && !string.IsNullOrWhiteSpace(admin.Body)
+            ? Parse(group.Trim(), admin.Body)
+            : [];
+    }
+
+    private async Task<(bool Success, string Body)> SendAsync(
+        string ip,
+        int port,
+        string relativePath,
+        string username,
+        string password,
+        CancellationToken cancellationToken)
+    {
         using var handler = new HttpClientHandler
         {
-            // Las credenciales se usan únicamente cuando el técnico solicita esta operación.
             Credentials = new NetworkCredential(username, password),
             PreAuthenticate = false,
-            // No seguimos redirecciones para no reenviar credenciales a otro destino.
             AllowAutoRedirect = false,
-            // Las cámaras legacy suelen estar en redes locales/APIPA donde un proxy del sistema
-            // no debe intervenir en la comunicación directa con el equipo.
             UseProxy = false
         };
 
-        using var client = new HttpClient(handler)
-        {
-            Timeout = _timeout
-        };
-
+        using var client = new HttpClient(handler) { Timeout = _timeout };
         client.DefaultRequestHeaders.ConnectionClose = true;
         client.DefaultRequestHeaders.UserAgent.ParseAdd("CameraInspector/1.0");
 
-        // anonymous es la ruta más restrictiva para lectura y permite trabajar con cámaras que exponen
-        // el grupo sin exigir privilegios de operador/admin para una consulta.
-        var port = device.HttpPort ?? 80;
-        var endpoint = $"http://{device.IpAddress.Trim()}:{port}/cgi-bin/anonymous/getparam.cgi?{encodedGroup}";
+        try
+        {
+            using var response = await client.GetAsync(
+                $"http://{ip}:{port}{relativePath}",
+                cancellationToken);
 
-        using var response = await client.GetAsync(endpoint, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-            return [];
-
-        // body contiene líneas del tipo parámetro=valor.
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(body))
-            return [];
-
-        return Parse(group.Trim(), body);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            return (response.IsSuccessStatusCode, body);
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return (false, string.Empty);
+        }
+        catch (HttpRequestException)
+        {
+            return (false, string.Empty);
+        }
     }
 
     /// <summary>
@@ -68,22 +99,17 @@ public sealed class VivotekParameterService : IVivotekParameterService
     /// </summary>
     internal static IReadOnlyList<VivotekParameterItem> Parse(string group, string body)
     {
-        // items conserva todos los parámetros reconocibles, incluso si el firmware devuelve valores desconocidos.
         var items = new List<VivotekParameterItem>();
 
         foreach (var rawLine in body.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
         {
-            // line elimina espacios exteriores pero conserva el contenido del valor.
             var line = rawLine.Trim();
-            // separator separa el nombre del valor en la primera aparición de '='.
             var separator = line.IndexOf('=');
 
             if (separator <= 0)
                 continue;
 
-            // name es el identificador exacto del parámetro devuelto por la cámara.
             var name = line[..separator].Trim();
-            // value es el contenido textual informado por el firmware.
             var value = line[(separator + 1)..].Trim();
 
             if (string.IsNullOrWhiteSpace(name))
