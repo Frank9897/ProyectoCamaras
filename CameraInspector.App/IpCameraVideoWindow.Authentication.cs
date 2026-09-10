@@ -251,9 +251,11 @@ public partial class IpCameraVideoWindow
         var manufacturer = device.Manufacturer ?? string.Empty;
         var model = device.Model ?? string.Empty;
 
+        // Fix: "IP71" cubre toda la familia fija VIVOTEK IP71xx (7122, 7123, 7133, 7134...),
+        // no solo los dos modelos que estaban hardcodeados. Antes una IP7122 caía fuera de
+        // esta detección y la ventana de video intentaba autenticar como si fuera ONVIF.
         return manufacturer.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase)
-               || model.Contains("IP7133", StringComparison.OrdinalIgnoreCase)
-               || model.Contains("IP7134", StringComparison.OrdinalIgnoreCase);
+               || model.Contains("IP71", StringComparison.OrdinalIgnoreCase);
     }
 
     private void DetachAuthenticationHandlers()

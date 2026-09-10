@@ -319,9 +319,10 @@ public sealed partial class DeviceViewModel : ObservableObject
             var model = _device.Model ?? string.Empty;
             var evidence = string.Join(" ", _device.DetectionEvidence.Select(item => item.Method));
 
+            // Fix: "IP71" en vez de solo "IP7133"/"IP7134" para cubrir toda la familia
+            // fija VIVOTEK IP71xx (incluye la IP7122), que comparte el mismo CGI legacy.
             if (manufacturer.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase)
-                || model.Contains("IP7133", StringComparison.OrdinalIgnoreCase)
-                || model.Contains("IP7134", StringComparison.OrdinalIgnoreCase)
+                || model.Contains("IP71", StringComparison.OrdinalIgnoreCase)
                 || evidence.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase))
                 protocols.Add("VIVOTEK CGI");
             else if (manufacturer.Contains("Hikvision", StringComparison.OrdinalIgnoreCase)

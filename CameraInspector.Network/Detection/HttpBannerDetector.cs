@@ -158,7 +158,9 @@ public sealed class HttpBannerDetector : IManufacturerDetector
         if (manufacturer != "VIVOTEK")
             return null;
 
-        var knownModels = new[] { "IP7134", "IP7133", "IP7135", "IP8160", "IP8332", "FD8166" };
+        // Se agrega "IP7122" (fix: no estaba en la lista, por lo que el modelo quedaba
+        // sin identificar aunque el fabricante VIVOTEK sí se detectaba correctamente).
+        var knownModels = new[] { "IP7122", "IP7123", "IP7134", "IP7133", "IP7135", "IP8160", "IP8332", "FD8166" };
         return knownModels.FirstOrDefault(model =>
             text.Contains(model, StringComparison.OrdinalIgnoreCase));
     }
