@@ -7,8 +7,8 @@ namespace CameraInspector.App;
 
 /// <summary>
 /// Configura el acceso administrativo real de una cámara VIVOTEK legacy.
-/// Primero intenta modificar root sin contraseña y, solamente si la cámara lo rechaza,
-/// solicita las credenciales actuales para editar un perfil ya existente.
+/// Primero intenta modificar root sin contraseña y, si la cámara rechaza o no responde correctamente,
+/// permite probar las credenciales administrativas actuales antes de declarar la operación imposible.
 /// </summary>
 public partial class CameraAccessSetupWindow : Window
 {
@@ -61,7 +61,7 @@ public partial class CameraAccessSetupWindow : Window
         var confirm = MessageBox.Show(
             this,
             "Se modificará la contraseña de la cuenta administrativa root directamente en la cámara.\n\n" +
-            "La aplicación probará primero con root sin contraseña. Si la cámara exige autenticación, solicitará las credenciales actuales únicamente en ese momento.\n\n" +
+            "La aplicación probará primero con root sin contraseña. Si la cámara exige autenticación o no responde correctamente al primer intento, solicitará las credenciales actuales para probar la operación nuevamente.\n\n" +
             "¿Desea continuar?",
             "Camera Inspector — Confirmar acceso",
             MessageBoxButton.YesNo,
@@ -80,9 +80,13 @@ public partial class CameraAccessSetupWindow : Window
                 string.Empty,
                 newPassword);
 
-            if (!result.Succeeded && result.Message.Contains("HTTP 401", StringComparison.OrdinalIgnoreCase))
+            if (!result.Succeeded && ShouldRetryWithCredentials(result.Message))
             {
-                SetStatus("La cámara exige autenticación para modificar root. Solicitando credenciales actuales...");
+                SetStatus(
+                    result.Message.Contains("HTTP 401", StringComparison.OrdinalIgnoreCase)
+                        ? "La cámara exige autenticación para modificar root. Solicitando credenciales actuales..."
+                        : "El CGI no respondió correctamente al primer intento. Puede requerir autenticación administrativa. Solicitando credenciales actuales...");
+
                 var credentials = await _viewModel.RequestCredentialsForOperationAsync();
                 if (credentials is null)
                 {
@@ -90,6 +94,7 @@ public partial class CameraAccessSetupWindow : Window
                     return;
                 }
 
+                SetStatus("Reintentando la modificación de root con las credenciales administrativas proporcionadas...");
                 result = await _service.SetRootPasswordAsync(
                     _device,
                     credentials.Value.Password,
@@ -133,6 +138,14 @@ public partial class CameraAccessSetupWindow : Window
         {
             ApplyButton.IsEnabled = true;
         }
+    }
+
+    private static bool ShouldRetryWithCredentials(string message)
+    {
+        return message.Contains("HTTP 401", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("Tiempo de espera", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("No se pudo conectar", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("No se pudo comunicar", StringComparison.OrdinalIgnoreCase);
     }
 
     private void CancelButton_Click(object sender, RoutedEventArgs e)
