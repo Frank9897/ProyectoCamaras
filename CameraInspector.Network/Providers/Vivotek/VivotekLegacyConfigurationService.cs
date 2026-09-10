@@ -325,14 +325,10 @@ public sealed class VivotekLegacyConfigurationService
         client.DefaultRequestHeaders.ConnectionClose = true;
         client.DefaultRequestHeaders.UserAgent.ParseAdd("CameraInspector/1.0");
 
-        // Algunas cámaras legacy no envían correctamente el challenge de autenticación.
-        // Cuando existen credenciales, enviamos Basic de forma preventiva; si el firmware
-        // utiliza otro esquema, HttpClientHandler puede negociar el challenge recibido.
-        if (!string.IsNullOrWhiteSpace(username))
-        {
-            var token = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{username}:{password}"));
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", token);
-        }
+        // VIVOTEK legacy puede utilizar Basic o Digest. No enviamos Basic por adelantado:
+        // si el firmware anuncia Digest, HttpClientHandler debe recibir el challenge y negociar
+        // correctamente con las credenciales configuradas. Esto evita convertir una cámara
+        // que soporta Digest en un falso HTTP 401 permanente.
 
         try
         {
@@ -340,7 +336,18 @@ public sealed class VivotekLegacyConfigurationService
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (response.StatusCode == HttpStatusCode.Unauthorized)
-                return (false, "HTTP 401 Unauthorized: la cámara exige credenciales administrativas para esta operación.", body);
+            {
+                var schemes = response.Headers.WwwAuthenticate
+                    .Select(item => item.Scheme)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                var challenge = schemes.Length == 0
+                    ? string.Empty
+                    : $" Esquema anunciado: {string.Join(", ", schemes)}.";
+
+                return (false, $"HTTP 401 Unauthorized: la cámara exige credenciales administrativas para esta operación.{challenge}", body);
+            }
 
             if (!response.IsSuccessStatusCode)
                 return (false, $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}", body);
@@ -518,60 +525,4 @@ public sealed class VivotekLegacyConfigurationService
 
     private static string BuildHttpEndpoint(string ip, int port, string relativePath) =>
         $"http://{ip}:{port}{relativePath}";
-
-    private static bool IsExpectedDisconnectAfterSystemAction((bool Success, string Message, string Body) result) =>
-        !result.Success &&
-        (result.Message.Contains("Tiempo de espera", StringComparison.OrdinalIgnoreCase)
-         || result.Message.Contains("conexión", StringComparison.OrdinalIgnoreCase)
-         || result.Message.Contains("conectar", StringComparison.OrdinalIgnoreCase));
-
-    private static OnvifNetworkChangeResult Failure(string message) => new() { Succeeded = false, Message = message };
-
-    private static string? GetValue(Dictionary<string, string> values, string name) =>
-        values.TryGetValue(name, out var value) ? value : null;
-
-    private static bool? GetBoolean(Dictionary<string, string> values, string name)
-    {
-        var value = GetValue(values, name);
-        if (string.IsNullOrWhiteSpace(value))
-            return null;
-
-        return value.Trim() switch
-        {
-            "1" => true,
-            "0" => false,
-            _ => bool.TryParse(value, out var parsed) ? parsed : null
-        };
-    }
-
-    private static int? PrefixFromMask(string? mask)
-    {
-        if (!IPAddress.TryParse(mask, out var parsed) || parsed.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
-            return 24;
-
-        var bytes = parsed.GetAddressBytes();
-        var prefix = 0;
-        foreach (var b in bytes)
-        {
-            var value = b;
-            for (var bit = 7; bit >= 0 && (value & (1 << bit)) != 0; bit--)
-                prefix++;
-        }
-
-        return prefix is >= 1 and <= 32 ? prefix : 24;
-    }
-
-    private static string MaskFromPrefix(int prefix)
-    {
-        prefix = Math.Clamp(prefix, 1, 32);
-        var mask = prefix == 32 ? uint.MaxValue : uint.MaxValue << (32 - prefix);
-        var bytes = new byte[]
-        {
-            (byte)(mask >> 24),
-            (byte)(mask >> 16),
-            (byte)(mask >> 8),
-            (byte)mask
-        };
-        return new IPAddress(bytes).ToString();
-    }
 }
