@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Headers;
-using System.Text;
 using CameraInspector.Core.Models;
 
 namespace CameraInspector.Network.Providers.Vivotek;
@@ -22,8 +21,6 @@ public sealed class VivotekLegacyConfigurationService
         if (string.IsNullOrWhiteSpace(device.IpAddress))
             return null;
 
-        // La IP7133 permite consultar parámetros por la ruta anonymous.
-        // Esto evita exigir credenciales solamente para leer la configuración actual.
         var parameters = await GetParametersAsync(
             device.IpAddress,
             device.HttpPort ?? 80,
@@ -32,16 +29,33 @@ public sealed class VivotekLegacyConfigurationService
             string.Empty,
             cancellationToken);
 
-        // Algunas variantes/firmwares pueden proteger también la lectura administrativa.
-        if (parameters.Count == 0)
+        // No basta con comprobar si anonymous devolvió algo: algunos firmwares
+        // entregan la red pero ocultan hostname/DNS hasta consultar como admin.
+        var requiredKeys = new[]
         {
-            parameters = await GetParametersAsync(
+            "network.ipaddress",
+            "network.subnet",
+            "network.router",
+            "network.resetip",
+            "system.hostname"
+        };
+        var missingRequiredData = parameters.Count == 0 || requiredKeys.Any(key => !parameters.ContainsKey(key));
+
+        if (missingRequiredData && !string.IsNullOrWhiteSpace(username))
+        {
+            var adminParameters = await GetParametersAsync(
                 device.IpAddress,
                 device.HttpPort ?? 80,
                 "/cgi-bin/admin/getparam.cgi?network_ipaddress&network_subnet&network_router&network_resetip&network_dns1&network_dns2&system_hostname",
                 username,
                 password,
                 cancellationToken);
+
+            foreach (var pair in adminParameters)
+            {
+                if (!string.IsNullOrWhiteSpace(pair.Value) || !parameters.ContainsKey(pair.Key))
+                    parameters[pair.Key] = pair.Value;
+            }
         }
 
         if (parameters.Count == 0)
@@ -126,8 +140,6 @@ public sealed class VivotekLegacyConfigurationService
         var result = await SendAsync(endpoint, username, password, cancellationToken);
         if (!result.Success)
         {
-            // Al modificar una IPv4 estática el firmware puede cerrar la conexión vieja
-            // justo después de aceptar el cambio. Verificamos la nueva IP antes de informar éxito.
             if (!useDhcp
                 && !string.IsNullOrWhiteSpace(ipv4Address)
                 && !string.Equals(device.IpAddress, ipv4Address.Trim(), StringComparison.OrdinalIgnoreCase)
@@ -180,12 +192,9 @@ public sealed class VivotekLegacyConfigurationService
         string password,
         CancellationToken cancellationToken = default)
     {
-        // Primero verificamos que HTTP realmente responde. Así un timeout no se interpreta
-        // automáticamente como reinicio aceptado cuando el CGI estaba inaccesible.
         if (!await IsHttpReachableAsync(device, cancellationToken))
             return Failure("El servicio HTTP/CGI de la cámara no responde. El vídeo RTSP puede seguir disponible, pero no es posible confirmar una operación administrativa.");
 
-        // La documentación legacy expone la acción directamente mediante system_reset=1.
         var endpoint = BuildHttpEndpoint(device, "/cgi-bin/admin/setparam.cgi?system_reset=1");
         var result = await SendAsync(endpoint, username, password, cancellationToken);
         if (result.Success)
@@ -210,11 +219,9 @@ public sealed class VivotekLegacyConfigurationService
         string password,
         CancellationToken cancellationToken = default)
     {
-        // La restauración de fábrica es destructiva: exigimos que HTTP esté vivo antes de enviarla.
         if (!await IsHttpReachableAsync(device, cancellationToken))
             return Failure("El servicio HTTP/CGI de la cámara no responde. No se envió el restablecimiento de fábrica.");
 
-        // El firmware legacy documenta system_restore=1 como restauración de fábrica.
         var endpoint = BuildHttpEndpoint(device, "/cgi-bin/admin/setparam.cgi?system_restore=1");
         var result = await SendAsync(endpoint, username, password, cancellationToken);
         if (result.Success)
@@ -253,8 +260,6 @@ public sealed class VivotekLegacyConfigurationService
         if (result.Success)
             return new OnvifNetworkChangeResult { Succeeded = true, Message = "La contraseña del usuario root fue aceptada por la cámara." };
 
-        // Algunos firmwares legacy cambian la contraseña y cierran el CGI antes de devolver
-        // una respuesta completa. Confirmamos con la nueva credencial antes de declarar fallo.
         if (IsExpectedDisconnectAfterSystemAction(result))
         {
             var verified = await GetParametersAsync(
@@ -324,11 +329,6 @@ public sealed class VivotekLegacyConfigurationService
         using var client = new HttpClient(handler) { Timeout = _timeout };
         client.DefaultRequestHeaders.ConnectionClose = true;
         client.DefaultRequestHeaders.UserAgent.ParseAdd("CameraInspector/1.0");
-
-        // VIVOTEK legacy puede utilizar Basic o Digest. No enviamos Basic por adelantado:
-        // si el firmware anuncia Digest, HttpClientHandler debe recibir el challenge y negociar
-        // correctamente con las credenciales configuradas. Esto evita convertir una cámara
-        // que soporta Digest en un falso HTTP 401 permanente.
 
         try
         {
@@ -400,7 +400,6 @@ public sealed class VivotekLegacyConfigurationService
 
         try
         {
-            // Cualquier respuesta HTTP, incluso 401/403/404, demuestra que el servicio web está vivo.
             using var response = await client.GetAsync(BuildHttpEndpoint(ip, port, "/"), cancellationToken);
             return true;
         }
@@ -473,7 +472,6 @@ public sealed class VivotekLegacyConfigurationService
         client.DefaultRequestHeaders.UserAgent.ParseAdd("CameraInspector/1.0");
         var endpoint = BuildHttpEndpoint(ip, port, "/");
 
-        // Esperamos primero la caída del servicio, que es la evidencia más útil de un reinicio.
         for (var attempt = 0; attempt < 12; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -498,7 +496,6 @@ public sealed class VivotekLegacyConfigurationService
         if (!wasDown)
             return false;
 
-        // Luego esperamos que el HTTP vuelva a responder.
         for (var attempt = 0; attempt < 30; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -525,4 +522,60 @@ public sealed class VivotekLegacyConfigurationService
 
     private static string BuildHttpEndpoint(string ip, int port, string relativePath) =>
         $"http://{ip}:{port}{relativePath}";
+
+    private static bool IsExpectedDisconnectAfterSystemAction((bool Success, string Message, string Body) result) =>
+        !result.Success &&
+        (result.Message.Contains("Tiempo de espera", StringComparison.OrdinalIgnoreCase)
+         || result.Message.Contains("conexión", StringComparison.OrdinalIgnoreCase)
+         || result.Message.Contains("conectar", StringComparison.OrdinalIgnoreCase));
+
+    private static OnvifNetworkChangeResult Failure(string message) => new() { Succeeded = false, Message = message };
+
+    private static string? GetValue(Dictionary<string, string> values, string name) =>
+        values.TryGetValue(name, out var value) ? value : null;
+
+    private static bool? GetBoolean(Dictionary<string, string> values, string name)
+    {
+        var value = GetValue(values, name);
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        return value.Trim() switch
+        {
+            "1" => true,
+            "0" => false,
+            _ => bool.TryParse(value, out var parsed) ? parsed : null
+        };
+    }
+
+    private static int? PrefixFromMask(string? mask)
+    {
+        if (!IPAddress.TryParse(mask, out var parsed) || parsed.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+            return 24;
+
+        var bytes = parsed.GetAddressBytes();
+        var prefix = 0;
+        foreach (var b in bytes)
+        {
+            var value = b;
+            for (var bit = 7; bit >= 0 && (value & (1 << bit)) != 0; bit--)
+                prefix++;
+        }
+
+        return prefix is >= 1 and <= 32 ? prefix : 24;
+    }
+
+    private static string MaskFromPrefix(int prefix)
+    {
+        prefix = Math.Clamp(prefix, 1, 32);
+        var mask = prefix == 32 ? uint.MaxValue : uint.MaxValue << (32 - prefix);
+        var bytes = new byte[]
+        {
+            (byte)(mask >> 24),
+            (byte)(mask >> 16),
+            (byte)(mask >> 8),
+            (byte)mask
+        };
+        return new IPAddress(bytes).ToString();
+    }
 }
