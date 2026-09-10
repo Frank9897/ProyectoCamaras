@@ -32,7 +32,10 @@ public sealed class VivotekParameterService : IVivotekParameterService
             Credentials = new NetworkCredential(username, password),
             PreAuthenticate = false,
             // No seguimos redirecciones para no reenviar credenciales a otro destino.
-            AllowAutoRedirect = false
+            AllowAutoRedirect = false,
+            // Las cámaras legacy suelen estar en redes locales/APIPA donde un proxy del sistema
+            // no debe intervenir en la comunicación directa con el equipo.
+            UseProxy = false
         };
 
         using var client = new HttpClient(handler)
@@ -40,9 +43,13 @@ public sealed class VivotekParameterService : IVivotekParameterService
             Timeout = _timeout
         };
 
+        client.DefaultRequestHeaders.ConnectionClose = true;
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("CameraInspector/1.0");
+
         // anonymous es la ruta más restrictiva para lectura y permite trabajar con cámaras que exponen
         // el grupo sin exigir privilegios de operador/admin para una consulta.
-        var endpoint = $"http://{device.IpAddress.Trim()}/cgi-bin/anonymous/getparam.cgi?{encodedGroup}";
+        var port = device.HttpPort ?? 80;
+        var endpoint = $"http://{device.IpAddress.Trim()}:{port}/cgi-bin/anonymous/getparam.cgi?{encodedGroup}";
 
         using var response = await client.GetAsync(endpoint, cancellationToken);
         if (!response.IsSuccessStatusCode)
