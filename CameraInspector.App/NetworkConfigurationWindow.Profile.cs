@@ -8,7 +8,7 @@ namespace CameraInspector.App;
 
 /// <summary>
 /// Agrega a la ventana de configuración una guía adaptada al fabricante detectado.
-/// La guía nunca habilita una operación que el provider no haya implementado.
+/// La guía separa las capacidades teóricas del fabricante de la evidencia real obtenida.
 /// </summary>
 public partial class NetworkConfigurationWindow
 {
@@ -23,7 +23,8 @@ public partial class NetworkConfigurationWindow
         if (tabs is null)
             return;
 
-        var profile = CameraConfigurationProfileResolver.Resolve(_viewModelDevice());
+        var device = _viewModelDevice();
+        var profile = CameraConfigurationProfileResolver.Resolve(device);
         _profileUiConfigured = true;
 
         Title = $"Camera Inspector — Configuración de cámara IP — {profile.Manufacturer}";
@@ -63,6 +64,7 @@ public partial class NetworkConfigurationWindow
         AddField(summaryStack, "ESTILO", profile.ManagementStyle);
         AddField(summaryStack, "PROTOCOLO", profile.PrimaryProtocol);
         AddField(summaryStack, "ESTADO", profile.Manufacturer == "GENÉRICO" ? "GENÉRICO · NO SE IDENTIFICÓ FABRICANTE" : "FABRICANTE RECONOCIDO");
+        AddField(summaryStack, "EVIDENCIA", device.DetectionReason);
         stack.Children.Add(summary);
 
         stack.Children.Add(new TextBlock
@@ -73,33 +75,73 @@ public partial class NetworkConfigurationWindow
             Margin = new Thickness(0, 0, 0, 12)
         });
 
-        var capability = new Border
+        var profileCapability = new Border
         {
             Padding = new Thickness(12),
             Background = (Brush)FindResource("Panel3Brush"),
             BorderBrush = (Brush)FindResource("BorderBrush2"),
             BorderThickness = new Thickness(1)
         };
-        var capabilityStack = new StackPanel();
-        capability.Child = capabilityStack;
-        capabilityStack.Children.Add(new TextBlock
+        var profileCapabilityStack = new StackPanel();
+        profileCapability.Child = profileCapabilityStack;
+        profileCapabilityStack.Children.Add(new TextBlock
         {
-            Text = "CAPACIDADES PREVISTAS",
+            Text = "CAPACIDADES DEL FABRICANTE (PERFIL)",
             FontFamily = new FontFamily("Consolas"),
             FontWeight = FontWeights.Bold,
             Foreground = (Brush)FindResource("AccentBrush")
         });
-        AddCapability(capabilityStack, "DHCP", profile.SupportsDhcp);
-        AddCapability(capabilityStack, "IPv4 FIJA", profile.SupportsStaticIpv4);
-        AddCapability(capabilityStack, "GATEWAY", profile.SupportsGateway);
-        AddCapability(capabilityStack, "DNS", profile.SupportsDns);
-        AddCapability(capabilityStack, "HOSTNAME", profile.SupportsHostname);
-        AddCapability(capabilityStack, "NTP", profile.SupportsNtp);
-        AddCapability(capabilityStack, "PUERTOS / SERVICIOS", profile.SupportsPorts);
-        AddCapability(capabilityStack, "CREDENCIALES", profile.SupportsCredentials);
-        AddCapability(capabilityStack, "REINICIO", profile.SupportsReboot);
-        AddCapability(capabilityStack, "FACTORY RESET", profile.SupportsFactoryReset);
-        stack.Children.Add(capability);
+        AddCapability(profileCapabilityStack, "DHCP", profile.SupportsDhcp);
+        AddCapability(profileCapabilityStack, "IPv4 FIJA", profile.SupportsStaticIpv4);
+        AddCapability(profileCapabilityStack, "GATEWAY", profile.SupportsGateway);
+        AddCapability(profileCapabilityStack, "DNS", profile.SupportsDns);
+        AddCapability(profileCapabilityStack, "HOSTNAME", profile.SupportsHostname);
+        AddCapability(profileCapabilityStack, "NTP", profile.SupportsNtp);
+        AddCapability(profileCapabilityStack, "PUERTOS / SERVICIOS", profile.SupportsPorts);
+        AddCapability(profileCapabilityStack, "CREDENCIALES", profile.SupportsCredentials);
+        AddCapability(profileCapabilityStack, "REINICIO", profile.SupportsReboot);
+        AddCapability(profileCapabilityStack, "FACTORY RESET", profile.SupportsFactoryReset);
+        stack.Children.Add(profileCapability);
+
+        var evidenceCapability = new Border
+        {
+            Margin = new Thickness(0, 10, 0, 0),
+            Padding = new Thickness(12),
+            Background = (Brush)FindResource("Panel2Brush"),
+            BorderBrush = (Brush)FindResource("BorderBrush2"),
+            BorderThickness = new Thickness(1)
+        };
+        var evidenceStack = new StackPanel();
+        evidenceCapability.Child = evidenceStack;
+        evidenceStack.Children.Add(new TextBlock
+        {
+            Text = "EVIDENCIA REAL DETECTADA",
+            FontFamily = new FontFamily("Consolas"),
+            FontWeight = FontWeights.Bold,
+            Foreground = (Brush)FindResource("AccentBrush")
+        });
+
+        var hasOnvif = device.OnvifSupported
+                       || !string.IsNullOrWhiteSpace(device.OnvifDeviceServiceXAddr)
+                       || !string.IsNullOrWhiteSpace(device.OnvifMediaServiceXAddr);
+        var hasVivotekCgi = profile.Manufacturer.Equals("VIVOTEK", StringComparison.OrdinalIgnoreCase)
+                            && device.HttpSupported;
+
+        AddCapability(evidenceStack, "ONVIF DETECTADO", hasOnvif);
+        AddCapability(evidenceStack, "HTTP DETECTADO", device.HttpSupported);
+        AddCapability(evidenceStack, "HTTPS DETECTADO", device.HttpsSupported);
+        AddCapability(evidenceStack, "RTSP DETECTADO", device.RtspSupported);
+        AddCapability(evidenceStack, "VIVOTEK CGI DISPONIBLE PARA PRUEBA", hasVivotekCgi);
+        AddCapability(evidenceStack, "ADMIN CGI CONFIRMADO", false);
+
+        evidenceStack.Children.Add(new TextBlock
+        {
+            Text = "IMPORTANTE: una capacidad del perfil describe lo que el fabricante/modelo puede soportar; una marca verde en esta sección solo indica evidencia de protocolo. Las operaciones administrativas se consideran confirmadas únicamente después de una respuesta válida de la cámara.",
+            Margin = new Thickness(0, 8, 0, 0),
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = (Brush)FindResource("TextDimBrush")
+        });
+        stack.Children.Add(evidenceCapability);
 
         stack.Children.Add(new TextBlock
         {
@@ -133,7 +175,7 @@ public partial class NetworkConfigurationWindow
             {
                 Text = profile.Manufacturer == "GENÉRICO"
                     ? "ALERTA: no se identificó un fabricante conocido. Camera Inspector no inventará menús ni comandos propietarios; utilizará capacidades detectadas y el flujo ONVIF/HTTP genérico."
-                    : "NOTA: el perfil adapta la interfaz al ecosistema del fabricante, pero una capacidad específica puede variar según modelo y firmware. Las acciones no confirmadas deben mostrar ALERTA y no ejecutarse silenciosamente.",
+                    : "NOTA: el perfil adapta la interfaz al ecosistema del fabricante, pero una capacidad específica puede variar según modelo y firmware. Las acciones administrativas no se consideran confirmadas hasta recibir una respuesta válida.",
                 Foreground = profile.Manufacturer == "GENÉRICO"
                     ? (Brush)FindResource("WarnBrush")
                     : (Brush)FindResource("TextDimBrush"),
