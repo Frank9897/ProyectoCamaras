@@ -85,7 +85,7 @@ public sealed partial class NetworkConfigurationEditViewModel
             return;
         }
 
-        var confirm = MessageBox.Show(
+        var confirm = ThemedMessageBox.Show(
             $"CAMBIAR NOMBRE\n\nActual: {(_deviceViewModel.Device.Model ?? "desconocido")}\nNuevo:  {value}\n\n¿Continuar?",
             "Camera Inspector — Cambiar nombre",
             MessageBoxButton.YesNo,
@@ -133,7 +133,7 @@ public sealed partial class NetworkConfigurationEditViewModel
         if (IsSystemActionRunning || IsApplying)
             return;
 
-        var confirm = MessageBox.Show(
+        var confirm = ThemedMessageBox.Show(
             "REINICIAR CÁMARA\n\nLa cámara quedará temporalmente inaccesible. Los cambios pendientes de red deben aplicarse primero.\n\n¿Desea reiniciarla?",
             "Camera Inspector — Reiniciar cámara",
             MessageBoxButton.YesNo,
@@ -180,7 +180,7 @@ public sealed partial class NetworkConfigurationEditViewModel
         if (IsSystemActionRunning || IsApplying)
             return;
 
-        var first = MessageBox.Show(
+        var first = ThemedMessageBox.Show(
             "⚠ RESTABLECIMIENTO DE FÁBRICA\n\nEsta acción puede borrar la configuración de red, usuarios y otros parámetros.\n\n¿Desea continuar?",
             "Camera Inspector — RESTABLECIMIENTO DE FÁBRICA",
             MessageBoxButton.YesNo,
@@ -191,7 +191,7 @@ public sealed partial class NetworkConfigurationEditViewModel
             return;
         }
 
-        var second = MessageBox.Show(
+        var second = ThemedMessageBox.Show(
             "ÚLTIMA CONFIRMACIÓN\n\nDespués del restablecimiento la cámara puede cambiar de IP y requerir configuración inicial.\n\n¿CONFIRMA EL RESTABLECIMIENTO?",
             "Camera Inspector — Confirmación final",
             MessageBoxButton.YesNo,

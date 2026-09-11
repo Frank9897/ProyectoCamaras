@@ -55,6 +55,7 @@ public partial class App : Application
     {
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
         RegisterResponsiveWindowHandling();
+        DarkTitleBar.Initialize();
         DispatcherUnhandledException += (_, args) =>
         {
             WriteErrorLog("EXCEPCIÓN NO CONTROLADA EN UI", args.Exception);

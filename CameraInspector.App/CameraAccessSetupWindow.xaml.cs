@@ -105,7 +105,7 @@ public partial class CameraAccessSetupWindow : Window
             return;
         }
 
-        var confirm = MessageBox.Show(
+        var confirm = ThemedMessageBox.Show(
             this,
             $"Se modificará la contraseña de la cuenta administrativa \"{DefaultAdminUsername}\" directamente en la cámara.\n\n" +
             "La aplicación probará primero el acceso de fábrica. Si la cámara exige autenticación o no responde correctamente al primer intento, solicitará las credenciales actuales para probar la operación nuevamente.\n\n" +
@@ -166,7 +166,7 @@ public partial class CameraAccessSetupWindow : Window
 
             await _viewModel.TryStartIpVideoAutomaticallyAsync();
 
-            MessageBox.Show(
+            ThemedMessageBox.Show(
                 this,
                 $"Acceso configurado correctamente en la cámara y sincronizado con Camera Inspector.\n\nUsuario: {DefaultAdminUsername}",
                 "Camera Inspector — Acceso configurado",

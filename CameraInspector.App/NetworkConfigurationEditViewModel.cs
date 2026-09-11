@@ -342,7 +342,7 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
         var currentGateway = Gateways.FirstOrDefault() ?? "(sin gateway)";
         var targetGateway = string.IsNullOrWhiteSpace(GatewayAddress) ? "(sin gateway)" : GatewayAddress.Trim();
 
-        var result = MessageBox.Show(
+        var result = ThemedMessageBox.Show(
             $"RESUMEN DEL CAMBIO\n\n" +
             $"Interfaz: {SelectedInterface.Token}\n\n" +
             $"IP:       {currentIp}  →  {targetIp}\n" +

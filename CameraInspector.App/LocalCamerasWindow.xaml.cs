@@ -259,7 +259,7 @@ public partial class LocalCamerasWindow : Window
         catch (Exception ex)
         {
             StatusTextBlock.Text = BuildCameraStatus(_selectedCamera, $"Error al guardar snapshot: {ex.Message}");
-            MessageBox.Show(
+            ThemedMessageBox.Show(
                 this is { IsVisible: true } ? this : Application.Current.MainWindow,
                 $"No se pudo guardar el snapshot:\n\n{ex.Message}",
                 "Camera Inspector — Snapshot",
@@ -324,7 +324,7 @@ public partial class LocalCamerasWindow : Window
         catch (Exception ex)
         {
             StatusTextBlock.Text = BuildCameraStatus(_selectedCamera, $"Error al preparar la grabación: {ex.Message}");
-            MessageBox.Show(
+            ThemedMessageBox.Show(
                 this is { IsVisible: true } ? this : Application.Current.MainWindow,
                 $"No se pudo iniciar la grabación:\n\n{ex.Message}",
                 "Camera Inspector — Grabación",
@@ -479,7 +479,7 @@ public partial class LocalCamerasWindow : Window
             .ToString();
 
         var owner = this is { IsVisible: true } ? this : Application.Current.MainWindow;
-        MessageBox.Show(
+        ThemedMessageBox.Show(
             owner,
             info,
             "Camera Inspector — Información de cámara local",

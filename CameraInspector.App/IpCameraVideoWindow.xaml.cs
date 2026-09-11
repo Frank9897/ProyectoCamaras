@@ -320,7 +320,7 @@ public partial class IpCameraVideoWindow : Window
             RecordButton.IsEnabled = false;
             var started = await _viewModel.StartRecordingAsync(dialog.FileName);
             if (!started)
-                MessageBox.Show(this, _viewModel.StatusText, "Camera Inspector — Grabación", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ThemedMessageBox.Show(this, _viewModel.StatusText, "Camera Inspector — Grabación", MessageBoxButton.OK, MessageBoxImage.Warning);
             else
                 _viewModel.StatusText = $"Grabación iniciada: {dialog.FileName}";
         }
@@ -381,7 +381,7 @@ public partial class IpCameraVideoWindow : Window
             .AppendLine(device.DetectionDetails)
             .ToString();
 
-        MessageBox.Show(this, info, "Camera Inspector — Información de cámara IP", MessageBoxButton.OK, MessageBoxImage.Information);
+        ThemedMessageBox.Show(this, info, "Camera Inspector — Información de cámara IP", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void RefreshButtons()

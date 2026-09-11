@@ -43,7 +43,7 @@ public partial class CredentialsDialog : Window
 
         if (string.IsNullOrWhiteSpace(username))
         {
-            MessageBox.Show(
+            ThemedMessageBox.Show(
                 "Debe indicar un usuario.",
                 "Camera Inspector — Credenciales",
                 MessageBoxButton.OK,
@@ -57,7 +57,7 @@ public partial class CredentialsDialog : Window
 
         if (string.IsNullOrEmpty(password))
         {
-            MessageBox.Show(
+            ThemedMessageBox.Show(
                 "Debe indicar una contraseña.",
                 "Camera Inspector — Credenciales",
                 MessageBoxButton.OK,

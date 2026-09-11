@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using CameraInspector.App;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
 using CameraInspector.Video;
@@ -260,7 +261,7 @@ public sealed partial class MainViewModel : ObservableObject
     private async Task DeleteCredentialsAsync()
     {
         if (SelectedDevice?.CameraId is not int cameraId) return;
-        if (System.Windows.MessageBox.Show("¿Desea eliminar las credenciales guardadas para esta cámara?", "Camera Inspector — Credenciales", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning) != System.Windows.MessageBoxResult.Yes) return;
+        if (ThemedMessageBox.Show("¿Desea eliminar las credenciales guardadas para esta cámara?", "Camera Inspector — Credenciales", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning) != System.Windows.MessageBoxResult.Yes) return;
         try
         {
             var savedInfo = await _cameraCredentialStore.GetAsync(cameraId);
@@ -370,7 +371,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     private static void ShowStreamError(string ipAddress, string streamType)
     {
-        System.Windows.MessageBox.Show(
+        ThemedMessageBox.Show(
             $"No se pudo obtener el stream {streamType} de {ipAddress}.\n\nVerifique las credenciales, la disponibilidad del servicio de vídeo y que la cámara exponga un protocolo compatible.",
             "Camera Inspector — Stream",
             System.Windows.MessageBoxButton.OK,
