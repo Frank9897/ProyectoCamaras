@@ -533,8 +533,7 @@
                 <ControlTemplate TargetType="ScrollBar">
                     <Grid Background="{TemplateBinding Background}">
                         <Track x:Name="PART_Track"
-                               Orientation="{TemplateBinding Orientation}"
-                               IsDirectionReversed="{TemplateBinding IsDirectionReversed}">
+                               Orientation="{TemplateBinding Orientation}">
                             <Track.DecreaseRepeatButton>
                                 <RepeatButton Command="ScrollBar.LineUpCommand" Style="{StaticResource ScrollBarPageButtonStyle}"/>
                             </Track.DecreaseRepeatButton>
