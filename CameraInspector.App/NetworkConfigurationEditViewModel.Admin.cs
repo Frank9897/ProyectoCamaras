@@ -20,13 +20,13 @@ public sealed partial class NetworkConfigurationEditViewModel
 
         try
         {
-            var credentials = await GetCredentialsAsync();
+            var credentials = await GetCredentialsAsync(IsLegacyVivotek ? "VIVOTEK" : null);
             if (credentials is null)
                 return;
 
             if (IsLegacyVivotek)
             {
-                var legacyConfiguration = await _legacyWriter.GetNetworkConfigurationAsync(
+                var legacyConfiguration = await _vivotekWriter.GetNetworkConfigurationAsync(
                     _deviceViewModel.Device,
                     credentials.Value.Username,
                     credentials.Value.Password);
@@ -89,12 +89,12 @@ public sealed partial class NetworkConfigurationEditViewModel
         try
         {
             IsSystemActionRunning = true;
-            var credentials = await GetCredentialsAsync();
+            var credentials = await GetCredentialsAsync(IsLegacyVivotek ? "VIVOTEK" : null);
             if (credentials is null)
                 return;
 
             var result = IsLegacyVivotek
-                ? await _legacyWriter.SetHostnameAsync(_deviceViewModel.Device, credentials.Value.Username, credentials.Value.Password, value)
+                ? await _vivotekWriter.SetHostnameAsync(_deviceViewModel.Device, credentials.Value.Username, credentials.Value.Password, value)
                 : await _writer.SetHostnameAsync(_deviceViewModel.Device, credentials.Value.Username, credentials.Value.Password, value);
 
             if (!result.Succeeded)
@@ -136,7 +136,7 @@ public sealed partial class NetworkConfigurationEditViewModel
         try
         {
             IsSystemActionRunning = true;
-            var credentials = await GetCredentialsAsync();
+            var credentials = await GetCredentialsAsync(IsLegacyVivotek ? "VIVOTEK" : null);
             if (credentials is null)
                 return;
 
@@ -145,7 +145,7 @@ public sealed partial class NetworkConfigurationEditViewModel
                 : "Solicitando reinicio mediante ONVIF...");
 
             var result = IsLegacyVivotek
-                ? await _legacyWriter.RebootAsync(_deviceViewModel.Device, credentials.Value.Username, credentials.Value.Password)
+                ? await _vivotekWriter.RebootAsync(_deviceViewModel.Device, credentials.Value.Username, credentials.Value.Password)
                 : await _writer.RebootAsync(_deviceViewModel.Device, credentials.Value.Username, credentials.Value.Password);
 
             SetStatus(result.Succeeded
@@ -193,7 +193,7 @@ public sealed partial class NetworkConfigurationEditViewModel
         try
         {
             IsSystemActionRunning = true;
-            var credentials = await GetCredentialsAsync();
+            var credentials = await GetCredentialsAsync(IsLegacyVivotek ? "VIVOTEK" : null);
             if (credentials is null)
                 return;
 
@@ -202,7 +202,7 @@ public sealed partial class NetworkConfigurationEditViewModel
                 : "Solicitando restablecimiento mediante ONVIF...");
 
             var result = IsLegacyVivotek
-                ? await _legacyWriter.FactoryResetAsync(_deviceViewModel.Device, credentials.Value.Username, credentials.Value.Password)
+                ? await _vivotekWriter.FactoryResetAsync(_deviceViewModel.Device, credentials.Value.Username, credentials.Value.Password)
                 : await _writer.FactoryResetAsync(_deviceViewModel.Device, credentials.Value.Username, credentials.Value.Password);
 
             SetStatus(result.Succeeded

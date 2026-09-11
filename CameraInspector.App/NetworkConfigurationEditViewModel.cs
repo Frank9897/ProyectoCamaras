@@ -142,6 +142,14 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
         return null;
     }
 
+    // Usado por NetworkConfigurationEditViewModel.Admin.cs (nombre de host, reinicio,
+    // restablecimiento de fábrica): esas tres operaciones solo están implementadas para
+    // VIVOTEK legacy (VivotekLegacyConfigurationService.SetHostnameAsync/RebootAsync/
+    // FactoryResetAsync). DAHUA e HIKVISION todavía no tienen esos métodos: para esos
+    // fabricantes estas acciones puntuales siguen yendo por ONVIF (con lo cual fallan
+    // si la cámara no lo soporta; ver aviso de estado en cada comando).
+    private bool IsLegacyVivotek => DetectLegacyWriter()?.VendorLabel == "VIVOTEK";
+
     private void ApplyLoadedConfiguration(OnvifNetworkConfiguration loaded, string source)
     {
         Configuration = loaded;
