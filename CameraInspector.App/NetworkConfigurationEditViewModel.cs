@@ -5,6 +5,8 @@ using CameraInspector.App.ViewModels;
 using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
 using CameraInspector.Network.OnvifMedia;
+using CameraInspector.Network.Providers.Dahua;
+using CameraInspector.Network.Providers.Hikvision;
 using CameraInspector.Network.Providers.Vivotek;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -12,9 +14,22 @@ using CommunityToolkit.Mvvm.Input;
 namespace CameraInspector.App;
 
 /// <summary>
-/// ViewModel específico para edición controlada de red ONVIF.
+/// ViewModel específico para edición controlada de red.
 /// La interfaz prioriza lectura, validación y confirmación antes de cualquier escritura.
-/// En cámaras VIVOTEK legacy utiliza CGI cuando ONVIF no está disponible.
+///
+/// REDISEÑO (pedido: "que funcione para cualquier cámara, vieja o nueva, ONVIF o no"):
+/// Antes este ViewModel solo sabía de dos caminos: ONVIF, o VIVOTEK CGI como único legacy
+/// hardcodeado. Ahora la elección de método se basa en:
+///   1) Si la cámara fue marcada como compatible ONVIF (Device.OnvifSupported), se intenta
+///      ONVIF primero, sea cual sea el fabricante.
+///   2) Si ONVIF no responde (o de entrada no está soportado), se detecta el fabricante por
+///      nombre/modelo/evidencia y se usa su CGI/ISAPI legacy correspondiente:
+///        - VIVOTEK  -> CGI getparam/setparam.cgi (familia IP71xx: 7122, 7133, 7134, etc.)
+///        - DAHUA    -> CGI configManager.cgi (incluye clones OEM tipo Amcrest)
+///        - HIKVISION-> ISAPI (XML sobre HTTP GET/PUT)
+///   3) Si el fabricante no es ninguno de los anteriores y ONVIF falló, se informa con
+///      honestidad que esta versión no tiene un método de configuración de red implementado
+///      para ese fabricante puntual, en vez de fallar en silencio o fingir que funcionó.
 /// </summary>
 public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
 {
@@ -23,7 +38,9 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
     private readonly ICredentialStore _credentialStore;
     private readonly ICameraCredentialStore _cameraCredentialStore;
     private readonly IOnvifNetworkConfigurationService _writer;
-    private readonly VivotekLegacyConfigurationService _legacyWriter;
+    private readonly VivotekLegacyConfigurationService _vivotekWriter;
+    private readonly DahuaLegacyConfigurationService _dahuaWriter;
+    private readonly HikvisionIsapiNetworkConfigurationService _hikvisionWriter;
 
     [ObservableProperty] private string _statusText = "Listo. Consulte la configuración actual antes de modificarla.";
     [ObservableProperty] private OnvifNetworkConfiguration? _configuration;
@@ -47,17 +64,10 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
     public ObservableCollection<OnvifNetworkProtocolInfo> Protocols { get; } = new();
     public ObservableCollection<string> Gateways { get; } = new();
 
-    // NOTA (fix conflicto config. VIVOTEK 7122): antes esta propiedad solo reconocía
-    // "IP7133"/"IP7134" como modelos legacy explícitos. La familia fija VIVOTEK IP71xx
-    // (7122, 7123, 7133, 7134, 7136, etc.) comparte el mismo firmware/CGI y NINGUNA de
-    // ellas habla ONVIF. Si el fabricante no llegó a etiquetarse como "VIVOTEK" durante
-    // el descubrimiento (por ejemplo, cuando el dispositivo se agrega manualmente por IP
-    // en vez de detectarse por el protocolo propietario), el modelo "IP71" sigue siendo
-    // una señal válida y evita que la app intente hablar ONVIF con una cámara que no lo
-    // soporta, que era exactamente el conflicto reportado.
-    private bool IsLegacyVivotek =>
-        (_deviceViewModel.Manufacturer ?? string.Empty).Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase)
-        || (_deviceViewModel.Model ?? string.Empty).Contains("IP71", StringComparison.OrdinalIgnoreCase);
+    // Se recuerda qué camino terminó funcionando en LoadAsync (null = ONVIF, o el par
+    // escritor+etiqueta de un fabricante legacy) para que ApplyAsync use exactamente el
+    // mismo método y no vuelva a "adivinar" con lógica separada que podría desalinearse.
+    private (ILegacyCameraNetworkConfigurationService Writer, string VendorLabel)? _activeLegacyPath;
 
     public event EventHandler? RequestClose;
 
@@ -72,7 +82,9 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
         _credentialStore = credentialStore;
         _cameraCredentialStore = cameraCredentialStore;
         _writer = new OnvifNetworkConfigurationService();
-        _legacyWriter = new VivotekLegacyConfigurationService();
+        _vivotekWriter = new VivotekLegacyConfigurationService();
+        _dahuaWriter = new DahuaLegacyConfigurationService();
+        _hikvisionWriter = new HikvisionIsapiNetworkConfigurationService();
     }
 
     partial void OnSelectedInterfaceChanged(OnvifNetworkInterfaceInfo? value)
@@ -96,6 +108,38 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
     {
         StatusText = message;
         IsStatusError = error;
+    }
+
+    /// <summary>
+    /// Detecta, por manufacturer/model/evidencia de descubrimiento, qué escritor legacy
+    /// corresponde a este dispositivo. Devuelve null si el fabricante no tiene un
+    /// escritor implementado en esta app (no significa que la cámara no tenga forma de
+    /// configurarse, solo que esta versión no la implementa todavía).
+    /// </summary>
+    private (ILegacyCameraNetworkConfigurationService Writer, string VendorLabel)? DetectLegacyWriter()
+    {
+        var manufacturer = _deviceViewModel.Manufacturer ?? string.Empty;
+        var model = _deviceViewModel.Model ?? string.Empty;
+        var evidence = string.Join(" ", Device.DetectionEvidence.Select(item => item.Method));
+
+        // VIVOTEK: familia fija IP71xx completa (7122, 7123, 7133, 7134, 7135, 7136...),
+        // no solo los dos modelos que estaban hardcodeados originalmente.
+        if (manufacturer.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase)
+            || model.Contains("IP71", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase))
+            return (_vivotekWriter, "VIVOTEK");
+
+        if (manufacturer.Contains("Dahua", StringComparison.OrdinalIgnoreCase)
+            || manufacturer.Contains("Amcrest", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("Dahua", StringComparison.OrdinalIgnoreCase))
+            return (_dahuaWriter, "DAHUA");
+
+        if (manufacturer.Contains("Hikvision", StringComparison.OrdinalIgnoreCase)
+            || model.StartsWith("DS-", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("Hikvision", StringComparison.OrdinalIgnoreCase))
+            return (_hikvisionWriter, "HIKVISION");
+
+        return null;
     }
 
     private void ApplyLoadedConfiguration(OnvifNetworkConfiguration loaded, string source)
@@ -127,50 +171,23 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
 
         SetStatus("Consultando configuración actual de la cámara...");
         ValidationMessage = string.Empty;
+        _activeLegacyPath = null;
 
         try
         {
-            var credentials = await GetCredentialsAsync();
+            var legacy = DetectLegacyWriter();
+            var credentials = await GetCredentialsAsync(legacy?.VendorLabel);
             if (credentials is null)
                 return;
 
-            // Las VIVOTEK legacy no dependen de ONVIF para administrar la red.
-            if (IsLegacyVivotek)
+            // Si el dispositivo no fue marcado como ONVIF durante el descubrimiento y sí
+            // reconocemos su fabricante como uno legacy, vamos directo por ese camino:
+            // es más rápido y evita un timeout ONVIF innecesario en cámaras que sabemos
+            // de antemano que no lo hablan.
+            if (!Device.OnvifSupported && legacy is not null)
             {
-                var legacyLoaded = await _legacyWriter.GetNetworkConfigurationAsync(
-                    _deviceViewModel.Device,
-                    credentials.Value.Username,
-                    credentials.Value.Password);
-
-                if (legacyLoaded is not null)
-                {
-                    ApplyLoadedConfiguration(legacyLoaded, "CGI VIVOTEK legacy");
+                if (await TryLoadLegacyAsync(legacy.Value, credentials.Value))
                     return;
-                }
-
-                // Si root vacío fue rechazado, recién ahora se solicita una credencial administrativa.
-                if (credentials.Value.Username.Equals("root", StringComparison.OrdinalIgnoreCase)
-                    && string.IsNullOrEmpty(credentials.Value.Password))
-                {
-                    SetStatus("La administración VIVOTEK solicita autenticación. Ingrese las credenciales actuales para continuar.");
-                    var authenticated = await RequestAdministrativeCredentialsAsync();
-                    if (authenticated is not null)
-                    {
-                        legacyLoaded = await _legacyWriter.GetNetworkConfigurationAsync(
-                            _deviceViewModel.Device,
-                            authenticated.Value.Username,
-                            authenticated.Value.Password);
-
-                        if (legacyLoaded is not null)
-                        {
-                            ApplyLoadedConfiguration(legacyLoaded, "CGI VIVOTEK autenticado");
-                            return;
-                        }
-                    }
-                }
-
-                SetStatus("ALERTA: VIVOTEK no devolvió la configuración de red. Puede requerir autenticación administrativa o una interfaz HTTP/CGI habilitada.", true);
-                return;
             }
 
             var loaded = await _onvifDeviceService.GetNetworkConfigurationAsync(
@@ -178,34 +195,72 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
                 credentials.Value.Username,
                 credentials.Value.Password);
 
-            if (loaded is null)
+            if (loaded is not null)
             {
-                // Auto-recuperación: si ONVIF no respondió y el dispositivo NO fue reconocido
-                // como VIVOTEK legacy de antemano (manufacturer/model desconocidos o incompletos
-                // al momento del descubrimiento), probamos igual el CGI VIVOTEK antes de rendirnos.
-                // Esto cubre cámaras como la IP7122 agregadas manualmente por IP, sin depender
-                // de que el descubrimiento haya etiquetado bien el fabricante.
-                var legacyFallback = await _legacyWriter.GetNetworkConfigurationAsync(
-                    _deviceViewModel.Device,
-                    credentials.Value.Username,
-                    credentials.Value.Password);
-
-                if (legacyFallback is not null)
-                {
-                    ApplyLoadedConfiguration(legacyFallback, "CGI VIVOTEK (fallback tras fallo ONVIF)");
-                    return;
-                }
-
-                SetStatus("ALERTA: la cámara no devolvió información de red. Configure el acceso antes de administrar la red.", true);
+                _activeLegacyPath = null;
+                ApplyLoadedConfiguration(loaded, "ONVIF");
                 return;
             }
 
-            ApplyLoadedConfiguration(loaded, "ONVIF");
+            // Auto-recuperación: si ONVIF no respondió, probamos el escritor legacy
+            // correspondiente (si hay uno detectado) antes de rendirnos. Esto cubre
+            // cámaras agregadas manualmente por IP, sin depender de que el descubrimiento
+            // haya etiquetado bien el fabricante de antemano.
+            if (legacy is not null && await TryLoadLegacyAsync(legacy.Value, credentials.Value))
+                return;
+
+            SetStatus(legacy is null
+                ? $"ALERTA: la cámara no respondió a ONVIF y su fabricante ({(string.IsNullOrWhiteSpace(CameraManufacturer) ? "desconocido" : CameraManufacturer)}) no tiene un método de configuración de red implementado en esta versión. Soportados actualmente: ONVIF, VIVOTEK, DAHUA e HIKVISION."
+                : "ALERTA: la cámara no devolvió información de red. Configure el acceso antes de administrar la red.", true);
         }
         catch (Exception ex)
         {
             SetStatus($"ALERTA: error al consultar la configuración de red: {ex.Message}", true);
         }
+    }
+
+    /// <summary>
+    /// Intenta leer la red por un escritor legacy puntual, con el mismo mecanismo de
+    /// reintento con credenciales administrativas que antes solo existía para VIVOTEK.
+    /// Devuelve true y deja la configuración aplicada si tuvo éxito.
+    /// </summary>
+    private async Task<bool> TryLoadLegacyAsync(
+        (ILegacyCameraNetworkConfigurationService Writer, string VendorLabel) legacy,
+        (string Username, string Password) credentials)
+    {
+        var legacyLoaded = await legacy.Writer.GetNetworkConfigurationAsync(
+            _deviceViewModel.Device, credentials.Username, credentials.Password);
+
+        if (legacyLoaded is not null)
+        {
+            _activeLegacyPath = legacy;
+            ApplyLoadedConfiguration(legacyLoaded, $"CGI/ISAPI {legacy.VendorLabel} legacy");
+            return true;
+        }
+
+        // Si se usó una credencial por defecto vacía (solo aplica a VIVOTEK, ver
+        // GetCredentialsAsync), recién ahora se solicita una credencial administrativa.
+        if (credentials.Username.Equals("root", StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrEmpty(credentials.Password)
+            && legacy.VendorLabel == "VIVOTEK")
+        {
+            SetStatus($"La administración {legacy.VendorLabel} solicita autenticación. Ingrese las credenciales actuales para continuar.");
+            var authenticated = await RequestAdministrativeCredentialsAsync("root");
+            if (authenticated is not null)
+            {
+                legacyLoaded = await legacy.Writer.GetNetworkConfigurationAsync(
+                    _deviceViewModel.Device, authenticated.Value.Username, authenticated.Value.Password);
+
+                if (legacyLoaded is not null)
+                {
+                    _activeLegacyPath = legacy;
+                    ApplyLoadedConfiguration(legacyLoaded, $"CGI/ISAPI {legacy.VendorLabel} autenticado");
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     [RelayCommand]
@@ -267,6 +322,9 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
             return;
         }
 
+        // FIX: esta revalidación se había perdido en una reescritura previa del método.
+        // Es la misma validación de ValidateNetwork() (IP/prefijo/gateway bien formados)
+        // y debe correr siempre antes de mostrar el diálogo de confirmación de cambios.
         ValidateNetwork();
         if (IsStatusError)
             return;
@@ -306,61 +364,22 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
         try
         {
             IsApplying = true;
-            SetStatus(IsLegacyVivotek
-                ? "Aplicando configuración mediante CGI VIVOTEK... no cierre esta ventana."
+
+            // Se reutiliza el mismo camino que funcionó al leer (_activeLegacyPath), en vez
+            // de volver a detectar el fabricante: si LoadAsync leyó por ONVIF, se escribe por
+            // ONVIF; si leyó por un CGI/ISAPI legacy puntual, se escribe por ese mismo.
+            var legacy = _activeLegacyPath;
+            SetStatus(legacy is not null
+                ? $"Aplicando configuración mediante {legacy.Value.VendorLabel} legacy... no cierre esta ventana."
                 : "Aplicando configuración de red mediante ONVIF... no cierre esta ventana.");
 
-            var credentials = await GetCredentialsAsync();
+            var credentials = await GetCredentialsAsync(legacy?.VendorLabel);
             if (credentials is null)
                 return;
 
-            if (IsLegacyVivotek)
+            if (legacy is not null)
             {
-                int? prefix = null;
-                if (!UseDhcp && int.TryParse(PrefixLength.Trim(), out var prefixValue))
-                    prefix = prefixValue;
-
-                var legacyResult = await _legacyWriter.SetNetworkAsync(
-                    _deviceViewModel.Device,
-                    credentials.Value.Username,
-                    credentials.Value.Password,
-                    UseDhcp,
-                    UseDhcp ? null : Ipv4Address.Trim(),
-                    prefix,
-                    string.IsNullOrWhiteSpace(GatewayAddress) ? null : GatewayAddress.Trim());
-
-                if (!legacyResult.Succeeded && legacyResult.Message.Contains("HTTP 401", StringComparison.OrdinalIgnoreCase)
-                    && credentials.Value.Username.Equals("root", StringComparison.OrdinalIgnoreCase)
-                    && string.IsNullOrEmpty(credentials.Value.Password))
-                {
-                    SetStatus("La cámara exige autenticación administrativa. Ingrese las credenciales actuales para aplicar la red.");
-                    var authenticated = await RequestAdministrativeCredentialsAsync();
-                    if (authenticated is not null)
-                    {
-                        legacyResult = await _legacyWriter.SetNetworkAsync(
-                            _deviceViewModel.Device,
-                            authenticated.Value.Username,
-                            authenticated.Value.Password,
-                            UseDhcp,
-                            UseDhcp ? null : Ipv4Address.Trim(),
-                            prefix,
-                            string.IsNullOrWhiteSpace(GatewayAddress) ? null : GatewayAddress.Trim());
-                    }
-                }
-
-                if (!legacyResult.Succeeded)
-                {
-                    SetStatus($"ALERTA: el CGI VIVOTEK rechazó el cambio. Motivo: {legacyResult.Message}", true);
-                    return;
-                }
-
-                if (!UseDhcp && !string.IsNullOrWhiteSpace(Ipv4Address))
-                    _deviceViewModel.IpAddress = Ipv4Address.Trim();
-
-                HasUnsavedChanges = false;
-                SetStatus(legacyResult.RebootNeeded
-                    ? "OK: VIVOTEK aceptó la nueva red. La cámara puede reiniciar o quedar momentáneamente inaccesible en la IP anterior."
-                    : "OK: VIVOTEK aceptó los cambios de red mediante CGI.");
+                await ApplyLegacyAsync(legacy.Value, credentials.Value);
                 return;
             }
 
@@ -412,12 +431,68 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Escribe la red usando un escritor legacy puntual (VIVOTEK/DAHUA/HIKVISION), con el
+    /// mismo reintento con credenciales administrativas que antes solo existía para VIVOTEK.
+    /// </summary>
+    private async Task ApplyLegacyAsync(
+        (ILegacyCameraNetworkConfigurationService Writer, string VendorLabel) legacy,
+        (string Username, string Password) credentials)
+    {
+        int? prefix = null;
+        if (!UseDhcp && int.TryParse(PrefixLength.Trim(), out var prefixValue))
+            prefix = prefixValue;
+
+        var legacyResult = await legacy.Writer.SetNetworkAsync(
+            _deviceViewModel.Device,
+            credentials.Username,
+            credentials.Password,
+            UseDhcp,
+            UseDhcp ? null : Ipv4Address.Trim(),
+            prefix,
+            string.IsNullOrWhiteSpace(GatewayAddress) ? null : GatewayAddress.Trim());
+
+        if (!legacyResult.Succeeded && legacyResult.Message.Contains("HTTP 401", StringComparison.OrdinalIgnoreCase)
+            && credentials.Username.Equals("root", StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrEmpty(credentials.Password)
+            && legacy.VendorLabel == "VIVOTEK")
+        {
+            SetStatus($"La cámara exige autenticación administrativa. Ingrese las credenciales actuales para aplicar la red.");
+            var authenticated = await RequestAdministrativeCredentialsAsync("root");
+            if (authenticated is not null)
+            {
+                legacyResult = await legacy.Writer.SetNetworkAsync(
+                    _deviceViewModel.Device,
+                    authenticated.Value.Username,
+                    authenticated.Value.Password,
+                    UseDhcp,
+                    UseDhcp ? null : Ipv4Address.Trim(),
+                    prefix,
+                    string.IsNullOrWhiteSpace(GatewayAddress) ? null : GatewayAddress.Trim());
+            }
+        }
+
+        if (!legacyResult.Succeeded)
+        {
+            SetStatus($"ALERTA: {legacy.VendorLabel} rechazó el cambio. Motivo: {legacyResult.Message}", true);
+            return;
+        }
+
+        if (!UseDhcp && !string.IsNullOrWhiteSpace(Ipv4Address))
+            _deviceViewModel.IpAddress = Ipv4Address.Trim();
+
+        HasUnsavedChanges = false;
+        SetStatus(legacyResult.RebootNeeded
+            ? $"OK: {legacy.VendorLabel} aceptó la nueva red. La cámara puede reiniciar o quedar momentáneamente inaccesible en la IP anterior."
+            : $"OK: {legacy.VendorLabel} aceptó los cambios de red.");
+    }
+
     [RelayCommand]
     private void Close() => RequestClose?.Invoke(this, EventArgs.Empty);
 
-    private async Task<(string Username, string Password)?> RequestAdministrativeCredentialsAsync()
+    private async Task<(string Username, string Password)?> RequestAdministrativeCredentialsAsync(string defaultUsername)
     {
-        var dialog = new CredentialsDialog("root")
+        var dialog = new CredentialsDialog(defaultUsername)
         {
             Owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(window => window.IsActive)
                      ?? Application.Current?.MainWindow
@@ -435,7 +510,7 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
         return (dialog.Username.Trim(), dialog.Password ?? string.Empty);
     }
 
-    private async Task<(string Username, string Password)?> GetCredentialsAsync()
+    private async Task<(string Username, string Password)?> GetCredentialsAsync(string? legacyVendorLabel)
     {
         if (_deviceViewModel.CameraId is int cameraId)
         {
@@ -448,9 +523,10 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
             }
         }
 
-        // IP7133/IP7134 puede operar de fábrica con root sin contraseña. En este caso
-        // se prueba el acceso administrativo legacy sin exigir que primero se guarde la credencial.
-        if (IsLegacyVivotek)
+        // Solo la familia VIVOTEK IP71xx puede operar de fábrica con "root" sin contraseña.
+        // DAHUA e HIKVISION exigen credencial configurada desde el primer arranque, así que
+        // para esos dos no tiene sentido probar una credencial vacía: se pide directamente.
+        if (legacyVendorLabel == "VIVOTEK")
             return ("root", string.Empty);
 
         SetStatus("ALERTA: no hay credenciales guardadas para esta cámara. Configure el acceso antes de administrar la red.", true);

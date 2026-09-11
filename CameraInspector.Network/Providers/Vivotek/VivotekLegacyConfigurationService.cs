@@ -1,14 +1,15 @@
 using System.Net;
 using System.Net.Http.Headers;
+using CameraInspector.Core.Interfaces;
 using CameraInspector.Core.Models;
 
 namespace CameraInspector.Network.Providers.Vivotek;
 
 /// <summary>
 /// Compatibilidad de administración para cámaras VIVOTEK legacy que no exponen
-/// correctamente la configuración por ONVIF, como la familia IP7133/IP7134.
+/// correctamente la configuración por ONVIF, como la familia IP71xx (7122/7133/7134...).
 /// </summary>
-public sealed class VivotekLegacyConfigurationService
+public sealed class VivotekLegacyConfigurationService : ILegacyCameraNetworkConfigurationService
 {
     private readonly TimeSpan _timeout = TimeSpan.FromSeconds(10);
 
