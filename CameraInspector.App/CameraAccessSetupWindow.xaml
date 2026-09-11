@@ -25,8 +25,8 @@
             <TextBlock Margin="0,6,0,0"
                        TextWrapping="Wrap"
                        Foreground="{StaticResource TextDimBrush}">
-                <Run Text="Primero se intentará cambiar el acceso de la cámara sin pedir una contraseña actual. " />
-                <Run Text="Esto permite configurar cámaras VIVOTEK que todavía no tienen contraseña."
+                <Run Text="Primero se intentará el acceso de fábrica de la cámara sin pedir una contraseña actual. " />
+                <Run Text="{Binding IntroHelperText, Mode=OneWay}"
                      Foreground="{StaticResource WarnBrush}"/>
             </TextBlock>
 
@@ -60,18 +60,18 @@
                     BorderThickness="1">
                 <TextBlock TextWrapping="Wrap">
                     <Run Text="MODO INICIAL: " FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
-                    <Run Text="no se solicita la contraseña actual. Camera Inspector probará primero con root sin contraseña. Si la cámara rechaza el acceso, se solicitarán las credenciales actuales para poder editar el perfil existente." Foreground="{StaticResource TextDimBrush}"/>
+                    <Run Text="{Binding ModeHelperText, Mode=OneWay}" Foreground="{StaticResource TextDimBrush}"/>
                 </TextBlock>
             </Border>
 
             <StackPanel Margin="0,0,0,11">
-                <TextBlock Text="NUEVA CONTRASEÑA ROOT"
+                <TextBlock Text="{Binding NewPasswordLabel, Mode=OneWay}"
                            FontWeight="Bold"
                            Foreground="{StaticResource TextDimBrush}"/>
                 <PasswordBox x:Name="NewPasswordBox"
                              Margin="0,6,0,0"
                              MinHeight="34"
-                             ToolTip="Mínimo 4 caracteres."/>
+                             ToolTip="Mínimo 4 caracteres para VIVOTEK/DAHUA, 8 para HIKVISION."/>
             </StackPanel>
 
             <StackPanel Margin="0,0,0,14">

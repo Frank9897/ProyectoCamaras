@@ -195,7 +195,7 @@ public partial class IpCameraVideoWindow
             Height = 34,
             Margin = new Thickness(0, 0, 5, 5),
             Style = (Style)FindResource("PrimaryButton"),
-            ToolTip = "Configura en la propia cámara VIVOTEK el acceso administrativo de root."
+            ToolTip = "Configura en la propia cámara (VIVOTEK/DAHUA/HIKVISION) el acceso administrativo inicial."
         };
         _cameraAccessButton.Click += CameraAccessButton_Click;
         panel.Children.Add(_cameraAccessButton);
@@ -207,7 +207,7 @@ public partial class IpCameraVideoWindow
             return;
 
         var device = _viewModel.SelectedDevice?.Device;
-        var supported = device is not null && IsLegacyVivotek(device);
+        var supported = device is not null && IsSupportedLegacyVendor(device);
         var hasProfile = _viewModel.HasSavedCredentials;
 
         if (!supported)
@@ -221,8 +221,8 @@ public partial class IpCameraVideoWindow
             ? "EDITAR PERFIL DE ACCESO"
             : "CONFIGURAR ACCESO";
         _cameraAccessButton.ToolTip = hasProfile
-            ? "Edita la cuenta de acceso de la cámara VIVOTEK y cambia su contraseña root."
-            : "Configura por primera vez el acceso administrativo de la cámara VIVOTEK.";
+            ? "Edita la cuenta de acceso de la cámara y cambia su contraseña administrativa."
+            : "Configura por primera vez el acceso administrativo de la cámara.";
         _cameraAccessButton.Visibility = Visibility.Visible;
         _cameraAccessButton.IsEnabled = true;
     }
@@ -233,10 +233,11 @@ public partial class IpCameraVideoWindow
         RefreshCameraAccessButton();
 
         var device = _viewModel.SelectedDevice?.Device;
-        var supported = device is not null && IsLegacyVivotek(device);
+        var supported = device is not null && IsSupportedLegacyVendor(device);
         var hasProfile = _viewModel.HasSavedCredentials;
 
-        // Sin perfil local guardado, una VIVOTEK legacy muestra únicamente CONFIGURAR ACCESO.
+        // Sin perfil local guardado, una cámara legacy soportada (VIVOTEK/DAHUA/HIKVISION)
+        // muestra únicamente CONFIGURAR ACCESO.
         // Una vez creado, ACCESO administra las credenciales guardadas y EDITAR PERFIL DE ACCESO
         // modifica el acceso administrativo de la propia cámara.
         if (_credentialsButton is not null && supported && !hasProfile)
@@ -246,16 +247,19 @@ public partial class IpCameraVideoWindow
         }
     }
 
-    private static bool IsLegacyVivotek(CameraInspector.Core.Models.DiscoveredDevice device)
+    // GENERALIZADO: CameraAccessSetupWindow ahora sirve para VIVOTEK, DAHUA e HIKVISION
+    // (antes solo VIVOTEK), así que el botón debe aparecer para los tres, no solo el primero.
+    private static bool IsSupportedLegacyVendor(CameraInspector.Core.Models.DiscoveredDevice device)
     {
         var manufacturer = device.Manufacturer ?? string.Empty;
         var model = device.Model ?? string.Empty;
 
-        // Fix: "IP71" cubre toda la familia fija VIVOTEK IP71xx (7122, 7123, 7133, 7134...),
-        // no solo los dos modelos que estaban hardcodeados. Antes una IP7122 caía fuera de
-        // esta detección y la ventana de video intentaba autenticar como si fuera ONVIF.
         return manufacturer.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase)
-               || model.Contains("IP71", StringComparison.OrdinalIgnoreCase);
+               || model.Contains("IP71", StringComparison.OrdinalIgnoreCase)
+               || manufacturer.Contains("Dahua", StringComparison.OrdinalIgnoreCase)
+               || manufacturer.Contains("Amcrest", StringComparison.OrdinalIgnoreCase)
+               || manufacturer.Contains("Hikvision", StringComparison.OrdinalIgnoreCase)
+               || model.StartsWith("DS-", StringComparison.OrdinalIgnoreCase);
     }
 
     private void DetachAuthenticationHandlers()

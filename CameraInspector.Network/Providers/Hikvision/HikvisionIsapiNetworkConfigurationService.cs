@@ -16,6 +16,123 @@ public sealed class HikvisionIsapiNetworkConfigurationService : ILegacyCameraNet
 {
     private static readonly XNamespace Ns = "http://www.hikvision.com/ver20/XMLSchema";
 
+    public string DefaultAdminUsername => "admin";
+
+    public async Task<OnvifNetworkChangeResult> SetHostnameAsync(
+        DiscoveredDevice device,
+        string username,
+        string password,
+        string hostname,
+        CancellationToken cancellationToken = default)
+    {
+        hostname = hostname.Trim();
+        if (string.IsNullOrWhiteSpace(hostname) || hostname.Length > 40)
+            return Failure("El nombre de cámara no es válido para este firmware HIKVISION.");
+
+        var endpoint = BuildHttpEndpoint(device, "/ISAPI/System/deviceInfo");
+        var getResult = await SendGetAsync(endpoint, username, password, cancellationToken);
+        if (!getResult.Success || string.IsNullOrWhiteSpace(getResult.Body))
+            return Failure("No se pudo leer /ISAPI/System/deviceInfo antes de cambiar el nombre.");
+
+        XDocument document;
+        try { document = XDocument.Parse(getResult.Body); }
+        catch { return Failure("La respuesta de ISAPI/System/deviceInfo no es un XML válido."); }
+
+        var root = document.Root;
+        if (root is null)
+            return Failure("La cámara no expone /ISAPI/System/deviceInfo esperado.");
+
+        SetOrAdd(root, "deviceName", hostname);
+
+        var result = await SendPutAsync(endpoint, root.ToString(SaveOptions.DisableFormatting), username, password, cancellationToken);
+        return result.Success
+            ? new OnvifNetworkChangeResult { Succeeded = true, Message = "Nombre de cámara actualizado mediante ISAPI (deviceInfo)." }
+            : Failure(result.Message);
+    }
+
+    public async Task<OnvifNetworkChangeResult> RebootAsync(
+        DiscoveredDevice device,
+        string username,
+        string password,
+        CancellationToken cancellationToken = default)
+    {
+        var endpoint = BuildHttpEndpoint(device, "/ISAPI/System/reboot");
+        var result = await SendPutAsync(endpoint, string.Empty, username, password, cancellationToken);
+        return result.Success
+            ? new OnvifNetworkChangeResult { Succeeded = true, Message = "La cámara aceptó la orden de reinicio mediante ISAPI." }
+            : Failure(result.Message);
+    }
+
+    public async Task<OnvifNetworkChangeResult> FactoryResetAsync(
+        DiscoveredDevice device,
+        string username,
+        string password,
+        CancellationToken cancellationToken = default)
+    {
+        // "basic" preserva red/usuarios en la mayoría de firmwares HIKVISION;
+        // "full"/"restore_default" borra todo, por eso no se ofrece acá.
+        var endpoint = BuildHttpEndpoint(device, "/ISAPI/System/factoryReset?mode=basic");
+        var result = await SendPutAsync(endpoint, string.Empty, username, password, cancellationToken);
+        return result.Success
+            ? new OnvifNetworkChangeResult { Succeeded = true, Message = "La cámara aceptó el restablecimiento básico mediante ISAPI." }
+            : Failure(result.Message);
+    }
+
+    public async Task<OnvifNetworkChangeResult> SetAdminPasswordAsync(
+        DiscoveredDevice device,
+        string currentPassword,
+        string newPassword,
+        CancellationToken cancellationToken = default)
+    {
+        if (newPassword.Length < 8)
+            return Failure("HIKVISION exige contraseñas de al menos 8 caracteres, combinando letras y números.");
+
+        // A diferencia de VIVOTEK/DAHUA, una cámara HIKVISION de fábrica no tiene
+        // cuenta "admin" utilizable hasta ACTIVARSE: el primer acceso no es una
+        // credencial en blanco, sino un endpoint distinto que crea la cuenta admin
+        // con la contraseña elegida. Por eso, si currentPassword viene vacío,
+        // se intenta activar en vez de "loguearse con blanco".
+        if (string.IsNullOrEmpty(currentPassword))
+        {
+            var activateEndpoint = BuildHttpEndpoint(device, "/ISAPI/Security/activate");
+            var activateBody = $"<ActivateReq><password>{System.Security.SecurityElement.Escape(newPassword)}</password></ActivateReq>";
+            var activateResult = await SendPutAsync(activateEndpoint, activateBody, string.Empty, string.Empty, cancellationToken);
+
+            if (activateResult.Success)
+                return new OnvifNetworkChangeResult { Succeeded = true, Message = "Cámara HIKVISION activada con la nueva contraseña de admin." };
+
+            // Si ISAPI/Security/activate no existe o la cámara ya está activada, HTTP 401
+            // es la señal más común: se sigue al camino normal de cambio de contraseña.
+            if (!activateResult.Message.Contains("HTTP 401", StringComparison.OrdinalIgnoreCase))
+                return Failure($"No se pudo activar la cámara HIKVISION: {activateResult.Message}");
+        }
+
+        var usersEndpoint = BuildHttpEndpoint(device, "/ISAPI/Security/users/1");
+        var body = $"""
+            <User>
+              <id>1</id>
+              <userName>admin</userName>
+              <password>{System.Security.SecurityElement.Escape(newPassword)}</password>
+            </User>
+            """;
+        var result = await SendPutAsync(usersEndpoint, body, "admin", currentPassword, cancellationToken);
+
+        return result.Success
+            ? new OnvifNetworkChangeResult { Succeeded = true, Message = "Contraseña de admin actualizada mediante ISAPI (Security/users/1)." }
+            : Failure(result.Message);
+    }
+
+    private static void SetOrAdd(XElement parent, string localName, string value)
+    {
+        var node = parent.Element(Ns + localName);
+        if (node is null)
+        {
+            parent.Add(new XElement(Ns + localName, value));
+            return;
+        }
+        node.Value = value;
+    }
+
     public async Task<OnvifNetworkConfiguration?> GetNetworkConfigurationAsync(
         DiscoveredDevice device,
         string username,
@@ -129,17 +246,6 @@ public sealed class HikvisionIsapiNetworkConfigurationService : ILegacyCameraNet
             RebootNeeded = !useDhcp && !string.Equals(device.IpAddress, ipv4Address, StringComparison.OrdinalIgnoreCase),
             Message = "Configuración de red aceptada por ISAPI (HIKVISION)."
         };
-    }
-
-    private static void SetOrAdd(XElement parent, string localName, string value)
-    {
-        var node = parent.Element(Ns + localName);
-        if (node is null)
-        {
-            parent.Add(new XElement(Ns + localName, value));
-            return;
-        }
-        node.Value = value;
     }
 
     private async Task<(XElement? InterfaceXml, string? Id)> GetInterfaceDocumentAsync(

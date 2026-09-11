@@ -13,6 +13,84 @@ public sealed class DahuaLegacyConfigurationService : ILegacyCameraNetworkConfig
 {
     private readonly TimeSpan _timeout = TimeSpan.FromSeconds(10);
 
+    public string DefaultAdminUsername => "admin";
+
+    public async Task<OnvifNetworkChangeResult> SetHostnameAsync(
+        DiscoveredDevice device,
+        string username,
+        string password,
+        string hostname,
+        CancellationToken cancellationToken = default)
+    {
+        hostname = hostname.Trim();
+        if (string.IsNullOrWhiteSpace(hostname) || hostname.Length > 40)
+            return Failure("El nombre de cámara no es válido para este firmware DAHUA.");
+
+        var endpoint = BuildHttpEndpoint(
+            device,
+            $"/cgi-bin/configManager.cgi?action=setConfig&NetCommon.HostName={Uri.EscapeDataString(hostname)}");
+        var result = await SendAsync(endpoint, username, password, cancellationToken);
+        return result.Success
+            ? new OnvifNetworkChangeResult { Succeeded = true, Message = "Nombre de cámara actualizado mediante CGI DAHUA." }
+            : Failure(result.Message);
+    }
+
+    public async Task<OnvifNetworkChangeResult> RebootAsync(
+        DiscoveredDevice device,
+        string username,
+        string password,
+        CancellationToken cancellationToken = default)
+    {
+        var endpoint = BuildHttpEndpoint(device, "/cgi-bin/magicBox.cgi?action=reboot");
+        var result = await SendAsync(endpoint, username, password, cancellationToken);
+        if (result.Success)
+            return new OnvifNetworkChangeResult { Succeeded = true, Message = "La cámara/DVR aceptó la orden de reinicio mediante CGI DAHUA (magicBox)." };
+
+        return Failure(result.Message);
+    }
+
+    public async Task<OnvifNetworkChangeResult> FactoryResetAsync(
+        DiscoveredDevice device,
+        string username,
+        string password,
+        CancellationToken cancellationToken = default)
+    {
+        // NOTA: "restoreConfig" es el nombre de acción más extendido entre firmwares
+        // DAHUA y clones OEM, pero algunos exigen parámetros adicionales
+        // (Simple=true/false) o directamente no lo exponen por CGI. Si la cámara
+        // rechaza esta orden, el mensaje de error queda visible tal cual para el
+        // usuario en vez de fallar en silencio.
+        var endpoint = BuildHttpEndpoint(device, "/cgi-bin/magicBox.cgi?action=restoreConfig");
+        var result = await SendAsync(endpoint, username, password, cancellationToken);
+        return result.Success
+            ? new OnvifNetworkChangeResult { Succeeded = true, Message = "La cámara/DVR aceptó el restablecimiento mediante CGI DAHUA (magicBox)." }
+            : Failure(result.Message);
+    }
+
+    public async Task<OnvifNetworkChangeResult> SetAdminPasswordAsync(
+        DiscoveredDevice device,
+        string currentPassword,
+        string newPassword,
+        CancellationToken cancellationToken = default)
+    {
+        if (newPassword.Length < 4)
+            return Failure("La nueva contraseña debe tener al menos 4 caracteres.");
+
+        // NOTA: a diferencia de VIVOTEK, muchos equipos DAHUA modernos exigen
+        // "activación" con contraseña cifrada mediante RSA antes del primer uso
+        // (protocolo /RPC2), que esta versión no implementa. Este método cubre el
+        // caso más simple/extendido en equipos y clones OEM: cambio de contraseña
+        // por CGI directo con la cuenta ya activa (o de fábrica sin contraseña).
+        var endpoint = BuildHttpEndpoint(
+            device,
+            $"/cgi-bin/userManager.cgi?action=modifyPassword&name=admin&pwd={Uri.EscapeDataString(newPassword)}&pwdOld={Uri.EscapeDataString(currentPassword)}");
+        var result = await SendAsync(endpoint, "admin", currentPassword, cancellationToken);
+
+        return result.Success
+            ? new OnvifNetworkChangeResult { Succeeded = true, Message = "La contraseña del usuario admin fue aceptada por el CGI DAHUA." }
+            : Failure($"{result.Message} (si el equipo exige activación inicial cifrada, esta versión todavía no la soporta; configure el acceso desde la utilidad oficial DAHUA una vez y luego use esta app para el resto).");
+    }
+
     public async Task<OnvifNetworkConfiguration?> GetNetworkConfigurationAsync(
         DiscoveredDevice device,
         string username,

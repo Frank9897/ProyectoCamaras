@@ -13,6 +13,17 @@ public sealed class VivotekLegacyConfigurationService : ILegacyCameraNetworkConf
 {
     private readonly TimeSpan _timeout = TimeSpan.FromSeconds(10);
 
+    public string DefaultAdminUsername => "root";
+
+    /// <summary>Adaptador genérico sobre SetRootPasswordAsync (el usuario administrativo
+    /// de fábrica en VIVOTEK siempre es "root", así que no hace falta parametrizarlo).</summary>
+    public Task<OnvifNetworkChangeResult> SetAdminPasswordAsync(
+        DiscoveredDevice device,
+        string currentPassword,
+        string newPassword,
+        CancellationToken cancellationToken = default)
+        => SetRootPasswordAsync(device, currentPassword, newPassword, cancellationToken);
+
     public async Task<OnvifNetworkConfiguration?> GetNetworkConfigurationAsync(
         DiscoveredDevice device,
         string username,

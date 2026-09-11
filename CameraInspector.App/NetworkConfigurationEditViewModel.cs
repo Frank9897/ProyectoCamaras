@@ -142,14 +142,6 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
         return null;
     }
 
-    // Usado por NetworkConfigurationEditViewModel.Admin.cs (nombre de host, reinicio,
-    // restablecimiento de fábrica): esas tres operaciones solo están implementadas para
-    // VIVOTEK legacy (VivotekLegacyConfigurationService.SetHostnameAsync/RebootAsync/
-    // FactoryResetAsync). DAHUA e HIKVISION todavía no tienen esos métodos: para esos
-    // fabricantes estas acciones puntuales siguen yendo por ONVIF (con lo cual fallan
-    // si la cámara no lo soporta; ver aviso de estado en cada comando).
-    private bool IsLegacyVivotek => DetectLegacyWriter()?.VendorLabel == "VIVOTEK";
-
     private void ApplyLoadedConfiguration(OnvifNetworkConfiguration loaded, string source)
     {
         Configuration = loaded;
@@ -184,7 +176,7 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
         try
         {
             var legacy = DetectLegacyWriter();
-            var credentials = await GetCredentialsAsync(legacy?.VendorLabel);
+            var credentials = await GetCredentialsAsync(legacy);
             if (credentials is null)
                 return;
 
@@ -381,7 +373,7 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
                 ? $"Aplicando configuración mediante {legacy.Value.VendorLabel} legacy... no cierre esta ventana."
                 : "Aplicando configuración de red mediante ONVIF... no cierre esta ventana.");
 
-            var credentials = await GetCredentialsAsync(legacy?.VendorLabel);
+            var credentials = await GetCredentialsAsync(legacy);
             if (credentials is null)
                 return;
 
@@ -518,7 +510,8 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
         return (dialog.Username.Trim(), dialog.Password ?? string.Empty);
     }
 
-    private async Task<(string Username, string Password)?> GetCredentialsAsync(string? legacyVendorLabel)
+    private async Task<(string Username, string Password)?> GetCredentialsAsync(
+        (ILegacyCameraNetworkConfigurationService Writer, string VendorLabel)? legacy)
     {
         if (_deviceViewModel.CameraId is int cameraId)
         {
@@ -531,11 +524,15 @@ public sealed partial class NetworkConfigurationEditViewModel : ObservableObject
             }
         }
 
-        // Solo la familia VIVOTEK IP71xx puede operar de fábrica con "root" sin contraseña.
-        // DAHUA e HIKVISION exigen credencial configurada desde el primer arranque, así que
-        // para esos dos no tiene sentido probar una credencial vacía: se pide directamente.
-        if (legacyVendorLabel == "VIVOTEK")
-            return ("root", string.Empty);
+        // Sin credenciales guardadas: se prueba el usuario administrativo por defecto
+        // de fábrica del fabricante detectado (DefaultAdminUsername) con contraseña
+        // vacía. Es un intento barato y sin riesgo: si la cámara lo rechaza (equipos
+        // DAHUA/HIKVISION suelen exigir contraseña desde el primer arranque), el flujo
+        // normal de reintento con credenciales administrativas se activa solo. Esto es,
+        // además, el "paso libre" que permite configurar por primera vez una cámara que
+        // todavía no tiene credenciales propias, incluyendo cargarlas por primera vez.
+        if (legacy is not null)
+            return (legacy.Value.Writer.DefaultAdminUsername, string.Empty);
 
         SetStatus("ALERTA: no hay credenciales guardadas para esta cámara. Configure el acceso antes de administrar la red.", true);
         return null;
