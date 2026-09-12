@@ -67,20 +67,31 @@ public partial class MainWindow
         resultGrid.Columns.Clear();
         resultGrid.GridLinesVisibility = DataGridGridLinesVisibility.Horizontal;
         resultGrid.AlternatingRowBackground = (Brush)Application.Current.FindResource("Panel2Brush");
-        resultGrid.Columns.Add(new DataGridTextColumn { Header = "PRUEBA", Binding = new Binding(nameof(DiagnosticResult.TestName)), Width = 145 });
+        resultGrid.Columns.Add(new DataGridTextColumn { Header = "PRUEBA", Binding = new Binding(nameof(DiagnosticResult.TestName)), Width = 130 });
         resultGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "RESULTADO",
             Binding = new Binding(nameof(DiagnosticResult.Success)) { Converter = new ResultTextConverter() },
-            Width = 105
+            Width = 95
         });
+        // ETAPA 1 (plan de diagnóstico): columna de severidad, para que de un vistazo se
+        // distinga "bloqueante" (Crítico) de "revisar cuando se pueda" (Advertencia) en
+        // vez de un simple OK/ALERTA binario.
         resultGrid.Columns.Add(new DataGridTextColumn
         {
-            Header = "TIEMPO",
-            Binding = new Binding(nameof(DiagnosticResult.Duration)) { StringFormat = "{0:mm\\:ss\\.fff}" },
-            Width = 105
+            Header = "SEVERIDAD",
+            Binding = new Binding(nameof(DiagnosticResult.Severity)) { Converter = new SeverityTextConverter() },
+            Width = 100
         });
+        resultGrid.Columns.Add(new DataGridTextColumn { Header = "TIEMPO", Binding = new Binding(nameof(DiagnosticResult.Duration)) { StringFormat = "{0:mm\\:ss\\.fff}" }, Width = 90 });
         resultGrid.Columns.Add(new DataGridTextColumn { Header = "DETALLE", Binding = new Binding(nameof(DiagnosticResult.Message)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
+        // Columna nueva: qué hacer, en lenguaje de service, no el mensaje técnico crudo.
+        resultGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "RECOMENDACIÓN",
+            Binding = new Binding(nameof(DiagnosticResult.RecommendedAction)) { TargetNullValue = "—" },
+            Width = new DataGridLength(1.2, DataGridLengthUnitType.Star)
+        });
 
         resultGrid.LoadingRow += (_, args) =>
         {
@@ -88,9 +99,14 @@ public partial class MainWindow
                 return;
             args.Row.Foreground = result.NotSupported
                 ? (Brush)Application.Current.FindResource("TextDimBrush")
-                : result.Success
-                    ? (Brush)Application.Current.FindResource("AccentBrush")
-                    : (Brush)Application.Current.FindResource("ErrBrush");
+                : result.Severity switch
+                {
+                    DiagnosticSeverity.Critico => (Brush)Application.Current.FindResource("ErrBrush"),
+                    DiagnosticSeverity.Advertencia => (Brush)Application.Current.FindResource("WarnBrush"),
+                    _ => result.Success
+                        ? (Brush)Application.Current.FindResource("AccentBrush")
+                        : (Brush)Application.Current.FindResource("TextDimBrush")
+                };
         };
 
         var runButton = grid.Children.OfType<Button>().FirstOrDefault();
@@ -154,7 +170,10 @@ public partial class MainWindow
         var footer = grid.Children.OfType<TextBlock>().FirstOrDefault();
         if (footer is not null)
         {
-            footer.Text = "Diagnóstico sin credenciales: red, puertos, RTSP, ONVIF, Media y salud. Las funciones autenticadas informan ALERTA cuando requieren acceso.";
+            // ETAPA 1 (plan de diagnóstico): antes era un texto fijo; ahora muestra el
+            // resumen real "X/Y pruebas correctas" con desglose por severidad, actualizado
+            // por MainViewModel tras cada corrida (ver DiagnosticsSummaryText).
+            footer.SetBinding(TextBlock.TextProperty, new Binding(nameof(MainViewModel.DiagnosticsSummaryText)));
             footer.Foreground = (Brush)Application.Current.FindResource("TextDimBrush");
         }
     }
@@ -190,6 +209,22 @@ public partial class MainWindow
     {
         public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
             => value is bool ok && ok ? "OK" : "ALERTA";
+
+        public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+            => Binding.DoNothing;
+    }
+
+    private sealed class SeverityTextConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+            => value is DiagnosticSeverity severity
+                ? severity switch
+                {
+                    DiagnosticSeverity.Critico => "CRÍTICO",
+                    DiagnosticSeverity.Advertencia => "ADVERTENCIA",
+                    _ => "INFO"
+                }
+                : "INFO";
 
         public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
             => Binding.DoNothing;

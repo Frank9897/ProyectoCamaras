@@ -40,7 +40,7 @@ public sealed class CameraHealthService : ICameraHealthService
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(device.IpAddress))
-            return Result(CameraHealthState.NoResponse, false, false, false, null, null, "La cámara no tiene una dirección IP válida.");
+            return Result(CameraHealthState.Unsupported, false, false, false, null, null, "No aplica: el dispositivo no tiene una dirección IP válida para verificar.");
 
         var ports = await FindOpenPortsAsync(device.IpAddress, cancellationToken);
         if (ports.Count == 0)
@@ -76,7 +76,17 @@ public sealed class CameraHealthService : ICameraHealthService
             .OrderBy(item => item.Port)
             .FirstOrDefault();
         if (video.Result.VideoAvailable)
-            return Result(CameraHealthState.Healthy, true, true, false, video.Port, video.Result.Protocol, "Comunicación y vídeo disponibles.");
+        {
+            // Señal mixta: el video funciona, pero OTRO puerto del mismo equipo exige
+            // autenticación. No es un fallo (el video anda), pero tampoco es "todo sano":
+            // puede indicar credenciales vencidas para el resto de la administración, o
+            // un servicio adicional mal configurado. Se reporta como Degraded en vez de
+            // Healthy para que el técnico no lo pase por alto.
+            var mixedAuthElsewhere = results.Any(item => item.Port != video.Port && item.Result.AuthenticationRequired);
+            return mixedAuthElsewhere
+                ? Result(CameraHealthState.Degraded, true, true, true, video.Port, video.Result.Protocol, "Vídeo confirmado, pero otro servicio del dispositivo exige autenticación: revise si las credenciales guardadas siguen vigentes para toda la administración.")
+                : Result(CameraHealthState.Healthy, true, true, false, video.Port, video.Result.Protocol, "Comunicación y vídeo disponibles.");
+        }
 
         var auth = results
             .Where(item => item.Result.AuthenticationRequired)

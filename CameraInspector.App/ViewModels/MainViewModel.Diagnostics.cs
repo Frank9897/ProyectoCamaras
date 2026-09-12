@@ -1,4 +1,5 @@
 using CameraInspector.Core.Models;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 namespace CameraInspector.App.ViewModels;
@@ -11,6 +12,14 @@ namespace CameraInspector.App.ViewModels;
 public sealed partial class MainViewModel
 {
     private CancellationTokenSource? _diagnosticCancellation;
+
+    // ETAPA 1 (plan de diagnóstico): resumen persistente "X/Y pruebas exitosas" con
+    // desglose por severidad, en vez del texto fijo que había antes en el footer del
+    // panel de diagnóstico. StatusText sigue existiendo para la barra de estado general
+    // (transitoria); esta propiedad es específica del panel y no se pisa con otras acciones.
+    [ObservableProperty]
+    private string _diagnosticsSummaryText =
+        "Diagnóstico sin credenciales: red, puertos, RTSP, ONVIF, Media y salud. Ejecute la batería para ver el resumen.";
 
     [RelayCommand]
     private async Task RunQuickDiagnosticsAsync()
@@ -28,6 +37,7 @@ public sealed partial class MainViewModel
         _diagnosticCancellation = new CancellationTokenSource();
         IsDiagnosing = true;
         DiagnosticResults.Clear();
+        DiagnosticsSummaryText = "Ejecutando batería de pruebas...";
 
         var device = SelectedDevice.Device;
         var cameraId = SelectedDevice.CameraId;
@@ -55,6 +65,12 @@ public sealed partial class MainViewModel
             var supported = results.Count(x => !x.NotSupported);
             var successful = results.Count(x => x.Success);
             var failures = results.Count(x => !x.Success && !x.NotSupported);
+            var criticalCount = results.Count(x => x.Severity == DiagnosticSeverity.Critico);
+            var warningCount = results.Count(x => x.Severity == DiagnosticSeverity.Advertencia);
+
+            DiagnosticsSummaryText = criticalCount == 0 && warningCount == 0
+                ? $"{successful}/{supported} pruebas correctas. Sin hallazgos que revisar."
+                : $"{successful}/{supported} pruebas correctas · {criticalCount} crítica(s) · {warningCount} advertencia(s). Revise la columna RECOMENDACIÓN.";
 
             StatusText = failures == 0
                 ? $"Diagnóstico completo: {successful}/{supported} pruebas correctas."
@@ -63,10 +79,12 @@ public sealed partial class MainViewModel
         catch (OperationCanceledException)
         {
             StatusText = "Diagnóstico cancelado por el usuario.";
+            DiagnosticsSummaryText = "Diagnóstico cancelado antes de completarse.";
         }
         catch (Exception ex)
         {
             StatusText = $"ALERTA: error general de diagnóstico: {ex.Message}";
+            DiagnosticsSummaryText = $"ALERTA: no se pudo completar el diagnóstico: {ex.Message}";
         }
         finally
         {

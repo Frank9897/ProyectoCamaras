@@ -12,6 +12,14 @@ namespace CameraInspector.Network.Diagnostics;
 /// <summary>
 /// Implementación de la batería de diagnóstico profesional.
 /// Las pruebas independientes se ejecutan en paralelo para reducir el tiempo total.
+///
+/// ETAPA 1 del plan de diagnóstico (recomendaciones): cada resultado ahora incluye
+/// Severity (qué tan urgente es), Category (a qué área pertenece) y RecommendedAction
+/// (qué hacer, en lenguaje de service, no el mensaje técnico crudo). Las pruebas ONVIF
+/// además atenúan su severidad cuando el fabricante detectado es una legacy conocida
+/// (VIVOTEK/DAHUA/HIKVISION) que no expone ONVIF real: para esos casos, no responder a
+/// ONVIF es el comportamiento ESPERADO, no una falla, así que queda en Info en vez de
+/// Advertencia.
 /// </summary>
 public sealed class CameraDiagnosticService : ICameraDiagnosticService
 {
@@ -51,6 +59,25 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
     }
 
     /// <summary>
+    /// Detecta, por manufacturer/model, si el dispositivo es de un fabricante legacy
+    /// conocido (VIVOTEK/DAHUA/HIKVISION) que típicamente NO expone ONVIF real. Mismo
+    /// criterio que NetworkConfigurationEditViewModel.DetectLegacyWriter, duplicado acá
+    /// porque este proyecto (CameraInspector.Network) no depende de la capa de App.
+    /// </summary>
+    private static bool IsKnownLegacyVendor(DiscoveredDevice device)
+    {
+        var manufacturer = device.Manufacturer ?? string.Empty;
+        var model = device.Model ?? string.Empty;
+
+        return manufacturer.Contains("VIVOTEK", StringComparison.OrdinalIgnoreCase)
+               || model.Contains("IP71", StringComparison.OrdinalIgnoreCase)
+               || manufacturer.Contains("Dahua", StringComparison.OrdinalIgnoreCase)
+               || manufacturer.Contains("Amcrest", StringComparison.OrdinalIgnoreCase)
+               || manufacturer.Contains("Hikvision", StringComparison.OrdinalIgnoreCase)
+               || model.StartsWith("DS-", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Comprueba conectividad IP mediante ICMP.
     /// </summary>
     private static async Task<DiagnosticResult> TestPingAsync(
@@ -71,7 +98,10 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                     TestName = "Ping",
                     Success = false,
                     Duration = stopwatch.Elapsed,
-                    Message = $"La dirección IP '{ipAddress}' no es válida."
+                    Severity = DiagnosticSeverity.Critico,
+                    Category = DiagnosticCategory.Red,
+                    Message = $"La dirección IP '{ipAddress}' no es válida.",
+                    RecommendedAction = "Vuelva a escanear la red: la IP registrada para este dispositivo no tiene un formato válido."
                 };
             }
 
@@ -96,15 +126,21 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                 cancellationToken);
 
             stopwatch.Stop();
+            var success = reply.Status == IPStatus.Success;
 
             return new DiagnosticResult
             {
                 TestName = "Ping",
-                Success = reply.Status == IPStatus.Success,
+                Success = success,
                 Duration = stopwatch.Elapsed,
-                Message = reply.Status == IPStatus.Success
+                Severity = success ? DiagnosticSeverity.Info : DiagnosticSeverity.Critico,
+                Category = DiagnosticCategory.Red,
+                Message = success
                     ? $"Respuesta ICMP: {reply.RoundtripTime} ms"
-                    : $"Estado ICMP: {reply.Status}"
+                    : $"Estado ICMP: {reply.Status}",
+                RecommendedAction = success
+                    ? null
+                    : "Sin respuesta ICMP: verifique cableado/switch, que la cámara esté encendida, y que la IP no haya cambiado (vuelva a escanear la red antes de asumir que el equipo está caído)."
             };
         }
         catch (OperationCanceledException)
@@ -119,7 +155,10 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                 TestName = "Ping",
                 Success = false,
                 Duration = stopwatch.Elapsed,
-                Message = ex.Message
+                Severity = DiagnosticSeverity.Critico,
+                Category = DiagnosticCategory.Red,
+                Message = ex.Message,
+                RecommendedAction = "Error inesperado al hacer ping. Verifique que el adaptador de red del PC esté activo."
             };
         }
     }
@@ -154,9 +193,14 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                 TestName = "HTTP",
                 Success = true,
                 Duration = stopwatch.Elapsed,
+                Severity = authenticationRequired ? DiagnosticSeverity.Advertencia : DiagnosticSeverity.Info,
+                Category = authenticationRequired ? DiagnosticCategory.Autenticacion : DiagnosticCategory.Red,
                 Message = authenticationRequired
                     ? $"HTTP respondió {(int)response.StatusCode} ({response.StatusCode}) · autenticación requerida{serverText}"
-                    : $"HTTP respondió {(int)response.StatusCode} ({response.StatusCode}){serverText}"
+                    : $"HTTP respondió {(int)response.StatusCode} ({response.StatusCode}){serverText}",
+                RecommendedAction = authenticationRequired
+                    ? "El servicio web pide autenticación: verifique que las credenciales guardadas sigan vigentes en la cámara (pudo haber sido reconfigurada por otra persona)."
+                    : null
             };
         }
         catch (OperationCanceledException)
@@ -171,7 +215,10 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                 TestName = "HTTP",
                 Success = false,
                 Duration = stopwatch.Elapsed,
-                Message = ex.Message
+                Severity = DiagnosticSeverity.Advertencia,
+                Category = DiagnosticCategory.Red,
+                Message = ex.Message,
+                RecommendedAction = "No se pudo conectar al servicio web. Puede estar deshabilitado, en otro puerto, o el servicio HTTP de la cámara caído; si Ping funcionó, pruebe igual RTSP para video."
             };
         }
     }
@@ -197,7 +244,10 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                     TestName = "RTSP TCP",
                     Success = false,
                     Duration = stopwatch.Elapsed,
-                    Message = $"La dirección IP '{device.IpAddress}' no es válida."
+                    Severity = DiagnosticSeverity.Critico,
+                    Category = DiagnosticCategory.Video,
+                    Message = $"La dirección IP '{device.IpAddress}' no es válida.",
+                    RecommendedAction = "Vuelva a escanear la red: la IP registrada para este dispositivo no tiene un formato válido."
                 };
             }
 
@@ -210,9 +260,14 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                 TestName = "RTSP TCP",
                 Success = client.Connected,
                 Duration = stopwatch.Elapsed,
+                Severity = client.Connected ? DiagnosticSeverity.Info : DiagnosticSeverity.Critico,
+                Category = DiagnosticCategory.Video,
                 Message = client.Connected
                     ? $"Puerto TCP {port} accesible"
-                    : $"Puerto TCP {port} no conectado"
+                    : $"Puerto TCP {port} no conectado",
+                RecommendedAction = client.Connected
+                    ? null
+                    : $"El puerto RTSP {port} no está accesible: sin este puerto no hay video posible. Verifique que el streaming esté habilitado en la cámara o que un firewall/router no lo esté bloqueando."
             };
         }
         catch (OperationCanceledException)
@@ -227,7 +282,10 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                 TestName = "RTSP TCP",
                 Success = false,
                 Duration = stopwatch.Elapsed,
-                Message = $"Puerto {port}: {ex.Message}"
+                Severity = DiagnosticSeverity.Critico,
+                Category = DiagnosticCategory.Video,
+                Message = $"Puerto {port}: {ex.Message}",
+                RecommendedAction = $"El puerto RTSP {port} no está accesible: sin este puerto no hay video posible. Verifique que el streaming esté habilitado en la cámara o que un firewall/router no lo esté bloqueando."
             };
         }
     }
@@ -252,7 +310,10 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                     TestName = "RTSP protocolo",
                     Success = false,
                     Duration = stopwatch.Elapsed,
-                    Message = $"La dirección IP '{device.IpAddress}' no es válida."
+                    Severity = DiagnosticSeverity.Critico,
+                    Category = DiagnosticCategory.Video,
+                    Message = $"La dirección IP '{device.IpAddress}' no es válida.",
+                    RecommendedAction = "Vuelva a escanear la red: la IP registrada para este dispositivo no tiene un formato válido."
                 };
             }
 
@@ -278,7 +339,10 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                     TestName = "RTSP protocolo",
                     Success = false,
                     Duration = stopwatch.Elapsed,
-                    Message = "El puerto aceptó TCP pero no devolvió respuesta RTSP."
+                    Severity = DiagnosticSeverity.Advertencia,
+                    Category = DiagnosticCategory.Video,
+                    Message = "El puerto aceptó TCP pero no devolvió respuesta RTSP.",
+                    RecommendedAction = "El puerto abre pero no habla RTSP: verifique que el puerto configurado en la cámara sea realmente el de streaming (algunos equipos usan un puerto RTSP no estándar)."
                 };
             }
 
@@ -294,22 +358,31 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                     TestName = "RTSP protocolo",
                     Success = false,
                     Duration = stopwatch.Elapsed,
-                    Message = "El servicio respondió, pero no se reconoció una respuesta RTSP válida."
+                    Severity = DiagnosticSeverity.Advertencia,
+                    Category = DiagnosticCategory.Video,
+                    Message = "El servicio respondió, pero no se reconoció una respuesta RTSP válida.",
+                    RecommendedAction = "El puerto responde pero no con el protocolo RTSP esperado; puede ser otro servicio escuchando en ese puerto."
                 };
             }
 
             var parts = statusLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             var statusCode = parts.Length >= 2 && int.TryParse(parts[1], out var parsedCode) ? parsedCode : 0;
             var authenticationRequired = statusCode is 401 or 403;
+            var success = statusCode is >= 200 and < 500;
 
             return new DiagnosticResult
             {
                 TestName = "RTSP protocolo",
-                Success = statusCode is >= 200 and < 500,
+                Success = success,
                 Duration = stopwatch.Elapsed,
+                Severity = authenticationRequired ? DiagnosticSeverity.Advertencia : (success ? DiagnosticSeverity.Info : DiagnosticSeverity.Advertencia),
+                Category = authenticationRequired ? DiagnosticCategory.Autenticacion : DiagnosticCategory.Video,
                 Message = authenticationRequired
                     ? $"RTSP respondió {statusCode}: autenticación requerida"
-                    : $"Respuesta RTSP válida: {statusCode}"
+                    : $"Respuesta RTSP válida: {statusCode}",
+                RecommendedAction = authenticationRequired
+                    ? "El servicio RTSP exige autenticación: revise las credenciales guardadas, o pruebe el acceso de fábrica si la cámara pudo haber sido reconfigurada."
+                    : (success ? null : "Respuesta RTSP inesperada; revise la ruta de streaming configurada en la cámara.")
             };
         }
         catch (OperationCanceledException)
@@ -324,7 +397,10 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                 TestName = "RTSP protocolo",
                 Success = false,
                 Duration = stopwatch.Elapsed,
-                Message = $"RTSP {device.IpAddress}:{port}: {ex.Message}"
+                Severity = DiagnosticSeverity.Advertencia,
+                Category = DiagnosticCategory.Video,
+                Message = $"RTSP {device.IpAddress}:{port}: {ex.Message}",
+                RecommendedAction = "No se pudo completar el diálogo RTSP; si el puerto TCP sí respondió, revise si la cámara limita conexiones simultáneas o exige un User-Agent específico."
             };
         }
     }
@@ -342,12 +418,20 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
             stopwatch.Stop();
             if (info is null)
             {
+                var isKnownLegacy = IsKnownLegacyVendor(device);
                 return new DiagnosticResult
                 {
                     TestName = "ONVIF Device",
                     Success = false,
                     Duration = stopwatch.Elapsed,
-                    Message = "Device Service no respondió correctamente o requiere autenticación."
+                    // Que un VIVOTEK/DAHUA/HIKVISION legacy no responda ONVIF es lo ESPERADO,
+                    // no una falla: se atenúa a Info para no alarmar al técnico sin motivo.
+                    Severity = isKnownLegacy ? DiagnosticSeverity.Info : DiagnosticSeverity.Advertencia,
+                    Category = DiagnosticCategory.Configuracion,
+                    Message = "Device Service no respondió correctamente o requiere autenticación.",
+                    RecommendedAction = isKnownLegacy
+                        ? "Esperado para este fabricante: no expone ONVIF real. Use la pestaña de Configuración de Red (CGI/ISAPI específico) en vez de ONVIF."
+                        : "Verifique que ONVIF esté habilitado en la cámara y que las credenciales guardadas sean correctas."
                 };
             }
 
@@ -356,6 +440,8 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                 TestName = "ONVIF Device",
                 Success = true,
                 Duration = stopwatch.Elapsed,
+                Severity = DiagnosticSeverity.Info,
+                Category = DiagnosticCategory.Configuracion,
                 Message = $"ONVIF OK: {info.Manufacturer ?? "Fabricante desconocido"} {info.Model ?? "Modelo desconocido"} · Firmware: {info.FirmwareVersion ?? "sin dato"} · Serial: {info.SerialNumber ?? "sin dato"}"
             };
         }
@@ -366,12 +452,18 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
         catch (Exception ex)
         {
             stopwatch.Stop();
+            var isKnownLegacy = IsKnownLegacyVendor(device);
             return new DiagnosticResult
             {
                 TestName = "ONVIF Device",
                 Success = false,
                 Duration = stopwatch.Elapsed,
-                Message = ex.Message
+                Severity = isKnownLegacy ? DiagnosticSeverity.Info : DiagnosticSeverity.Advertencia,
+                Category = DiagnosticCategory.Configuracion,
+                Message = ex.Message,
+                RecommendedAction = isKnownLegacy
+                    ? "Esperado para este fabricante: no expone ONVIF real. Use la pestaña de Configuración de Red (CGI/ISAPI específico) en vez de ONVIF."
+                    : "Verifique que ONVIF esté habilitado en la cámara y que las credenciales guardadas sean correctas."
             };
         }
     }
@@ -389,12 +481,18 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
             stopwatch.Stop();
             if (capabilities is null)
             {
+                var isKnownLegacy = IsKnownLegacyVendor(device);
                 return new DiagnosticResult
                 {
                     TestName = "ONVIF capacidades",
                     Success = false,
                     Duration = stopwatch.Elapsed,
-                    Message = "No se pudieron consultar las capacidades ONVIF. El servicio puede requerir autenticación."
+                    Severity = isKnownLegacy ? DiagnosticSeverity.Info : DiagnosticSeverity.Advertencia,
+                    Category = DiagnosticCategory.Configuracion,
+                    Message = "No se pudieron consultar las capacidades ONVIF. El servicio puede requerir autenticación.",
+                    RecommendedAction = isKnownLegacy
+                        ? "Esperado para este fabricante: no expone ONVIF real."
+                        : "Verifique credenciales y que ONVIF esté habilitado en la cámara."
                 };
             }
 
@@ -404,7 +502,12 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                 Success = capabilities.HasMediaService,
                 NotSupported = !capabilities.HasMediaService,
                 Duration = stopwatch.Elapsed,
-                Message = BuildCapabilitiesMessage(capabilities)
+                Severity = capabilities.HasMediaService ? DiagnosticSeverity.Info : DiagnosticSeverity.Info,
+                Category = DiagnosticCategory.Configuracion,
+                Message = BuildCapabilitiesMessage(capabilities),
+                RecommendedAction = capabilities.HasMediaService
+                    ? null
+                    : "La cámara responde ONVIF pero no anuncia servicio de Media: el video probablemente se administra por RTSP directo del fabricante, no por perfiles ONVIF."
             };
         }
         catch (OperationCanceledException)
@@ -414,12 +517,18 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
         catch (Exception ex)
         {
             stopwatch.Stop();
+            var isKnownLegacy = IsKnownLegacyVendor(device);
             return new DiagnosticResult
             {
                 TestName = "ONVIF capacidades",
                 Success = false,
                 Duration = stopwatch.Elapsed,
-                Message = ex.Message
+                Severity = isKnownLegacy ? DiagnosticSeverity.Info : DiagnosticSeverity.Advertencia,
+                Category = DiagnosticCategory.Configuracion,
+                Message = ex.Message,
+                RecommendedAction = isKnownLegacy
+                    ? "Esperado para este fabricante: no expone ONVIF real."
+                    : "Verifique credenciales y que ONVIF esté habilitado en la cámara."
             };
         }
     }
@@ -444,6 +553,8 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                     Success = false,
                     NotSupported = true,
                     Duration = stopwatch.Elapsed,
+                    Severity = DiagnosticSeverity.Info,
+                    Category = DiagnosticCategory.Configuracion,
                     Message = "Se omitió la consulta de red ONVIF porque no hay credenciales disponibles."
                 };
             }
@@ -457,12 +568,18 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
 
             if (configuration is null)
             {
+                var isKnownLegacy = IsKnownLegacyVendor(device);
                 return new DiagnosticResult
                 {
                     TestName = "ONVIF red",
                     Success = false,
                     Duration = stopwatch.Elapsed,
-                    Message = "La cámara no devolvió una configuración de red ONVIF válida."
+                    Severity = isKnownLegacy ? DiagnosticSeverity.Info : DiagnosticSeverity.Advertencia,
+                    Category = DiagnosticCategory.Configuracion,
+                    Message = "La cámara no devolvió una configuración de red ONVIF válida.",
+                    RecommendedAction = isKnownLegacy
+                        ? "Esperado para este fabricante: use la pestaña de Configuración de Red, que ya sabe hablar su CGI/ISAPI propio en vez de ONVIF."
+                        : "Las credenciales pueden haber sido rechazadas, o la cámara no expone configuración de red por ONVIF pese a responder a otras consultas."
                 };
             }
 
@@ -474,6 +591,8 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
                 TestName = "ONVIF red",
                 Success = true,
                 Duration = stopwatch.Elapsed,
+                Severity = DiagnosticSeverity.Info,
+                Category = DiagnosticCategory.Configuracion,
                 Message = $"Configuración ONVIF de red disponible · Interfaces: {interfaces} · Gateways IPv4: {gateways} · Protocolos: {protocols}"
             };
         }
@@ -484,12 +603,18 @@ public sealed class CameraDiagnosticService : ICameraDiagnosticService
         catch (Exception ex)
         {
             stopwatch.Stop();
+            var isKnownLegacy = IsKnownLegacyVendor(device);
             return new DiagnosticResult
             {
                 TestName = "ONVIF red",
                 Success = false,
                 Duration = stopwatch.Elapsed,
-                Message = ex.Message
+                Severity = isKnownLegacy ? DiagnosticSeverity.Info : DiagnosticSeverity.Advertencia,
+                Category = DiagnosticCategory.Configuracion,
+                Message = ex.Message,
+                RecommendedAction = isKnownLegacy
+                    ? "Esperado para este fabricante: use la pestaña de Configuración de Red en vez de ONVIF."
+                    : "Revise credenciales y disponibilidad del servicio ONVIF de la cámara."
             };
         }
     }
