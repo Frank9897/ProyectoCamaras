@@ -1,3 +1,4 @@
+using CameraInspector.Core.Diagnostics;
 using CameraInspector.Core.Models;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -37,6 +38,7 @@ public sealed partial class MainViewModel
         _diagnosticCancellation = new CancellationTokenSource();
         IsDiagnosing = true;
         DiagnosticResults.Clear();
+        DiagnosticConclusions.Clear();
         DiagnosticsSummaryText = "Ejecutando batería de pruebas...";
 
         var device = SelectedDevice.Device;
@@ -55,6 +57,11 @@ public sealed partial class MainViewModel
 
             foreach (var result in results)
                 DiagnosticResults.Add(result);
+
+            // ETAPA 2 (plan de diagnóstico): motor de correlación — cruza los 7 resultados
+            // entre sí para producir 1+ conclusiones en lenguaje de service.
+            foreach (var conclusion in DiagnosticRootCauseAnalyzer.Analyze(device, results))
+                DiagnosticConclusions.Add(conclusion);
 
             if (cameraId is int persistedCameraId)
             {

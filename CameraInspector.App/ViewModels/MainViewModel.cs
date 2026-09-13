@@ -26,6 +26,10 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly List<DeviceViewModel> _allDiscoveredDevices = new();
     public ObservableCollection<DiagnosticResult> DiagnosticResults { get; } = new();
     public ObservableCollection<DiagnosticHistoryItem> DiagnosticHistory { get; } = new();
+    // ETAPA 2 (plan de diagnóstico): conclusiones de causa raíz, producidas al cruzar los
+    // DiagnosticResults entre sí (ver DiagnosticRootCauseAnalyzer). Complementan la grilla
+    // de resultados, no la reemplazan.
+    public ObservableCollection<DiagnosticConclusion> DiagnosticConclusions { get; } = new();
 
     [ObservableProperty] private string _statusText = "Listo para escanear.";
     [ObservableProperty] private bool _isScanning;

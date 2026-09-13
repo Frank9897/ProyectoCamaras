@@ -176,6 +176,97 @@ public partial class MainWindow
             footer.SetBinding(TextBlock.TextProperty, new Binding(nameof(MainViewModel.DiagnosticsSummaryText)));
             footer.Foreground = (Brush)Application.Current.FindResource("TextDimBrush");
         }
+
+        // ETAPA 2 (plan de diagnóstico): panel de conclusiones de causa raíz, debajo del
+        // resumen. Se agrega como una fila nueva al final del Grid existente, así que no
+        // hace falta reindexar ninguna de las filas ya definidas en el XAML.
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var conclusionsWrapper = new Border
+        {
+            Margin = new Thickness(0, 9, 0, 0),
+            Padding = new Thickness(0),
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0)
+        };
+        conclusionsWrapper.SetBinding(
+            UIElement.VisibilityProperty,
+            new Binding(nameof(MainViewModel.DiagnosticConclusions) + ".Count") { Converter = new CountToVisibilityConverter() });
+        Grid.SetRow(conclusionsWrapper, grid.RowDefinitions.Count - 1);
+
+        var conclusionsPanel = new StackPanel();
+        conclusionsPanel.Children.Add(new TextBlock
+        {
+            Text = "ANÁLISIS (qué significa esto y qué hacer)",
+            FontFamily = new FontFamily("Consolas"),
+            FontSize = 10,
+            FontWeight = FontWeights.Bold,
+            Foreground = (Brush)Application.Current.FindResource("AccentBrush"),
+            Margin = new Thickness(0, 0, 0, 6)
+        });
+
+        var conclusionsList = new ItemsControl();
+        conclusionsList.SetBinding(ItemsControl.ItemsSourceProperty, new Binding(nameof(MainViewModel.DiagnosticConclusions)));
+        conclusionsList.ItemTemplate = BuildConclusionCardTemplate();
+        conclusionsPanel.Children.Add(conclusionsList);
+
+        conclusionsWrapper.Child = conclusionsPanel;
+        grid.Children.Add(conclusionsWrapper);
+    }
+
+    /// <summary>
+    /// Construye, en código, la tarjeta de cada conclusión (título + explicación +
+    /// recomendación opcional, coloreada por severidad). Se arma con FrameworkElementFactory
+    /// en vez de XamlReader.Parse para evitar cualquier riesgo de parseo de XAML en tiempo
+    /// de ejecución.
+    /// </summary>
+    private static DataTemplate BuildConclusionCardTemplate()
+    {
+        var template = new DataTemplate(typeof(DiagnosticConclusion));
+
+        var border = new FrameworkElementFactory(typeof(Border));
+        border.SetValue(FrameworkElement.MarginProperty, new Thickness(0, 0, 0, 6));
+        border.SetValue(Border.PaddingProperty, new Thickness(10, 8, 10, 8));
+        border.SetResourceReference(Border.BackgroundProperty, "Panel2Brush");
+        border.SetValue(Border.BorderThicknessProperty, new Thickness(0, 0, 0, 3));
+        border.SetBinding(Border.BorderBrushProperty, new Binding(nameof(DiagnosticConclusion.Severity)) { Converter = new SeverityBrushConverter() });
+
+        var stack = new FrameworkElementFactory(typeof(StackPanel));
+        border.AppendChild(stack);
+
+        var title = new FrameworkElementFactory(typeof(TextBlock));
+        title.SetBinding(TextBlock.TextProperty, new Binding(nameof(DiagnosticConclusion.Title)));
+        title.SetValue(TextBlock.FontWeightProperty, FontWeights.Bold);
+        title.SetValue(TextBlock.TextWrappingProperty, TextWrapping.Wrap);
+        title.SetBinding(TextBlock.ForegroundProperty, new Binding(nameof(DiagnosticConclusion.Severity)) { Converter = new SeverityBrushConverter() });
+        stack.AppendChild(title);
+
+        var explanation = new FrameworkElementFactory(typeof(TextBlock));
+        explanation.SetBinding(TextBlock.TextProperty, new Binding(nameof(DiagnosticConclusion.Explanation)));
+        explanation.SetValue(TextBlock.MarginProperty, new Thickness(0, 4, 0, 0));
+        explanation.SetValue(TextBlock.TextWrappingProperty, TextWrapping.Wrap);
+        explanation.SetResourceReference(TextBlock.ForegroundProperty, "TextBrush");
+        stack.AppendChild(explanation);
+
+        var recommendation = new FrameworkElementFactory(typeof(TextBlock));
+        recommendation.Name = "RecommendationText";
+        recommendation.SetBinding(TextBlock.TextProperty, new Binding(nameof(DiagnosticConclusion.RecommendedAction)) { StringFormat = "→ {0}" });
+        recommendation.SetValue(TextBlock.MarginProperty, new Thickness(0, 4, 0, 0));
+        recommendation.SetValue(TextBlock.TextWrappingProperty, TextWrapping.Wrap);
+        recommendation.SetValue(TextBlock.FontStyleProperty, FontStyles.Italic);
+        recommendation.SetResourceReference(TextBlock.ForegroundProperty, "CommentBrush");
+        stack.AppendChild(recommendation);
+
+        template.VisualTree = border;
+
+        var hideRecommendationWhenNull = new DataTrigger
+        {
+            Binding = new Binding(nameof(DiagnosticConclusion.RecommendedAction)),
+            Value = null
+        };
+        hideRecommendationWhenNull.Setters.Add(new Setter(UIElement.VisibilityProperty, Visibility.Collapsed) { TargetName = "RecommendationText" });
+        template.Triggers.Add(hideRecommendationWhenNull);
+
+        return template;
     }
 
     private void SetStatus(string value)
@@ -225,6 +316,31 @@ public partial class MainWindow
                     _ => "INFO"
                 }
                 : "INFO";
+
+        public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+            => Binding.DoNothing;
+    }
+
+    private sealed class SeverityBrushConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+            => Application.Current.FindResource(value is DiagnosticSeverity severity
+                ? severity switch
+                {
+                    DiagnosticSeverity.Critico => "ErrBrush",
+                    DiagnosticSeverity.Advertencia => "WarnBrush",
+                    _ => "AccentBrush"
+                }
+                : "AccentBrush");
+
+        public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+            => Binding.DoNothing;
+    }
+
+    private sealed class CountToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+            => value is int count && count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
             => Binding.DoNothing;
